@@ -38,16 +38,16 @@ var (
 	config = AppConfig{
 		ServerName:     "T2CUSTOM",
 		SoftwareVers:   "AdvancedGoAPRS 12.0",
-		Callsign:       "2E0LXY",
+		Callsign:       "NOCALL",
 		Passcode:       "-1",
 		UpstreamAddr:   "rotate.aprs2.net:14580",
-		ServerFilter:   "m/50",
+		ServerFilter:   "auto",
 		DropPiStar:     true,
 		DropDStar:      true,
 		DropAPDesk:     true,
 		EnableGeofence: false,
-		CenterLat:      53.7,
-		CenterLon:      -1.5,
+		CenterLat:      51.5,
+		CenterLon:      -0.1,
 		RadiusKm:       100.0,
 	}
 
@@ -196,7 +196,12 @@ func maintainUpstream() {
 func connectUpstream() {
 	config.RLock()
 	addr, call, pass, filter, vers := config.UpstreamAddr, config.Callsign, config.Passcode, config.ServerFilter, config.SoftwareVers
+	cLat, cLon, rad := config.CenterLat, config.CenterLon, config.RadiusKm
 	config.RUnlock()
+
+	if filter == "auto" || filter == "" {
+		filter = fmt.Sprintf("r/%.4f/%.4f/%.0f", cLat, cLon, rad)
+	}
 
 	conn, err := net.Dial("tcp", addr)
 	if err != nil { return }
