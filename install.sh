@@ -57,6 +57,10 @@ fi
 /usr/local/go/bin/go mod init aprs || true
 /usr/local/go/bin/go get github.com/gorilla/websocket
 /usr/local/go/bin/go build -o aprs_server aprs_server.go
+echo "Downloading APRS symbol sprites..."
+mkdir -p symbols
+wget -q -O symbols/symbols-new.png "https://raw.githubusercontent.com/hessu/aprs-symbols/master/png/aprs-symbols-24.png"
+wget -q -O symbols/symbols-new2.png "https://raw.githubusercontent.com/hessu/aprs-symbols/master/png/aprs-symbols-24-alt.png"
 
 cat <<EOF > /etc/systemd/system/aprs.service
 [Unit]
