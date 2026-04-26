@@ -1,5 +1,9 @@
 package main
 
+// AppVersion is embedded at build time or set here.
+// Increment this string on every release.
+const AppVersion = "1.3.0"
+
 import (
 	"bufio"
 	"encoding/json"
@@ -144,6 +148,7 @@ func main() {
 	http.HandleFunc("/api/status", handleStatus)
 	http.HandleFunc("/api/password", basicAuth(handlePassword))
 	http.HandleFunc("/api/whoami", basicAuth(handleWhoami))
+	http.HandleFunc("/api/version", handleVersion)
 
 	log.Printf("Advanced APRS Gateway active on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
@@ -641,6 +646,14 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 
+
+
+// handleVersion returns the running server version.
+// The frontend polls GitHub releases to compare and show an update badge.
+func handleVersion(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"version":"` + AppVersion + `"}`))
+}
 
 // handleWhoami returns the authenticated username — used by the frontend
 // to verify credentials are correct before showing the admin panel.

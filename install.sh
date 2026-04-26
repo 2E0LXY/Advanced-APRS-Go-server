@@ -75,4 +75,5 @@ ufw allow 22/tcp
 ufw allow 80/tcp
 ufw allow 443/tcp
 ufw allow 14580/udp
+ufw allow 14580/tcp
 ufw --force enable
