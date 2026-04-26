@@ -3,6 +3,7 @@
 A high-performance, bidirectional APRS-IS Gateway written in Go. Provides a real-time tactical map dashboard, full APRS-IS client server on port 14580, WebSocket API, and a complete browser-based admin interface.
 
 [![Release](https://img.shields.io/github/v/release/2E0LXY/Advanced-APRS-Go-server)](https://github.com/2E0LXY/Advanced-APRS-Go-server/releases)
+[![Licence: GPL v3](https://img.shields.io/badge/Licence-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 ---
 
@@ -188,6 +189,8 @@ echo "M0XYZ>APRS,TCPIP*:=5342.10N/00130.50W-Test" | nc -u -w1 YOUR-IP 14580
 ---
 
 ## Licence
-MIT — see [LICENCE](LICENCE)
+GNU General Public License v3.0 — see [LICENCE](LICENCE)
+
+You are free to use, modify and distribute this software under GPL v3. Any derivative works must be open-sourced under the same licence and retain attribution to the original author (2E0LXY).
 
 *Advanced APRS Go Server — 2E0LXY*
