@@ -1416,37 +1416,65 @@ function autoPasscode(val) {
 let _latestVersion = null;
 let _runningVersion = null;
 
+function semverGt(a, b) {
+  // Returns true if version string a > b
+  const pa = String(a).replace(/^v/,'').split('.').map(Number);
+  const pb = String(b).replace(/^v/,'').split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const na = pa[i]||0, nb = pb[i]||0;
+    if (na > nb) return true;
+    if (na < nb) return false;
+  }
+  return false;
+}
+
 async function checkForUpdates() {
   try {
+    // Get running version
     const vRes = await fetch('/api/version');
+    if (!vRes.ok) return;
     const vData = await vRes.json();
-    _runningVersion = vData.version || '0.0.0';
+    _runningVersion = String(vData.version || '0.0.0').replace(/^v/,'');
 
+    // Show version everywhere
     const badge = document.getElementById('version-badge');
     if (badge) badge.innerText = 'v' + _runningVersion;
     const fv = document.getElementById('footer-version');
     if (fv) fv.innerText = 'v' + _runningVersion;
 
-    const ghRes = await fetch('https://api.github.com/repos/2E0LXY/Advanced-APRS-Go-server/releases/latest');
-    if (!ghRes.ok) return;
+    // Compare against latest GitHub release
+    const ghRes = await fetch('https://api.github.com/repos/2E0LXY/Advanced-APRS-Go-server/releases/latest',
+      {headers: {'Accept': 'application/vnd.github.v3+json'}});
+    if (!ghRes.ok) {
+      console.warn('GitHub releases check failed:', ghRes.status);
+      return;
+    }
     const ghData = await ghRes.json();
-    _latestVersion = (ghData.tag_name || '').replace(/^v/, '');
+    _latestVersion = String(ghData.tag_name || '').replace(/^v/,'');
 
-    if (_latestVersion && _latestVersion !== _runningVersion) {
+    console.log('Version check: running=' + _runningVersion + ' latest=' + _latestVersion);
+
+    if (_latestVersion && semverGt(_latestVersion, _runningVersion)) {
       // Header button
       const btn = document.getElementById('update-btn');
       if (btn) {
-        btn.title = 'Update available: v' + _latestVersion + ' (running v' + _runningVersion + ')';
+        btn.title = 'Update available: v' + _latestVersion + ' (running v' + _runningVersion + ') — click to install';
         btn.classList.remove('hidden');
-        btn.onclick = () => { togglePanel('admin'); };
+        btn.href = '#';
+        btn.onclick = (e) => { e.preventDefault(); togglePanel('admin'); return false; };
       }
-      // Status badge
-      if (badge) badge.innerHTML =
-        'v' + _runningVersion + ' <span class="text-yellow-400 font-bold">→ v' + _latestVersion + ' available</span>';
-      // Admin section (shown when admin panel is open)
+      // Status panel badge
+      if (badge) badge.innerHTML = 'v' + _runningVersion
+        + ' <span class="text-yellow-400 font-bold animate-pulse">→ v' + _latestVersion + ' available</span>';
       showUpdateBanner();
+    } else {
+      // Hide button if up to date
+      const btn = document.getElementById('update-btn');
+      if (btn) btn.classList.add('hidden');
     }
-  } catch(e) { /* silent */ }
+  } catch(e) {
+    console.warn('Update check error:', e);
+  }
 }
 
 function showUpdateBanner() {
@@ -1704,7 +1732,8 @@ async function refreshISS() {
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 connectWS();
 setInterval(redrawMap, 30000);
-checkForUpdates();
+// Small delay before version check so page is fully loaded
+setTimeout(checkForUpdates, 2000);
 setInterval(checkForUpdates, 3600000); // re-check every hour
 </script>
 </body>
