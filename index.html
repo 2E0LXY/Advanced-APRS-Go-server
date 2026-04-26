@@ -182,11 +182,19 @@
                         </div>
                         <div class="bg-gray-800 p-4 rounded border border-gray-700 shadow-inner">
                             <p class="text-gray-400 text-xs uppercase font-bold mb-1">Bytes RX / TX</p>
-                            <p id="stat-bytes" class="text-xl font-mono text-blue-400">0 / 0</p>
+                            <p id="stat-bytes" class="text-xl font-mono text-blue-400">0 B / 0 B</p>
                         </div>
                         <div class="bg-gray-800 p-4 rounded border border-gray-700 shadow-inner">
                             <p class="text-gray-400 text-xs uppercase font-bold mb-1">Dropped Packets</p>
                             <p id="stat-dropped" class="text-xl font-mono text-red-400">0</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-800 p-4 rounded border border-blue-900">
+                        <p class="text-gray-400 text-xs uppercase font-bold mb-1">Active Upstream Connection</p>
+                        <div class="flex items-center space-x-3">
+                            <span id="stat-upstream-host" class="text-lg font-mono text-blue-400">None</span>
+                            <a id="stat-upstream-link" href="#" target="_blank" class="text-xs bg-blue-900 hover:bg-blue-800 px-2 py-1 rounded text-white hidden">View Monitor</a>
                         </div>
                     </div>
 
@@ -257,6 +265,10 @@
                             <option value="euro.aprs2.net:14580">Europe Rotate</option>
                             <option value="asia.aprs2.net:14580">Asia Rotate</option>
                             <option value="aunz.aprs2.net:14580">Oceania Rotate</option>
+                            <option value="t2hub1.aprs2.net:14580">T2HUB1 (Core)</option>
+                            <option value="t2hub2.aprs2.net:14580">T2HUB2 (Core)</option>
+                            <option value="t2hub3.aprs2.net:14580">T2HUB3 (Core)</option>
+                            <option value="t2hub4.aprs2.net:14580">T2HUB4 (Core)</option>
                             <option value="t2alberta.aprs2.net:14580">T2ALBERTA</option>
                             <option value="t2austria.aprs2.net:14580">T2AUSTRIA</option>
                             <option value="t2bc.aprs2.net:14580">T2BC</option>
@@ -270,6 +282,7 @@
                             <option value="t2csngrad.aprs2.net:14580">T2CSNGRAD</option>
                             <option value="t2czech.aprs2.net:14580">T2CZECH</option>
                             <option value="t2dallas.aprs2.net:14580">T2DALLAS</option>
+                            <option value="t2uk.aprs2.net:14580">T2UK (United Kingdom)</option>
                         </datalist>
                     </div>
 
@@ -343,13 +356,13 @@
             if (!chatLog) return;
             const entry = document.createElement('div');
             const time = new Date().toLocaleTimeString();
-            entry.innerHTML = `<span class="text-gray-600">[${time}]</span> <span class="font-bold ${colorClass}">${sender}:</span> <span class="text-gray-300 break-words">${message}</span>`;
+            entry.innerHTML = `<span class="text-gray-600 text-[10px]">[${time}]</span> <span class="font-bold ${colorClass}">${sender}:</span> <span class="text-gray-300 break-words">${message}</span>`;
             chatLog.appendChild(entry);
             chatLog.scrollTop = chatLog.scrollHeight;
         }
 
         function formatBytes(bytes) {
-            if (bytes === 0) return '0 B';
+            if (!bytes || isNaN(bytes) || bytes === 0) return '0 B';
             const k = 1024;
             const sizes = ['B', 'KB', 'MB', 'GB'];
             const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -415,25 +428,39 @@
                 const res = await fetch('/api/status');
                 const data = await res.json();
                 
-                document.getElementById('stat-uptime').innerText = data.uptime;
-                document.getElementById('stat-pkts').innerText = `${data.pkts_rx.toLocaleString()} / ${data.pkts_tx.toLocaleString()}`;
+                document.getElementById('stat-uptime').innerText = data.uptime || '0s';
+                document.getElementById('stat-pkts').innerText = `${(data.pkts_rx || 0).toLocaleString()} / ${(data.pkts_tx || 0).toLocaleString()}`;
                 document.getElementById('stat-bytes').innerText = `${formatBytes(data.bytes_rx)} / ${formatBytes(data.bytes_tx)}`;
-                document.getElementById('stat-dropped').innerText = data.pkts_dropped.toLocaleString();
+                document.getElementById('stat-dropped').innerText = (data.pkts_dropped || 0).toLocaleString();
+
+                const hostDisplay = document.getElementById('stat-upstream-host');
+                const linkDisplay = document.getElementById('stat-upstream-link');
+                if (data.upstream_addr) {
+                    const host = data.upstream_addr.split(':')[0];
+                    hostDisplay.innerText = data.upstream_addr;
+                    linkDisplay.href = `http://${host}:14501`;
+                    linkDisplay.classList.remove('hidden');
+                } else {
+                    hostDisplay.innerText = 'Disconnected';
+                    linkDisplay.classList.add('hidden');
+                }
 
                 const tbody = document.getElementById('client-list');
                 tbody.innerHTML = '';
                 
-                data.clients.forEach(c => {
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td class="p-3 font-bold text-blue-400">${c.call}</td>
-                        <td class="p-3 uppercase text-[10px] text-gray-500">WebSocket</td>
-                        <td class="p-3 font-mono text-xs text-gray-400">Hidden</td>
-                        <td class="p-3 text-sm">${c.soft}</td>
-                        <td class="p-3 text-xs text-green-500">Connected</td>
-                    `;
-                    tbody.appendChild(tr);
-                });
+                if (data.clients) {
+                    data.clients.forEach(c => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td class="p-3 font-bold text-blue-400">${c.call}</td>
+                            <td class="p-3 uppercase text-[10px] text-gray-500">WebSocket</td>
+                            <td class="p-3 font-mono text-xs text-gray-400">Hidden</td>
+                            <td class="p-3 text-sm">${c.soft}</td>
+                            <td class="p-3 text-xs text-green-500">Connected</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
             } catch (err) {
                 console.error("Status fetch failed:", err);
             }
