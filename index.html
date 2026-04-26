@@ -281,44 +281,163 @@
 
         <!-- Filter Builder -->
         <div class="bg-gray-800 p-4 rounded border border-gray-700">
-          <h3 class="text-sm font-bold text-gray-300 uppercase mb-1">Subscription Filter</h3>
-          <p class="text-xs text-gray-500 mb-3">Build your APRS-IS filter string or type manually. Multiple filters can be combined.</p>
-          <div class="grid grid-cols-2 gap-2 mb-3 text-xs">
-            <div class="bg-gray-700 p-2 rounded">
-              <p class="font-bold text-gray-300 mb-1">Range Filter (r)</p>
-              <div class="flex space-x-1 mb-1">
-                <input type="number" id="fLat" placeholder="Lat" step="any" class="w-full bg-gray-600 p-1 rounded text-xs outline-none border border-gray-500">
-                <input type="number" id="fLon" placeholder="Lon" step="any" class="w-full bg-gray-600 p-1 rounded text-xs outline-none border border-gray-500">
-                <input type="number" id="fRad" placeholder="km" class="w-1/2 bg-gray-600 p-1 rounded text-xs outline-none border border-gray-500">
+          <h3 class="text-sm font-bold text-gray-300 uppercase mb-1">APRS-IS Subscription Filter</h3>
+          <p class="text-xs text-gray-500 mb-1">These filters control what data the upstream APRS-IS server sends <strong class="text-gray-400">to your gateway</strong>. They do not affect packets your gateway transmits. Multiple filters can be combined — if any filter matches, the packet is passed. Prefix a filter with <code class="text-yellow-500">-</code> to exclude matching packets.</p>
+          <p class="text-xs text-blue-400 mb-3">ℹ️ Leave blank or use <code>auto</code> to automatically use a range filter based on your geofence centre below.</p>
+
+          <!-- Filter rows -->
+          <div class="space-y-2 mb-3 text-xs">
+
+            <!-- Range -->
+            <div class="bg-gray-750 border border-gray-600 rounded p-2">
+              <div class="flex items-start justify-between mb-1">
+                <div>
+                  <span class="font-bold text-blue-400 font-mono">r/lat/lon/dist</span>
+                  <span class="text-gray-400 ml-2">Range Filter</span>
+                </div>
+                <span class="text-gray-500 text-[10px] max-w-xs text-right">Pass position packets &amp; objects within <em>dist</em> km of a point. Up to 9 range filters allowed. Also passes messages to stations within range.</span>
               </div>
-              <button onclick="buildFilter('range')" class="w-full bg-blue-700 hover:bg-blue-600 p-1 rounded text-xs font-bold">Add Range</button>
-            </div>
-            <div class="bg-gray-700 p-2 rounded">
-              <p class="font-bold text-gray-300 mb-1">Friend Filter (f)</p>
-              <input type="text" id="fFriend" placeholder="CALLSIGN km e.g. M0XYZ 50" class="w-full bg-gray-600 p-1 rounded text-xs outline-none border border-gray-500 mb-1 uppercase">
-              <button onclick="buildFilter('friend')" class="w-full bg-blue-700 hover:bg-blue-600 p-1 rounded text-xs font-bold">Add Friend</button>
-            </div>
-            <div class="bg-gray-700 p-2 rounded">
-              <p class="font-bold text-gray-300 mb-1">Prefix Filter (p)</p>
-              <input type="text" id="fPrefix" placeholder="e.g. G M0 2E" class="w-full bg-gray-600 p-1 rounded text-xs outline-none border border-gray-500 mb-1 uppercase">
-              <button onclick="buildFilter('prefix')" class="w-full bg-blue-700 hover:bg-blue-600 p-1 rounded text-xs font-bold">Add Prefix</button>
-            </div>
-            <div class="bg-gray-700 p-2 rounded">
-              <p class="font-bold text-gray-300 mb-1">Type Filter (t)</p>
-              <div class="flex flex-wrap gap-1 mb-1">
-                <label class="flex items-center space-x-1"><input type="checkbox" id="ft-p" value="p"><span>Position</span></label>
-                <label class="flex items-center space-x-1"><input type="checkbox" id="ft-w" value="w"><span>WX</span></label>
-                <label class="flex items-center space-x-1"><input type="checkbox" id="ft-m" value="m"><span>Msg</span></label>
-                <label class="flex items-center space-x-1"><input type="checkbox" id="ft-o" value="o"><span>Object</span></label>
+              <div class="flex space-x-1">
+                <input type="number" id="fLat" placeholder="Lat (e.g. 53.72)" step="any" class="w-full bg-gray-700 p-1 rounded outline-none border border-gray-600 text-white">
+                <input type="number" id="fLon" placeholder="Lon (e.g. -1.57)" step="any" class="w-full bg-gray-700 p-1 rounded outline-none border border-gray-600 text-white">
+                <input type="number" id="fRad" placeholder="km" class="w-20 bg-gray-700 p-1 rounded outline-none border border-gray-600 text-white">
+                <button onclick="buildFilter('range')" class="px-2 bg-blue-700 hover:bg-blue-600 rounded font-bold whitespace-nowrap">+ Add</button>
               </div>
-              <button onclick="buildFilter('type')" class="w-full bg-blue-700 hover:bg-blue-600 p-1 rounded text-xs font-bold">Add Type</button>
             </div>
+
+            <!-- My Range -->
+            <div class="bg-gray-750 border border-gray-600 rounded p-2">
+              <div class="flex items-start justify-between mb-1">
+                <div>
+                  <span class="font-bold text-blue-400 font-mono">m/dist</span>
+                  <span class="text-gray-400 ml-2">My Range Filter</span>
+                </div>
+                <span class="text-gray-500 text-[10px] max-w-xs text-right">Range filter centred on <em>your own last known position</em> on APRS-IS. Requires your callsign to be heard on the network.</span>
+              </div>
+              <div class="flex space-x-1">
+                <input type="number" id="fMyRange" placeholder="km (e.g. 200)" class="w-32 bg-gray-700 p-1 rounded outline-none border border-gray-600 text-white">
+                <button onclick="buildFilter('myrange')" class="px-2 bg-blue-700 hover:bg-blue-600 rounded font-bold">+ Add</button>
+              </div>
+            </div>
+
+            <!-- Friend Range -->
+            <div class="bg-gray-750 border border-gray-600 rounded p-2">
+              <div class="flex items-start justify-between mb-1">
+                <div>
+                  <span class="font-bold text-blue-400 font-mono">f/call/dist</span>
+                  <span class="text-gray-400 ml-2">Friend Range Filter</span>
+                </div>
+                <span class="text-gray-500 text-[10px] max-w-xs text-right">Range filter centred on another station's last known position. Useful for tracking a friend or vehicle. Up to 9 allowed.</span>
+              </div>
+              <div class="flex space-x-1">
+                <input type="text" id="fFriendCall" placeholder="Callsign (e.g. M0XYZ)" class="w-full bg-gray-700 p-1 rounded outline-none border border-gray-600 text-white uppercase">
+                <input type="number" id="fFriendDist" placeholder="km" class="w-20 bg-gray-700 p-1 rounded outline-none border border-gray-600 text-white">
+                <button onclick="buildFilter('friend')" class="px-2 bg-blue-700 hover:bg-blue-600 rounded font-bold">+ Add</button>
+              </div>
+            </div>
+
+            <!-- Prefix -->
+            <div class="bg-gray-750 border border-gray-600 rounded p-2">
+              <div class="flex items-start justify-between mb-1">
+                <div>
+                  <span class="font-bold text-blue-400 font-mono">p/aa/bb/...</span>
+                  <span class="text-gray-400 ml-2">Callsign Prefix Filter</span>
+                </div>
+                <span class="text-gray-500 text-[10px] max-w-xs text-right">Pass all traffic from callsigns starting with these prefixes. E.g. <code>G M0 2E</code> passes all UK callsigns.</span>
+              </div>
+              <div class="flex space-x-1">
+                <input type="text" id="fPrefix" placeholder="Space-separated prefixes: G M0 2E0 MW" class="w-full bg-gray-700 p-1 rounded outline-none border border-gray-600 text-white uppercase">
+                <button onclick="buildFilter('prefix')" class="px-2 bg-blue-700 hover:bg-blue-600 rounded font-bold">+ Add</button>
+              </div>
+            </div>
+
+            <!-- Budlist -->
+            <div class="bg-gray-750 border border-gray-600 rounded p-2">
+              <div class="flex items-start justify-between mb-1">
+                <div>
+                  <span class="font-bold text-blue-400 font-mono">b/call1/call2/...</span>
+                  <span class="text-gray-400 ml-2">Budlist (Exact Callsign) Filter</span>
+                </div>
+                <span class="text-gray-500 text-[10px] max-w-xs text-right">Pass all traffic from these exact callsigns (including SSID). Wildcard * allowed e.g. <code>2E0LXY*</code> matches all SSIDs.</span>
+              </div>
+              <div class="flex space-x-1">
+                <input type="text" id="fBud" placeholder="Callsigns: 2E0LXY-9 M0XYZ G4ABC*" class="w-full bg-gray-700 p-1 rounded outline-none border border-gray-600 text-white uppercase">
+                <button onclick="buildFilter('bud')" class="px-2 bg-blue-700 hover:bg-blue-600 rounded font-bold">+ Add</button>
+              </div>
+            </div>
+
+            <!-- Type -->
+            <div class="bg-gray-750 border border-gray-600 rounded p-2">
+              <div class="flex items-start justify-between mb-1">
+                <div>
+                  <span class="font-bold text-blue-400 font-mono">t/poimqstunw</span>
+                  <span class="text-gray-400 ml-2">Packet Type Filter</span>
+                </div>
+                <span class="text-gray-500 text-[10px] max-w-xs text-right">Pass only selected packet types. Combine letters freely e.g. <code>t/pw</code> for positions and weather only.</span>
+              </div>
+              <div class="flex flex-wrap gap-2 mb-1">
+                <label class="flex items-center space-x-1 cursor-pointer"><input type="checkbox" id="ft-p" value="p"><span>p Position</span></label>
+                <label class="flex items-center space-x-1 cursor-pointer"><input type="checkbox" id="ft-o" value="o"><span>o Objects</span></label>
+                <label class="flex items-center space-x-1 cursor-pointer"><input type="checkbox" id="ft-i" value="i"><span>i Items</span></label>
+                <label class="flex items-center space-x-1 cursor-pointer"><input type="checkbox" id="ft-m" value="m"><span>m Messages</span></label>
+                <label class="flex items-center space-x-1 cursor-pointer"><input type="checkbox" id="ft-q" value="q"><span>q Queries</span></label>
+                <label class="flex items-center space-x-1 cursor-pointer"><input type="checkbox" id="ft-s" value="s"><span>s Status</span></label>
+                <label class="flex items-center space-x-1 cursor-pointer"><input type="checkbox" id="ft-t" value="t"><span>t Telemetry</span></label>
+                <label class="flex items-center space-x-1 cursor-pointer"><input type="checkbox" id="ft-u" value="u"><span>u User-defined</span></label>
+                <label class="flex items-center space-x-1 cursor-pointer"><input type="checkbox" id="ft-w" value="w"><span>w Weather</span></label>
+                <label class="flex items-center space-x-1 cursor-pointer"><input type="checkbox" id="ft-n" value="n"><span>n NWS alerts</span></label>
+              </div>
+              <button onclick="buildFilter('type')" class="px-2 bg-blue-700 hover:bg-blue-600 rounded font-bold py-1">+ Add Type Filter</button>
+            </div>
+
+            <!-- Area -->
+            <div class="bg-gray-750 border border-gray-600 rounded p-2">
+              <div class="flex items-start justify-between mb-1">
+                <div>
+                  <span class="font-bold text-blue-400 font-mono">a/latN/lonW/latS/lonE</span>
+                  <span class="text-gray-400 ml-2">Area (Bounding Box) Filter</span>
+                </div>
+                <span class="text-gray-500 text-[10px] max-w-xs text-right">Pass packets within a rectangular area. Enter NW corner and SE corner. South/West are negative. Up to 9 area filters.</span>
+              </div>
+              <div class="flex space-x-1">
+                <input type="number" id="fAreaNLat" placeholder="N Lat" step="any" class="w-full bg-gray-700 p-1 rounded outline-none border border-gray-600 text-white">
+                <input type="number" id="fAreaWLon" placeholder="W Lon" step="any" class="w-full bg-gray-700 p-1 rounded outline-none border border-gray-600 text-white">
+                <input type="number" id="fAreaSLat" placeholder="S Lat" step="any" class="w-full bg-gray-700 p-1 rounded outline-none border border-gray-600 text-white">
+                <input type="number" id="fAreaELon" placeholder="E Lon" step="any" class="w-full bg-gray-700 p-1 rounded outline-none border border-gray-600 text-white">
+                <button onclick="buildFilter('area')" class="px-2 bg-blue-700 hover:bg-blue-600 rounded font-bold whitespace-nowrap">+ Add</button>
+              </div>
+            </div>
+
+            <!-- Digipeater -->
+            <div class="bg-gray-750 border border-gray-600 rounded p-2">
+              <div class="flex items-start justify-between mb-1">
+                <div>
+                  <span class="font-bold text-blue-400 font-mono">d/digi1/digi2/...</span>
+                  <span class="text-gray-400 ml-2">Digipeater Filter</span>
+                </div>
+                <span class="text-gray-500 text-[10px] max-w-xs text-right">Pass packets that have been digipeated through specific stations. Useful for seeing all traffic via a local digi. Wildcard * allowed.</span>
+              </div>
+              <div class="flex space-x-1">
+                <input type="text" id="fDigi" placeholder="e.g. MB7UH* GB7XX" class="w-full bg-gray-700 p-1 rounded outline-none border border-gray-600 text-white uppercase">
+                <button onclick="buildFilter('digi')" class="px-2 bg-blue-700 hover:bg-blue-600 rounded font-bold">+ Add</button>
+              </div>
+            </div>
+
+            <!-- Exclude toggle -->
+            <div class="bg-yellow-900/20 border border-yellow-800 rounded p-2">
+              <p class="text-yellow-400 text-[11px] font-bold mb-1">⚠️ Exclude Mode</p>
+              <p class="text-gray-400 text-[10px] mb-2">Any filter above can be negated by prefixing with <code class="text-yellow-400">-</code>. Enable this to add the next filter as an exclusion. E.g. <code>r/53.7/-1.5/200 -p/CW</code> = range filter BUT exclude CWOP stations.</p>
+              <label class="flex items-center space-x-2 cursor-pointer text-xs"><input type="checkbox" id="fExclude"><span class="text-yellow-300 font-bold">Add next filter as EXCLUDE (-)</span></label>
+            </div>
+
           </div>
-          <div class="flex space-x-2">
-            <input type="text" id="admFilter" class="flex-1 bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-red-500 font-mono text-xs">
+
+          <!-- Result string -->
+          <div class="flex space-x-2 mb-1">
+            <input type="text" id="admFilter" class="flex-1 bg-gray-900 p-2 rounded border border-gray-600 text-green-400 outline-none focus:border-red-500 font-mono text-xs" placeholder="Filter string will appear here, or type manually">
             <button onclick="document.getElementById('admFilter').value=''" class="px-3 bg-gray-600 hover:bg-gray-500 rounded text-xs font-bold">Clear</button>
           </div>
-          <p class="text-xs text-gray-600 mt-1">Leave blank or type <code class="text-gray-400">auto</code> to use geofence centre + radius below</p>
+          <p class="text-xs text-gray-600">Leave blank or type <code class="text-gray-400">auto</code> to use geofence centre + radius. <a href="https://www.aprs-is.net/javAPRSFilter.aspx" target="_blank" class="text-blue-500 hover:underline">Full filter docs ↗</a></p>
         </div>
 
         <!-- Filtering Engine -->
@@ -760,25 +879,60 @@ function applyUpstreamPreset() {
 
 function buildFilter(type) {
   let cur = document.getElementById('admFilter').value.trim();
+  const excl = document.getElementById('fExclude') && document.getElementById('fExclude').checked;
+  const pfx = excl ? '-' : '';
   let add = '';
+
   if (type==='range') {
     const lat=document.getElementById('fLat').value, lon=document.getElementById('fLon').value, r=document.getElementById('fRad').value;
-    if (!lat||!lon||!r) return alert('Fill in Lat, Lon and radius');
-    add = `r/${parseFloat(lat).toFixed(4)}/${parseFloat(lon).toFixed(4)}/${r}`;
+    if (!lat||!lon||!r) return alert('Fill in Lat, Lon and radius (km)');
+    add = pfx+`r/${parseFloat(lat).toFixed(4)}/${parseFloat(lon).toFixed(4)}/${parseInt(r)}`;
+
+  } else if (type==='myrange') {
+    const r=document.getElementById('fMyRange').value;
+    if (!r) return alert('Enter range in km');
+    add = pfx+`m/${parseInt(r)}`;
+
   } else if (type==='friend') {
-    const v=document.getElementById('fFriend').value.trim().toUpperCase();
-    if (!v) return alert('Enter callsign and range e.g. M0XYZ 50');
-    const p=v.split(/\s+/); add=`f/${p[0]}/${p[1]||50}`;
+    const call=document.getElementById('fFriendCall').value.trim().toUpperCase();
+    const dist=document.getElementById('fFriendDist').value;
+    if (!call||!dist) return alert('Enter callsign and distance');
+    add = pfx+`f/${call}/${parseInt(dist)}`;
+
   } else if (type==='prefix') {
     const v=document.getElementById('fPrefix').value.trim().toUpperCase().split(/\s+/).filter(Boolean);
-    if (!v.length) return alert('Enter at least one prefix');
-    add='p/'+v.join('/');
+    if (!v.length) return alert('Enter at least one callsign prefix');
+    add = pfx+'p/'+v.join('/');
+
+  } else if (type==='bud') {
+    const v=document.getElementById('fBud').value.trim().toUpperCase().split(/\s+/).filter(Boolean);
+    if (!v.length) return alert('Enter at least one callsign');
+    add = pfx+'b/'+v.join('/');
+
   } else if (type==='type') {
-    const types=['ft-p','ft-w','ft-m','ft-o'].filter(id=>document.getElementById(id).checked).map(id=>document.getElementById(id).value);
-    if (!types.length) return alert('Select at least one type');
-    add='t/'+types.join('');
+    const types=['ft-p','ft-o','ft-i','ft-m','ft-q','ft-s','ft-t','ft-u','ft-w','ft-n']
+      .filter(id=>document.getElementById(id)&&document.getElementById(id).checked)
+      .map(id=>document.getElementById(id).value);
+    if (!types.length) return alert('Select at least one packet type');
+    add = pfx+'t/'+types.join('');
+
+  } else if (type==='area') {
+    const nLat=document.getElementById('fAreaNLat').value, wLon=document.getElementById('fAreaWLon').value;
+    const sLat=document.getElementById('fAreaSLat').value, eLon=document.getElementById('fAreaELon').value;
+    if (!nLat||!wLon||!sLat||!eLon) return alert('Fill in all four bounding box coordinates');
+    add = pfx+`a/${parseFloat(nLat).toFixed(4)}/${parseFloat(wLon).toFixed(4)}/${parseFloat(sLat).toFixed(4)}/${parseFloat(eLon).toFixed(4)}`;
+
+  } else if (type==='digi') {
+    const v=document.getElementById('fDigi').value.trim().toUpperCase().split(/\s+/).filter(Boolean);
+    if (!v.length) return alert('Enter at least one digipeater callsign');
+    add = pfx+'d/'+v.join('/');
   }
-  document.getElementById('admFilter').value = cur ? cur+' '+add : add;
+
+  if (add) {
+    document.getElementById('admFilter').value = cur ? cur+' '+add : add;
+    // Reset exclude checkbox after use
+    if (excl && document.getElementById('fExclude')) document.getElementById('fExclude').checked = false;
+  }
 }
 
 function useMyLocation() {
@@ -833,6 +987,7 @@ function populateAdmin(d) {
     document.getElementById('fLat').value=d.center_lat;
     document.getElementById('fLon').value=d.center_lon;
     document.getElementById('fRad').value=d.radius_km;
+    document.getElementById('fMyRange').value=d.radius_km;
 }
 
 async function saveAdmin() {
