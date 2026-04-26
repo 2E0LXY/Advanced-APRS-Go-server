@@ -615,41 +615,118 @@
   </div><!-- end panels -->
 </div><!-- end main -->
 
+<!-- Footer -->
+<div class="flex-none bg-gray-900 border-t border-gray-800 px-4 py-1.5 flex items-center justify-between text-xs text-gray-600">
+  <span>Advanced APRS Go Server &nbsp;·&nbsp;
+    <a href="https://github.com/2E0LXY/Advanced-APRS-Go-server" target="_blank" class="hover:text-gray-400 transition-colors">GitHub ↗</a>
+    &nbsp;·&nbsp;
+    <a href="https://github.com/2E0LXY/Advanced-APRS-Go-server/blob/main/LICENCE" target="_blank" class="hover:text-gray-400 transition-colors">MIT Licence ↗</a>
+  </span>
+  <span id="footer-version" class="font-mono"></span>
+</div>
+
+
+<!-- Station Popup Modal -->
+<div id="station-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" onclick="if(event.target===this)closeStationModal()">
+  <div class="bg-gray-800 border border-gray-600 rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
+    <div class="flex items-center justify-between p-4 border-b border-gray-700">
+      <div class="flex items-center space-x-3">
+        <div id="modal-icon" class="w-8 h-8"></div>
+        <div>
+          <h2 id="modal-call" class="text-lg font-bold text-blue-400"></h2>
+          <p id="modal-symbol-label" class="text-xs text-gray-400"></p>
+        </div>
+      </div>
+      <div class="flex items-center space-x-2">
+        <a id="modal-qrz" href="#" target="_blank" class="text-xs bg-blue-900 hover:bg-blue-800 px-2 py-1 rounded text-blue-300">QRZ ↗</a>
+        <a id="modal-aprsfi" href="#" target="_blank" class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-gray-300">aprs.fi ↗</a>
+        <button id="modal-msg-btn" onclick="openMsgFromModal()" class="text-xs bg-green-800 hover:bg-green-700 px-2 py-1 rounded text-green-300">✉ Message</button>
+        <button onclick="closeStationModal()" class="text-gray-400 hover:text-white text-xl leading-none ml-2">✕</button>
+      </div>
+    </div>
+    <div class="overflow-y-auto flex-1 p-4 space-y-3 text-sm">
+      <div class="grid grid-cols-2 gap-2">
+        <div class="bg-gray-700 rounded p-2"><p class="text-gray-400 text-xs mb-0.5">Position</p><p id="modal-pos" class="font-mono text-xs text-white"></p></div>
+        <div class="bg-gray-700 rounded p-2"><p class="text-gray-400 text-xs mb-0.5">Last Heard</p><p id="modal-time" class="text-xs text-white"></p></div>
+        <div class="bg-gray-700 rounded p-2"><p class="text-gray-400 text-xs mb-0.5">Path</p><p id="modal-path" class="font-mono text-xs text-white break-all"></p></div>
+        <div class="bg-gray-700 rounded p-2"><p class="text-gray-400 text-xs mb-0.5">PHG Range</p><p id="modal-phg" class="font-mono text-xs text-white"></p></div>
+      </div>
+      <div id="modal-comment-row" class="bg-gray-700 rounded p-2 hidden"><p class="text-gray-400 text-xs mb-0.5">Comment / Status</p><p id="modal-comment" class="text-xs text-white"></p></div>
+      <div id="modal-weather-row" class="bg-blue-900/30 border border-blue-800 rounded p-2 hidden"><p class="text-blue-300 text-xs font-bold mb-1">Weather Data</p><p id="modal-weather" class="text-xs text-gray-200 font-mono whitespace-pre"></p></div>
+      <div><p class="text-gray-500 text-xs mb-1">Raw Packet</p><code id="modal-raw" class="block bg-gray-900 text-green-400 text-xs font-mono p-2 rounded border border-gray-700 break-all whitespace-pre-wrap"></code></div>
+      <div id="modal-history" class="hidden"><p class="text-gray-500 text-xs mb-1">Position History (<span id="modal-hist-count"></span> points)</p><div id="modal-hist-list" class="bg-gray-900 rounded p-2 text-xs font-mono text-gray-400 max-h-28 overflow-y-auto space-y-0.5"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Message Auth Modal -->
+<div id="msg-auth-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" onclick="if(event.target===this)closeMsgAuthModal()">
+  <div class="bg-gray-800 border border-gray-600 rounded-xl shadow-2xl w-full max-w-sm p-6">
+    <div class="flex justify-between mb-4"><h2 class="font-bold text-green-400">✉ Send APRS Message</h2><button onclick="closeMsgAuthModal()" class="text-gray-400 hover:text-white text-xl">✕</button></div>
+    <p class="text-xs text-gray-400 mb-4">Enter your callsign and APRS-IS passcode to send a message to <strong id="msg-target-display" class="text-white"></strong></p>
+    <div id="msg-auth-err" class="hidden text-red-400 text-xs bg-red-900/30 border border-red-800 rounded p-2 mb-3"></div>
+    <div class="space-y-2 mb-4">
+      <input type="text" id="msg-auth-call" placeholder="Your callsign (e.g. 2E0LXY)" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none text-sm uppercase">
+      <input type="password" id="msg-auth-pass" placeholder="APRS-IS passcode" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none text-sm">
+      <textarea id="msg-auth-text" placeholder="Message text..." rows="3" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none text-sm resize-none"></textarea>
+    </div>
+    <div class="flex space-x-2">
+      <button onclick="sendMsgFromModal()" class="flex-1 bg-green-700 hover:bg-green-600 text-white py-2 rounded font-bold text-sm">Send Message</button>
+      <button onclick="closeMsgAuthModal()" class="px-4 bg-gray-600 hover:bg-gray-500 rounded text-sm">Cancel</button>
+    </div>
+  </div>
+</div>
 
 <script>
-// ─── APRS Symbol Table ────────────────────────────────────────────────────────
-// Maps symbol table+code to a human label and CSS colour for the div icon.
-// Full sprite-based icons would need the aprs.fi sprite; we use colour-coded
-// div icons with single-character glyphs that match APRS conventions.
-const APRS_SYMBOLS = {
-  '/-': {label:'House', color:'#3b82f6', glyph:'🏠'},
-  '/[': {label:'Human', color:'#8b5cf6', glyph:'🚶'},
-  '/k': {label:'Truck', color:'#f59e0b', glyph:'🚚'},
-  '/^': {label:'Aircraft', color:'#06b6d4', glyph:'✈'},
-  '/>': {label:'Car', color:'#10b981', glyph:'🚗'},
-  '/b': {label:'Bicycle', color:'#10b981', glyph:'🚲'},
-  '/s': {label:'Ship', color:'#0ea5e9', glyph:'⛵'},
-  '/v': {label:'Van', color:'#f59e0b', glyph:'🚐'},
-  '/u': {label:'Bus', color:'#f59e0b', glyph:'🚌'},
-  '/f': {label:'Fire', color:'#ef4444', glyph:'🔥'},
-  '/P': {label:'Police', color:'#1d4ed8', glyph:'🚔'},
-  '/a': {label:'Ambulance', color:'#ef4444', glyph:'🚑'},
-  '/g': {label:'Glider', color:'#a3e635', glyph:'🛩'},
-  '/y': {label:'Yacht', color:'#0ea5e9', glyph:'⛵'},
-  '/j': {label:'Jeep', color:'#84cc16', glyph:'🚙'},
-  '/r': {label:'Antenna', color:'#6366f1', glyph:'📡'},
-  '/R': {label:'Repeater', color:'#6366f1', glyph:'📻'},
-  '/W': {label:'Weather', color:'#38bdf8', glyph:'🌡'},
-  '/_': {label:'WX Station', color:'#38bdf8', glyph:'🌦'},
-  '/0': {label:'Circle', color:'#94a3b8', glyph:'●'},
-  '\\-': {label:'House', color:'#3b82f6', glyph:'🏠'},
-  '\\^': {label:'Aircraft', color:'#06b6d4', glyph:'✈'},
-  '\\/': {label:'Dot', color:'#94a3b8', glyph:'●'},
+// ─── APRS Symbol Rendering ───────────────────────────────────────────────────
+// Uses the official aprs.fi symbols sprite sheet (same as aprs.fi map)
+// Primary table: symbol char is offset into a 16-col sprite grid
+// Alternate table: uses the alt sprite sheet
+
+const SYMBOL_LABELS = {
+  '!':'Police','"':'No symbol','"':'Reserved','#':'Digi','$':'Phone',
+  '%':'DX Cluster','&':'Gateway','\'':'Small Aircraft','(':'Cloudy',
+  ')':'Firenet MEO','*':'Snowflake','+':'Church',',':'Girl Scout',
+  '-':'House QTH','.':'X','/':'Dot','0':'TNC','1':'T1','2':'T2',
+  '3':'T3','4':'T4','5':'T5','6':'T6','7':'T7','8':'T8','9':'T9',
+  ':':'Fire','<':'Motorcycle','=':'Railroad Engine','>':'Car','?':'File Server',
+  '@':'Hurricane','A':'Aid Station','B':'BBS','C':'Canoe','D':'n/a',
+  'E':'Eyeball','F':'Farm Vehicle','G':'Grid Square','H':'Hotel',
+  'I':'TCP/IP','J':'n/a','K':'School','L':'PC User','M':'Mac',
+  'N':'NTS Net','O':'Balloon','P':'Police','Q':'TBD','R':'RV',
+  'S':'Space Shuttle','T':'SSTV','U':'Bus','V':'ATV','W':'NWS Site',
+  'X':'Helicopter','Y':'Yacht','Z':'WinAPRS','[':'Jogger','\\':'TNC',
+  ']':'Jeep','^':'Aircraft','_':'Weather Station','`':'Dish Antenna',
+  'a':'Ambulance','b':'Bike','c':'IRLP/Echolink','d':'Fire Dept',
+  'e':'Horse','f':'Fire Truck','g':'Glider','h':'Hospital',
+  'i':'IOTA','j':'Jeep','k':'Truck','l':'Area Locations',
+  'm':'Mic-E','n':'Node','o':'EOC','p':'Rover',
+  'q':'Grid Square','r':'Antenna','s':'Power Boat','t':'Truck Stop',
+  'u':'Truck','v':'Van','w':'Water Station','x':'xAPRS',
+  'y':'Yagi','z':'Shelter','{':'n/a','|':'T-storm','}':'n/a','~':'Rain'
 };
 
+// Get sprite position for a symbol character in the 16x12 sprite grid
+function getSymbolSprite(table, code) {
+  // APRS symbol sprite: 16 columns, chars start at ASCII 33 (!)
+  const idx = code.charCodeAt(0) - 33;
+  if (idx < 0 || idx > 93) return null;
+  const col = idx % 16;
+  const row = Math.floor(idx / 16);
+  const px = col * 24;
+  const py = row * 24;
+  // aprs.fi provides two sprite sheets
+  const sheet = (table === '/') 
+    ? 'https://aprs.fi/img/symbols-new.png'
+    : 'https://aprs.fi/img/symbols-new2.png';
+  return { sheet, px, py };
+}
+
 function getSymbolInfo(sym) {
-  if (!sym || sym.length < 2) return {label:'APRS', color:'#6b7280', glyph:'●'};
-  return APRS_SYMBOLS[sym] || {label:'APRS', color:'#6b7280', glyph:'●'};
+  if (!sym || sym.length < 2) return { label:'APRS', code:'●', color:'#6b7280' };
+  const table = sym[0], code = sym[1];
+  const label = SYMBOL_LABELS[code] || 'APRS';
+  return { label, table, code, color:'#6b7280' };
 }
 
 // ─── Map Init ────────────────────────────────────────────────────────────────
@@ -674,11 +751,17 @@ function changeMapStyle() {
 
 function toggleOverlay(type) {
   if (type==='grid') {
-    if (document.getElementById('layer-grid').checked) { gridLayer = L.maidenhead().addTo(map); }
-    else if (gridLayer) { map.removeLayer(gridLayer); gridLayer=null; }
-  } else {
-    if (document.getElementById('layer-night').checked) { nightLayer = L.terminator().addTo(map); }
-    else if (nightLayer) { map.removeLayer(nightLayer); nightLayer=null; }
+    const on = document.getElementById('layer-grid').checked;
+    if (on && !gridLayer) {
+      try { gridLayer = L.maidenhead({color:'#6366f1',weight:1,opacity:0.6,fillOpacity:0}).addTo(map); }
+      catch(e) { console.warn('Maidenhead grid not available:', e); }
+    } else if (!on && gridLayer) { map.removeLayer(gridLayer); gridLayer=null; }
+  } else if (type==='night') {
+    const on = document.getElementById('layer-night').checked;
+    if (on && !nightLayer) {
+      try { nightLayer = L.terminator({fillColor:'#000',fillOpacity:0.25,color:'#666',weight:1}).addTo(map); }
+      catch(e) { console.warn('Terminator not available:', e); }
+    } else if (!on && nightLayer) { map.removeLayer(nightLayer); nightLayer=null; }
   }
 }
 
@@ -897,8 +980,19 @@ function calcPHG(phgStr) {
 function makeIcon(st, call) {
   const si = getSymbolInfo(st.sym);
   const isMe = call===myCallsign;
-  const html = `<div style="width:22px;height:22px;background:${si.color};border-radius:50%;border:2px solid ${isMe?'#facc15':'rgba(255,255,255,0.6)'};display:flex;align-items:center;justify-content:center;font-size:11px;line-height:1;box-shadow:0 0 4px rgba(0,0,0,.5)">${si.glyph}</div>`;
-  return L.divIcon({html, className:'', iconSize:[22,22], iconAnchor:[11,11], tooltipAnchor:[11,-11]});
+  const ring = isMe ? 'outline:3px solid #facc15;outline-offset:2px;' : '';
+  let iconHtml;
+  if (st.sym && st.sym.length >= 2) {
+    const sp = getSymbolSprite(st.sym[0], st.sym[1]);
+    if (sp) {
+      iconHtml = `<div style="width:24px;height:24px;${ring}border-radius:2px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.6);image-rendering:pixelated">` +
+        `<div style="width:24px;height:24px;background:url('${sp.sheet}') -${sp.px}px -${sp.py}px;background-size:384px 288px"></div></div>`;
+    }
+  }
+  if (!iconHtml) {
+    iconHtml = `<div style="width:22px;height:22px;background:#4b5563;border-radius:50%;border:2px solid rgba(255,255,255,0.5);${ring}display:flex;align-items:center;justify-content:center;font-size:10px;color:white">?</div>`;
+  }
+  return L.divIcon({html:iconHtml, className:'', iconSize:[24,24], iconAnchor:[12,12], tooltipAnchor:[12,-12]});
 }
 
 function redrawMap() {
@@ -932,16 +1026,18 @@ function redrawMap() {
     const lls = st.positions.map(p=>[p.lat,p.lon]);
     const icon = makeIcon(st, call);
     const si = getSymbolInfo(st.sym);
-    const tip = `<b><a href="https://qrz.com/db/${call}" target="_blank" style="color:#60a5fa;text-decoration:underline">${call}</a></b><br><span style="color:#94a3b8;font-size:10px">${si.label} · ${st.path||''}</span>`;
+    const tip = `<b style="color:#60a5fa">${call}</b> <span style="color:#94a3b8;font-size:10px">${si.label}</span>`;
     if (!st.marker) {
       st.marker = L.marker([latest.lat,latest.lon],{icon})
-        .bindTooltip(tip,{direction:'top',offset:[0,-11],permanent:false})
+        .bindTooltip(tip,{direction:'top',offset:[0,-12],permanent:false})
         .addTo(map);
-      st.marker.on('click',()=>window.open('https://qrz.com/db/'+call,'_blank'));
+      st.marker.on('click',()=>showStationPopup(call, st, latest));
     } else {
       st.marker.setLatLng([latest.lat,latest.lon]);
       st.marker.setIcon(icon);
       st.marker.setTooltipContent(tip);
+      st.marker.off('click');
+      st.marker.on('click',()=>showStationPopup(call, st, latest));
     }
     const trailColor = st.type==='cwop'?'#10b981':st.type==='ogn'?'#f59e0b':'#3b82f6';
     if (!st.polyline) st.polyline=L.polyline(lls,{color:trailColor,weight:2,opacity:0.5}).addTo(map);
@@ -1213,6 +1309,8 @@ async function checkForUpdates() {
 
     const badge = document.getElementById('version-badge');
     if (badge) badge.innerText = 'v' + _runningVersion;
+    const fv = document.getElementById('footer-version');
+    if (fv) fv.innerText = 'v' + _runningVersion;
 
     const ghRes = await fetch('https://api.github.com/repos/2E0LXY/Advanced-APRS-Go-server/releases/latest');
     if (!ghRes.ok) return;
@@ -1302,6 +1400,93 @@ async function doUpdate() {
     btn.innerText = '✓ Restarting — reconnecting in 8s...';
     setTimeout(() => location.reload(), 8000);
   }
+}
+
+
+// --- Station Popup ---
+let _modalTarget = null;
+function parseAPRSWX(raw) {
+  if (!raw) return null;
+  const c = raw.indexOf(':'); if (c<0) return null;
+  const pay = raw.slice(c+1); const wx = {};
+  const tm=pay.match(/t([-+]?\d{1,3})/); if(tm) wx.Temp=Math.round((+tm[1]-32)*5/9)+'C';
+  const rm=pay.match(/r(\d{1,4})/); if(rm) wx['Rain1h']=(+rm[1]*.254).toFixed(1)+'mm';
+  const hm=pay.match(/h(\d{2})/); if(hm) wx.Humidity=+hm[1]+'%';
+  const bm=pay.match(/b(\d{5})/); if(bm) wx.Pressure=(+bm[1]/10).toFixed(1)+'hPa';
+  const wdm=pay.match(/c(\d{3})/); if(wdm) wx.WindDir=wdm[1]+'deg';
+  const wsm=pay.match(/s(\d{1,3})/); if(wsm) wx.WindSpd=Math.round(+wsm[1]*1.609)+'km/h';
+  return Object.keys(wx).length ? wx : null;
+}
+function parseComment(raw) {
+  if (!raw) return '';
+  const c=raw.indexOf(':'); if(c<0) return '';
+  const pay=raw.slice(c+1);
+  const m=pay.match(/[NS].[EW].(.+)$/); return m ? m[1].trim() : '';
+}
+function showStationPopup(call, st, latest) {
+  _modalTarget=call;
+  const si=getSymbolInfo(st.sym);
+  const iconEl=document.getElementById('modal-icon');
+  if (st.sym&&st.sym.length>=2) {
+    const sp=getSymbolSprite(st.sym[0],st.sym[1]);
+    iconEl.innerHTML = sp
+      ? '<div style="width:32px;height:32px;background:url('+sp.sheet+') -'+sp.px+'px -'+sp.py+'px;background-size:384px 288px;image-rendering:pixelated"></div>'
+      : '<div style="font-size:20px">?</div>';
+  }
+  document.getElementById('modal-call').innerText=call;
+  document.getElementById('modal-symbol-label').innerText=si.label+(st.sym?' ('+st.sym+')':'');
+  document.getElementById('modal-qrz').href='https://qrz.com/db/'+call;
+  document.getElementById('modal-aprsfi').href='https://aprs.fi/#!call='+call;
+  document.getElementById('modal-pos').innerText=latest.lat.toFixed(5)+', '+latest.lon.toFixed(5);
+  const ago=Math.floor(Date.now()/1000)-st.lastHeard;
+  document.getElementById('modal-time').innerText=new Date(st.lastHeard*1000).toLocaleString()+' ('+(ago<60?ago+'s':ago<3600?Math.floor(ago/60)+'m':Math.floor(ago/3600)+'h')+' ago)';
+  document.getElementById('modal-path').innerText=st.path||'n/a';
+  const phgEl=document.getElementById('modal-phg');
+  phgEl.innerText=st.phg ? st.phg+' ~ '+(calcPHG(st.phg)/1000).toFixed(1)+'km' : 'n/a';
+  const cr=document.getElementById('modal-comment-row');
+  const cm=parseComment(st.raw);
+  if (cm) { document.getElementById('modal-comment').innerText=cm; cr.classList.remove('hidden'); }
+  else cr.classList.add('hidden');
+  const wxr=document.getElementById('modal-weather-row');
+  const wx=parseAPRSWX(st.raw);
+  if (wx) { document.getElementById('modal-weather').innerText=Object.entries(wx).map(([k,v])=>k+': '+v).join('  |  '); wxr.classList.remove('hidden'); }
+  else wxr.classList.add('hidden');
+  document.getElementById('modal-raw').innerText=st.raw||'n/a';
+  const histEl=document.getElementById('modal-history');
+  if (st.positions.length>1) {
+    document.getElementById('modal-hist-count').innerText=st.positions.length;
+    document.getElementById('modal-hist-list').innerHTML=st.positions.slice().reverse().map(p=>'<div>'+new Date(p.ts*1000).toLocaleTimeString()+' - '+p.lat.toFixed(5)+', '+p.lon.toFixed(5)+'</div>').join('');
+    histEl.classList.remove('hidden');
+  } else histEl.classList.add('hidden');
+  document.getElementById('msg-auth-text').value='';
+  document.getElementById('msg-auth-err').classList.add('hidden');
+  document.getElementById('station-modal').classList.remove('hidden');
+}
+function closeStationModal() { document.getElementById('station-modal').classList.add('hidden'); _modalTarget=null; }
+function openMsgFromModal() {
+  if (!_modalTarget) return;
+  document.getElementById('msg-target-display').innerText=_modalTarget;
+  if (myCallsign) document.getElementById('msg-auth-call').value=myCallsign;
+  document.getElementById('msg-auth-modal').classList.remove('hidden');
+}
+function closeMsgAuthModal() { document.getElementById('msg-auth-modal').classList.add('hidden'); }
+async function sendMsgFromModal() {
+  const call=document.getElementById('msg-auth-call').value.trim().toUpperCase();
+  const pass=document.getElementById('msg-auth-pass').value.trim();
+  const text=document.getElementById('msg-auth-text').value.trim();
+  const err=document.getElementById('msg-auth-err');
+  if (!call||!pass||!text) { err.innerText='Fill in all fields'; err.classList.remove('hidden'); return; }
+  if (!myCallsign) {
+    myCallsign=call; ws.send(JSON.stringify({type:'auth',callsign:call,passcode:pass,software:'WebNOC 2.0'}));
+    await new Promise(r=>setTimeout(r,900));
+    if (!myCallsign) { err.innerText='Auth failed'; err.classList.remove('hidden'); myCallsign=''; return; }
+  }
+  ws.send(JSON.stringify({type:'tx',packet:myCallsign+'>APRS,TCPIP*::'+_modalTarget.padEnd(9,' ')+':'+text+'{'+String(msgCounter).padStart(2,'0')}));
+  msgCounter=(msgCounter%99)+1;
+  err.className='text-green-400 text-xs bg-green-900/30 border border-green-800 rounded p-2 mb-3';
+  err.innerText='Sent to '+_modalTarget+'!'; err.classList.remove('hidden');
+  document.getElementById('msg-auth-text').value='';
+  setTimeout(()=>{ err.classList.add('hidden'); closeMsgAuthModal(); },2000);
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
