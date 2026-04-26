@@ -2,8 +2,10 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"fmt"
 	"log"
 	"math"
@@ -150,6 +152,7 @@ func main() {
 	http.HandleFunc("/api/password", basicAuth(handlePassword))
 	http.HandleFunc("/api/whoami", basicAuth(handleWhoami))
 	http.HandleFunc("/api/version", handleVersion)
+	http.HandleFunc("/api/update", basicAuth(handleUpdate))
 
 	log.Printf("Advanced APRS Gateway active on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
@@ -873,6 +876,78 @@ func handleWhoami(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"ok":true,"user":"` + user + `"}`))
 }
 
+
+
+// handleUpdate performs a live update: git pull, go build, systemctl restart.
+// Streams log lines as newline-delimited JSON so the browser can show progress.
+// Protected by basicAuth.
+func handleUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+	flusher, canFlush := w.(http.Flusher)
+
+	send := func(msg, status string) {
+		fmt.Fprintf(w, "data: %s\n\n", mustJSON(map[string]string{"msg": msg, "status": status}))
+		if canFlush {
+			flusher.Flush()
+		}
+		log.Printf("[update] %s", msg)
+	}
+
+	appDir := "/opt/aprs-gateway"
+	gobin := "/usr/local/go/bin/go"
+
+	send("Starting update...", "running")
+
+	// Step 1: git pull
+	send("Running git pull...", "running")
+	out, err := runCmd(appDir, "git", "pull", "origin", "main")
+	if err != nil {
+		send("git pull failed: "+out, "error")
+		return
+	}
+	send("git pull: "+strings.TrimSpace(out), "running")
+
+	// Step 2: go build
+	send("Building binary (this takes ~30s)...", "running")
+	out, err = runCmd(appDir, gobin, "build", "-o", "aprs_server", "aprs_server.go")
+	if err != nil {
+		send("Build failed: "+out, "error")
+		return
+	}
+	send("Build successful", "running")
+
+	// Step 3: systemctl restart (runs async — connection will drop)
+	send("Restarting service... reconnect in 5 seconds", "restarting")
+	if canFlush {
+		flusher.Flush()
+	}
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		exec.Command("systemctl", "restart", "aprs").Run()
+	}()
+}
+
+func runCmd(dir string, name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	err := cmd.Run()
+	return buf.String(), err
+}
+
+func mustJSON(v interface{}) string {
+	b, _ := json.Marshal(v)
+	return string(b)
+}
 
 // ─── Server config persistence ───────────────────────────────────────────────
 

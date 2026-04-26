@@ -476,6 +476,23 @@
           <p id="pass-msg" class="text-xs mt-2 hidden"></p>
         </div>
 
+        <!-- Software Update -->
+        <div id="update-section" class="bg-gray-800 p-4 rounded border border-gray-700 hidden">
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <h3 class="text-sm font-bold text-yellow-400 uppercase">⬆ Software Update Available</h3>
+              <p id="update-version-text" class="text-xs text-gray-400 mt-0.5"></p>
+            </div>
+            <span id="update-current-badge" class="text-xs font-mono text-gray-500"></span>
+          </div>
+          <div id="update-log" class="hidden bg-gray-900 rounded border border-gray-700 p-3 mb-3 font-mono text-xs text-green-400 max-h-48 overflow-y-auto space-y-1"></div>
+          <button id="update-btn-admin" onclick="doUpdate()"
+            class="w-full bg-yellow-600 hover:bg-yellow-500 text-white py-2.5 rounded font-bold text-sm uppercase tracking-wider transition-colors animate-pulse">
+            ⬆ Install Update Now
+          </button>
+          <p class="text-xs text-gray-600 mt-2">Downloads latest release, rebuilds binary and restarts service (~30s). Page will reconnect automatically.</p>
+        </div>
+
         <button onclick="saveAdmin()" class="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded font-bold w-full uppercase tracking-widest text-sm active:scale-95 transition-all">
           ⚡ Hot Reload Config
         </button>
@@ -560,7 +577,7 @@ function togglePanel(panel) {
   clearInterval(statusInterval);
   if (panel==='map') map.invalidateSize();
   if (panel==='search') renderList();
-  if (panel==='admin') loadAdmin();
+  if (panel==='admin') { loadAdmin(); if (_latestVersion && _latestVersion !== _runningVersion) showUpdateBanner(); }
   if (panel==='status') { loadStatus(); statusInterval = setInterval(loadStatus, 5000); }
 }
 
@@ -1073,32 +1090,106 @@ function autoPasscode(val) {
 
 
 // ─── Update checker ───────────────────────────────────────────────────────────
+let _latestVersion = null;
+let _runningVersion = null;
+
 async function checkForUpdates() {
   try {
-    // Get running version from our own server
     const vRes = await fetch('/api/version');
     const vData = await vRes.json();
-    const running = vData.version || '0.0.0';
+    _runningVersion = vData.version || '0.0.0';
 
-    // Show version in status panel
     const badge = document.getElementById('version-badge');
-    if (badge) badge.innerText = 'v' + running;
+    if (badge) badge.innerText = 'v' + _runningVersion;
 
-    // Compare against latest GitHub release tag
     const ghRes = await fetch('https://api.github.com/repos/2E0LXY/Advanced-APRS-Go-server/releases/latest');
     if (!ghRes.ok) return;
     const ghData = await ghRes.json();
-    const latest = (ghData.tag_name || '').replace(/^v/, '');
+    _latestVersion = (ghData.tag_name || '').replace(/^v/, '');
 
-    if (latest && latest !== running) {
+    if (_latestVersion && _latestVersion !== _runningVersion) {
+      // Header button
       const btn = document.getElementById('update-btn');
-      btn.title = 'Update available: v' + latest + ' (running v' + running + ') — click to view release';
-      btn.classList.remove('hidden');
-      // Also update status badge
+      if (btn) {
+        btn.title = 'Update available: v' + _latestVersion + ' (running v' + _runningVersion + ')';
+        btn.classList.remove('hidden');
+        btn.onclick = () => { togglePanel('admin'); };
+      }
+      // Status badge
       if (badge) badge.innerHTML =
-        'v' + running + ' <span class="text-yellow-400 font-bold">→ v' + latest + ' available</span>';
+        'v' + _runningVersion + ' <span class="text-yellow-400 font-bold">→ v' + _latestVersion + ' available</span>';
+      // Admin section (shown when admin panel is open)
+      showUpdateBanner();
     }
-  } catch(e) { /* silent — update check is non-critical */ }
+  } catch(e) { /* silent */ }
+}
+
+function showUpdateBanner() {
+  const sec = document.getElementById('update-section');
+  if (!sec || !_latestVersion) return;
+  sec.classList.remove('hidden');
+  const vt = document.getElementById('update-version-text');
+  if (vt) vt.innerText = 'v' + _latestVersion + ' is available (running v' + (_runningVersion||'?') + ')';
+  const cb = document.getElementById('update-current-badge');
+  if (cb) cb.innerText = 'current: v' + (_runningVersion||'?');
+}
+
+async function doUpdate() {
+  const btn = document.getElementById('update-btn-admin');
+  const log = document.getElementById('update-log');
+  btn.disabled = true;
+  btn.classList.remove('animate-pulse');
+  btn.innerText = '⏳ Updating...';
+  log.classList.remove('hidden');
+  log.innerHTML = '';
+
+  const addLine = (msg, status) => {
+    const el = document.createElement('div');
+    el.className = status === 'error' ? 'text-red-400' : status === 'restarting' ? 'text-yellow-400' : 'text-green-400';
+    el.innerText = '> ' + msg;
+    log.appendChild(el);
+    log.scrollTop = log.scrollHeight;
+  };
+
+  const h = getAuthHeaders();
+  if (!h) { doAdminLogout(); return; }
+
+  try {
+    const res = await fetch('/api/update', { method: 'POST', headers: h });
+    if (res.status === 401) { doAdminLogout(); return; }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const d = JSON.parse(line.slice(6));
+          addLine(d.msg, d.status);
+          if (d.status === 'restarting') {
+            btn.innerText = '✓ Restarting — reconnecting in 8s...';
+            setTimeout(() => location.reload(), 8000);
+          }
+          if (d.status === 'error') {
+            btn.disabled = false;
+            btn.innerText = '⬆ Retry Update';
+            btn.classList.add('animate-pulse');
+          }
+        } catch(e) {}
+      }
+    }
+  } catch(e) {
+    addLine('Connection lost — service is restarting', 'restarting');
+    btn.innerText = '✓ Restarting — reconnecting in 8s...';
+    setTimeout(() => location.reload(), 8000);
+  }
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
