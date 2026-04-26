@@ -322,6 +322,13 @@ func connectUpstream() {
 				metrics.PktsDropped++
 				metrics.Unlock()
 			}
+			// Log every 50th packet so we can confirm flow without spamming
+			if metrics.PktsRx%50 == 0 {
+				tcpClientsMu.Lock()
+				n := len(tcpClients)
+				tcpClientsMu.Unlock()
+				log.Printf("RX %d packets upstream, %d TCP clients connected", metrics.PktsRx, n)
+			}
 		}
 	}()
 
@@ -708,12 +715,16 @@ func broadcastToTCPClients(packet string) {
 	tcpClientsMu.Lock()
 	defer tcpClientsMu.Unlock()
 	for c := range tcpClients {
-		if !c.verified && c.callsign == "" {
-			continue // not logged in yet
+		// Send to any client that has completed login (verified or read-only)
+		if c.callsign == "" {
+			continue // not logged in yet — skip
 		}
 		c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-		fmt.Fprint(c.conn, line)
+		_, err := fmt.Fprint(c.conn, line)
 		c.conn.SetWriteDeadline(time.Time{})
+		if err != nil {
+			log.Printf("TCP client write error for %s: %v", c.callsign, err)
+		}
 	}
 }
 
