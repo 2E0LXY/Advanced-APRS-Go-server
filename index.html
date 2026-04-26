@@ -24,6 +24,9 @@
         .sym-cwop { background-color: #10b981; }
         .sym-ogn { background-color: #f59e0b; }
         .my-station { background-color: #ef4444; border-color: yellow; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
     </style>
 </head>
 <body class="bg-gray-900 h-screen flex flex-col text-white font-sans overflow-hidden">
@@ -43,7 +46,7 @@
         </div>
     </div>
 
-    <div class="flex-1 relative flex">
+    <div class="flex-1 relative flex overflow-hidden">
         <div id="controls-sidebar" class="w-72 bg-gray-800 border-r border-gray-700 p-4 flex flex-col space-y-5 overflow-y-auto z-20">
             <div>
                 <h3 class="text-xs uppercase text-gray-400 font-bold mb-2">Map Layers</h3>
@@ -104,8 +107,8 @@
             </div>
 
             <div class="mt-auto pt-4 border-t border-gray-700">
-                <button onclick="centerOnUser()" class="w-full py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-bold mb-2">Track My Location</button>
-                <button onclick="loadHistory()" class="w-full py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-bold">Refresh Data Sync</button>
+                <button onclick="centerOnUser()" class="w-full py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-bold mb-2 text-gray-200">Track My Location</button>
+                <button onclick="loadHistory()" class="w-full py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-bold text-white">Refresh Data Sync</button>
             </div>
         </div>
 
@@ -116,7 +119,7 @@
 
             <div id="search-panel" class="absolute inset-0 z-20 bg-gray-900 hidden p-6 overflow-y-auto">
                 <h2 class="text-xl font-bold mb-4">Latest Heard Stations</h2>
-                <input type="text" id="search-box" placeholder="Filter by callsign..." class="w-full max-w-md bg-gray-700 p-2 rounded mb-4 uppercase" onkeyup="renderList()">
+                <input type="text" id="search-box" placeholder="Filter by callsign..." class="w-full max-w-md bg-gray-700 p-2 rounded mb-4 uppercase text-white outline-none border border-gray-600" onkeyup="renderList()">
                 <div class="bg-gray-800 rounded border border-gray-700">
                     <table class="w-full text-left text-sm">
                         <thead class="bg-gray-700 text-gray-300">
@@ -133,34 +136,34 @@
                 </div>
             </div>
 
-            <div id="messages-panel" class="absolute inset-0 z-20 bg-gray-900 hidden flex flex-col p-6">
+            <div id="messages-panel" class="absolute inset-0 z-20 bg-gray-900 hidden flex flex-col p-6 overflow-hidden">
                 <div class="flex space-x-6 h-full">
                     <div class="w-1/3 flex flex-col space-y-4">
                         <div id="auth-section" class="bg-gray-800 p-4 rounded border border-gray-700">
-                            <h2 class="font-bold mb-3 text-blue-400">APRS-IS Authentication</h2>
-                            <p class="text-xs text-gray-400 mb-4">You must connect using a valid callsign and generated APRS passcode.</p>
-                            <input type="text" id="myCall" placeholder="Callsign" class="w-full bg-gray-700 p-2 rounded mb-2 uppercase text-sm">
-                            <input type="password" id="myPass" placeholder="Passcode" class="w-full bg-gray-700 p-2 rounded mb-3 text-sm">
+                            <h2 class="font-bold mb-3 text-blue-400 uppercase text-xs tracking-wider">APRS-IS Authentication</h2>
+                            <p class="text-xs text-gray-400 mb-4">Connect to global network via your callsign.</p>
+                            <input type="text" id="myCall" placeholder="Callsign" class="w-full bg-gray-700 p-2 rounded mb-2 uppercase text-sm outline-none border border-gray-600">
+                            <input type="password" id="myPass" placeholder="Passcode" class="w-full bg-gray-700 p-2 rounded mb-3 text-sm outline-none border border-gray-600">
                             <button onclick="sendAuth()" class="w-full bg-blue-600 hover:bg-blue-500 p-2 rounded text-sm font-bold">Login to Network</button>
                         </div>
                         
                         <div id="logged-in-section" class="bg-gray-800 p-4 rounded border border-green-700 hidden">
-                            <h2 class="font-bold mb-3 text-green-400">Authenticated Client</h2>
+                            <h2 class="font-bold mb-3 text-green-400 uppercase text-xs tracking-wider">Authenticated Client</h2>
                             <p class="text-sm mb-3 text-gray-300">Operating as: <span id="active-call" class="font-bold text-white text-lg"></span></p>
                             <button onclick="doLogout()" class="w-full bg-red-600 hover:bg-red-500 p-2 rounded text-sm font-bold">Disconnect</button>
                         </div>
 
                         <div id="compose-section" class="bg-gray-800 p-4 rounded border border-gray-700 flex-1 flex flex-col opacity-50 pointer-events-none">
-                            <h2 class="font-bold mb-3">Compose Traffic</h2>
-                            <input type="text" id="destCall" disabled placeholder="To Callsign" class="w-full bg-gray-700 p-2 rounded mb-2 uppercase text-sm disabled:bg-gray-800">
-                            <textarea id="msgText" disabled placeholder="Type message..." class="w-full bg-gray-700 p-2 rounded mb-3 text-sm flex-1 resize-none disabled:bg-gray-800"></textarea>
-                            <button onclick="sendMsg()" disabled class="w-full bg-green-600 hover:bg-green-500 p-2 rounded text-sm font-bold disabled:bg-gray-600">Send Message</button>
+                            <h2 class="font-bold mb-3 uppercase text-xs tracking-wider">Compose Traffic</h2>
+                            <input type="text" id="destCall" disabled placeholder="To Callsign" class="w-full bg-gray-700 p-2 rounded mb-2 uppercase text-sm outline-none border border-gray-600">
+                            <textarea id="msgText" disabled placeholder="Type message..." class="w-full bg-gray-700 p-2 rounded mb-3 text-sm flex-1 resize-none outline-none border border-gray-600"></textarea>
+                            <button onclick="sendMsg()" disabled class="w-full bg-green-600 hover:bg-green-500 p-2 rounded text-sm font-bold">Send Message</button>
                         </div>
                     </div>
                     
-                    <div class="flex-1 bg-gray-800 rounded border border-gray-700 flex flex-col">
-                        <div class="p-3 bg-gray-700 border-b border-gray-600 font-bold">Local Traffic Log</div>
-                        <div id="chat-log" class="flex-1 p-4 overflow-y-auto font-mono text-sm space-y-1"></div>
+                    <div class="flex-1 bg-gray-800 rounded border border-gray-700 flex flex-col overflow-hidden">
+                        <div class="p-3 bg-gray-700 border-b border-gray-600 font-bold text-xs uppercase tracking-widest text-gray-300">Local Traffic Log</div>
+                        <div id="chat-log" class="flex-1 p-4 overflow-y-auto font-mono text-xs space-y-2"></div>
                     </div>
                 </div>
             </div>
@@ -169,28 +172,28 @@
                 <div class="max-w-4xl mx-auto space-y-6">
                     <h2 class="text-2xl font-bold text-blue-400">Server Health & Metrics</h2>
                     <div class="grid grid-cols-4 gap-4">
-                        <div class="bg-gray-800 p-4 rounded border border-gray-700">
-                            <p class="text-gray-400 text-xs uppercase font-bold">Uptime</p>
-                            <p id="stat-uptime" class="text-xl font-mono">0s</p>
+                        <div class="bg-gray-800 p-4 rounded border border-gray-700 shadow-inner">
+                            <p class="text-gray-400 text-xs uppercase font-bold mb-1">Uptime</p>
+                            <p id="stat-uptime" class="text-xl font-mono text-white">0s</p>
                         </div>
-                        <div class="bg-gray-800 p-4 rounded border border-gray-700">
-                            <p class="text-gray-400 text-xs uppercase font-bold">Packets RX / TX</p>
+                        <div class="bg-gray-800 p-4 rounded border border-gray-700 shadow-inner">
+                            <p class="text-gray-400 text-xs uppercase font-bold mb-1">Packets RX / TX</p>
                             <p id="stat-pkts" class="text-xl font-mono text-green-400">0 / 0</p>
                         </div>
-                        <div class="bg-gray-800 p-4 rounded border border-gray-700">
-                            <p class="text-gray-400 text-xs uppercase font-bold">Bytes RX / TX</p>
+                        <div class="bg-gray-800 p-4 rounded border border-gray-700 shadow-inner">
+                            <p class="text-gray-400 text-xs uppercase font-bold mb-1">Bytes RX / TX</p>
                             <p id="stat-bytes" class="text-xl font-mono text-blue-400">0 / 0</p>
                         </div>
-                        <div class="bg-gray-800 p-4 rounded border border-gray-700">
-                            <p class="text-gray-400 text-xs uppercase font-bold">Dropped Packets</p>
+                        <div class="bg-gray-800 p-4 rounded border border-gray-700 shadow-inner">
+                            <p class="text-gray-400 text-xs uppercase font-bold mb-1">Dropped Packets</p>
                             <p id="stat-dropped" class="text-xl font-mono text-red-400">0</p>
                         </div>
                     </div>
 
                     <div class="bg-gray-800 rounded border border-gray-700">
-                        <div class="p-3 bg-gray-700 border-b border-gray-600 font-bold">Connected Clients</div>
+                        <div class="p-3 bg-gray-700 border-b border-gray-600 font-bold uppercase text-xs tracking-widest">Connected Clients</div>
                         <table class="w-full text-left text-sm">
-                            <thead class="bg-gray-800 text-gray-400">
+                            <thead class="bg-gray-800 text-gray-400 text-xs uppercase">
                                 <tr>
                                     <th class="p-3">Callsign</th>
                                     <th class="p-3">Type</th>
@@ -211,7 +214,7 @@
                     <div class="bg-gray-800 p-6 rounded border border-gray-700">
                         <h3 class="text-lg font-bold text-white mb-2">Connecting via UDP (Blind Submit)</h3>
                         <p class="text-gray-400 text-sm mb-4">Hardware trackers can fire stateless UDP packets directly to port 14580.</p>
-                        <code class="block bg-gray-900 p-3 rounded text-green-300 font-mono text-sm border border-gray-700">
+                        <code class="block bg-gray-900 p-3 rounded text-green-300 font-mono text-xs border border-gray-700 overflow-x-auto">
                             echo "M0XYZ>APRS,TCPIP*:=5342.10N/00130.50W-UDP Test" | nc -u -w1 your-server-ip 14580
                         </code>
                     </div>
@@ -219,71 +222,97 @@
             </div>
 
             <div id="admin-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-6 overflow-y-auto">
-                <div class="max-w-2xl mx-auto bg-gray-800 p-6 rounded border border-gray-700">
-                    <h2 class="text-xl font-bold mb-6 text-red-400">Core Configuration</h2>
-                    <div class="grid grid-cols-2 gap-4 mb-4 text-sm">
+                <div class="max-w-2xl mx-auto bg-gray-800 p-6 rounded-lg border border-gray-700 shadow-2xl">
+                    <h2 class="text-2xl font-bold mb-8 text-red-500 tracking-tight">Core Configuration</h2>
+                    
+                    <div class="grid grid-cols-2 gap-6 mb-6">
                         <div>
-                            <label class="block text-gray-400 mb-1">Server Identity Name</label>
-                            <input type="text" id="admName" class="w-full bg-gray-700 p-2 rounded uppercase">
+                            <label class="block text-gray-400 text-xs font-bold uppercase mb-2">Server Identity Name</label>
+                            <input type="text" id="admName" class="w-full bg-gray-700 p-3 rounded border border-gray-600 text-white outline-none focus:border-red-500 transition-colors uppercase">
                         </div>
                         <div>
-                            <label class="block text-gray-400 mb-1">Software Version String</label>
-                            <input type="text" id="admVers" class="w-full bg-gray-700 p-2 rounded">
+                            <label class="block text-gray-400 text-xs font-bold uppercase mb-2">Software Version String</label>
+                            <input type="text" id="admVers" class="w-full bg-gray-700 p-3 rounded border border-gray-600 text-white outline-none focus:border-red-500 transition-colors">
                         </div>
                     </div>
-                    <div class="grid grid-cols-2 gap-4 mb-4 text-sm">
+
+                    <div class="grid grid-cols-2 gap-6 mb-6">
                         <div>
-                            <label class="block text-gray-400 mb-1">Uplink Callsign</label>
-                            <input type="text" id="admCall" class="w-full bg-gray-700 p-2 rounded uppercase">
+                            <label class="block text-gray-400 text-xs font-bold uppercase mb-2">Uplink Callsign</label>
+                            <input type="text" id="admCall" class="w-full bg-gray-700 p-3 rounded border border-gray-600 text-white outline-none focus:border-red-500 transition-colors uppercase">
                         </div>
                         <div>
-                            <label class="block text-gray-400 mb-1">Uplink Passcode</label>
-                            <input type="password" id="admPass" class="w-full bg-gray-700 p-2 rounded">
+                            <label class="block text-gray-400 text-xs font-bold uppercase mb-2">Uplink Passcode</label>
+                            <input type="password" id="admPass" class="w-full bg-gray-700 p-3 rounded border border-gray-600 text-white outline-none focus:border-red-500 transition-colors">
                         </div>
                     </div>
                     
-                    <div class="mb-4 text-sm">
-                        <label class="block text-gray-400 mb-1">Upstream Server</label>
-                        <input list="aprs-servers" id="admUpstream" class="w-full bg-gray-700 p-2 rounded">
+                    <div class="mb-6">
+                        <label class="block text-gray-400 text-xs font-bold uppercase mb-2">Upstream Server</label>
+                        <input list="aprs-servers" id="admUpstream" class="w-full bg-gray-700 p-3 rounded border border-gray-600 text-white outline-none focus:border-red-500 transition-colors font-mono">
                         <datalist id="aprs-servers">
                             <option value="rotate.aprs2.net:14580">Global Rotate</option>
-                            <option value="noam.aprs2.net:14580">North America</option>
-                            <option value="soam.aprs2.net:14580">South America</option>
-                            <option value="euro.aprs2.net:14580">Europe</option>
-                            <option value="asia.aprs2.net:14580">Asia</option>
-                            <option value="aunz.aprs2.net:14580">Oceania</option>
+                            <option value="noam.aprs2.net:14580">North America Rotate</option>
+                            <option value="soam.aprs2.net:14580">South America Rotate</option>
+                            <option value="euro.aprs2.net:14580">Europe Rotate</option>
+                            <option value="asia.aprs2.net:14580">Asia Rotate</option>
+                            <option value="aunz.aprs2.net:14580">Oceania Rotate</option>
                             <option value="t2uk.aprs2.net:14580">T2UK</option>
                         </datalist>
                     </div>
 
-                    <div class="mb-8 text-sm">
-                        <label class="block text-gray-400 mb-1">Subscription String (Type 'auto' to use Geofence coords below)</label>
-                        <input type="text" id="admFilter" class="w-full bg-gray-700 p-2 rounded font-mono">
+                    <div class="mb-10">
+                        <label class="block text-gray-400 text-xs font-bold uppercase mb-2">Subscription String (Type 'auto' to use Geofence)</label>
+                        <input type="text" id="admFilter" class="w-full bg-gray-700 p-3 rounded border border-gray-600 text-white outline-none focus:border-red-500 transition-colors font-mono">
                     </div>
 
-                    <h3 class="font-bold mb-3 text-gray-300">Filtering Engine</h3>
-                    <div class="space-y-2 mb-6 text-sm">
-                        <label class="flex items-center space-x-2"><input type="checkbox" id="admDropPi" class="rounded bg-gray-700"> <span>Drop Pi-Star Strings</span></label>
-                        <label class="flex items-center space-x-2"><input type="checkbox" id="admDropD" class="rounded bg-gray-700"> <span>Drop D-STAR Routes</span></label>
-                        <label class="flex items-center space-x-2"><input type="checkbox" id="admDropDesk" class="rounded bg-gray-700"> <span>Drop APDESK status</span></label>
+                    <h3 class="text-lg font-bold mb-4 text-gray-200 border-b border-gray-700 pb-2">Filtering Engine</h3>
+                    <div class="grid grid-cols-1 gap-3 mb-10">
+                        <label class="flex items-center space-x-3 cursor-pointer group">
+                            <input type="checkbox" id="admDropPi" class="w-5 h-5 rounded bg-gray-700 border-gray-600 text-red-600 focus:ring-0"> 
+                            <span class="text-gray-300 group-hover:text-white transition-colors">Drop Pi-Star Strings</span>
+                        </label>
+                        <label class="flex items-center space-x-3 cursor-pointer group">
+                            <input type="checkbox" id="admDropD" class="w-5 h-5 rounded bg-gray-700 border-gray-600 text-red-600 focus:ring-0"> 
+                            <span class="text-gray-300 group-hover:text-white transition-colors">Drop D-STAR Routes</span>
+                        </label>
+                        <label class="flex items-center space-x-3 cursor-pointer group">
+                            <input type="checkbox" id="admDropDesk" class="w-5 h-5 rounded bg-gray-700 border-gray-600 text-red-600 focus:ring-0"> 
+                            <span class="text-gray-300 group-hover:text-white transition-colors">Drop APDESK status</span>
+                        </label>
                     </div>
 
-                    <h3 class="font-bold mb-3 text-gray-300">Geofence Boundary</h3>
-                    <div class="grid grid-cols-4 gap-4 mb-6 text-sm items-end">
-                        <label class="flex items-center space-x-2 pb-2"><input type="checkbox" id="admGeoEn" class="rounded bg-gray-700"> <span>Enable</span></label>
-                        <div><label class="block text-gray-400 text-xs mb-1">Center Lat</label><input type="number" id="admLat" class="w-full bg-gray-700 p-2 rounded" step="any"></div>
-                        <div><label class="block text-gray-400 text-xs mb-1">Center Lon</label><input type="number" id="admLon" class="w-full bg-gray-700 p-2 rounded" step="any"></div>
-                        <div><label class="block text-gray-400 text-xs mb-1">Radius (km)</label><input type="number" id="admRad" class="w-full bg-gray-700 p-2 rounded"></div>
+                    <h3 class="text-lg font-bold mb-4 text-gray-200 border-b border-gray-700 pb-2">Geofence Boundary</h3>
+                    <div class="grid grid-cols-4 gap-4 mb-10 items-end">
+                        <label class="flex items-center space-x-3 pb-3 cursor-pointer group">
+                            <input type="checkbox" id="admGeoEn" class="w-5 h-5 rounded bg-gray-700 border-gray-600 text-red-600 focus:ring-0"> 
+                            <span class="text-gray-300 group-hover:text-white transition-colors text-sm">Enable</span>
+                        </label>
+                        <div>
+                            <label class="block text-gray-500 text-[10px] uppercase font-bold mb-1">Center Lat</label>
+                            <input type="number" id="admLat" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-sm outline-none focus:border-red-500" step="any">
+                        </div>
+                        <div>
+                            <label class="block text-gray-500 text-[10px] uppercase font-bold mb-1">Center Lon</label>
+                            <input type="number" id="admLon" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-sm outline-none focus:border-red-500" step="any">
+                        </div>
+                        <div>
+                            <label class="block text-gray-500 text-[10px] uppercase font-bold mb-1">Radius (km)</label>
+                            <input type="number" id="admRad" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-sm outline-none focus:border-red-500">
+                        </div>
                     </div>
 
-                    <button onclick="saveAdmin()" class="bg-red-600 hover:bg-red-500 px-6 py-2 rounded font-bold w-full mt-4">Hot Reload Config</button>
+                    <button onclick="saveAdmin()" class="bg-red-600 hover:bg-red-700 text-white px-6 py-4 rounded font-bold w-full shadow-lg transform active:scale-95 transition-all text-sm uppercase tracking-widest">
+                        Hot Reload Config
+                    </button>
+                    <p id="save-indicator" class="text-center text-green-400 text-xs mt-3 hidden font-bold">RELOADED SUCCESSFULLY</p>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        const map = L.map('map').setView([53.7, -1.5], 7);
+        const map = L.map('map').setView([51.5, -0.1], 7);
         let currentTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
         
         let gridLayer = null;
@@ -302,7 +331,7 @@
             if (!chatLog) return;
             const entry = document.createElement('div');
             const time = new Date().toLocaleTimeString();
-            entry.innerHTML = `<span class="text-gray-500">[${time}]</span> <span class="font-bold ${colorClass}">${sender}:</span> <span class="text-gray-300 break-words">${message}</span>`;
+            entry.innerHTML = `<span class="text-gray-600">[${time}]</span> <span class="font-bold ${colorClass}">${sender}:</span> <span class="text-gray-300 break-words">${message}</span>`;
             chatLog.appendChild(entry);
             chatLog.scrollTop = chatLog.scrollHeight;
         }
@@ -386,10 +415,10 @@
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
                         <td class="p-3 font-bold text-blue-400">${c.call}</td>
-                        <td class="p-3 uppercase text-xs text-gray-400">WS</td>
-                        <td class="p-3 font-mono text-xs">Masked</td>
+                        <td class="p-3 uppercase text-[10px] text-gray-500">WebSocket</td>
+                        <td class="p-3 font-mono text-xs text-gray-400">Hidden</td>
                         <td class="p-3 text-sm">${c.soft}</td>
-                        <td class="p-3 text-sm">Online</td>
+                        <td class="p-3 text-xs text-green-500">Connected</td>
                     `;
                     tbody.appendChild(tr);
                 });
@@ -407,13 +436,13 @@
             ws.onclose = () => {
                 document.getElementById('conn-status').classList.replace('bg-green-500', 'bg-red-500');
                 doLogout();
-                setTimeout(connectWS, 2000);
+                setTimeout(connectWS, 3000);
             };
             ws.onmessage = function(e) {
                 const data = JSON.parse(e.data);
                 
                 if (data.type === 'sys') {
-                    if (!data.packet.startsWith('#')) logChat('SYSTEM', data.packet, 'text-yellow-400');
+                    if (!data.packet.startsWith('#')) logChat('SYSTEM', data.packet, 'text-yellow-500');
                 } else if (data.type === 'auth_ack') {
                     if (data.status === 'success') {
                         document.getElementById('auth-section').classList.add('hidden');
@@ -425,6 +454,7 @@
                         document.getElementById('destCall').disabled = false;
                         document.getElementById('msgText').disabled = false;
                         compose.querySelector('button').disabled = false;
+                        logChat('CLIENT', `Authenticated as ${data.callsign}`, 'text-green-500');
                     } else {
                         alert("Authentication failed.");
                         myCallsign = "";
@@ -478,7 +508,7 @@
                         sendAck(callsign, ackMatch[1]);
                     }
                     
-                    if (text.startsWith('ack')) logChat('SYSTEM', `${callsign} acknowledged`, 'text-green-400');
+                    if (text.startsWith('ack')) logChat('ACK', `${callsign} received message`, 'text-blue-500');
                     else logChat(`${callsign} -> ${to}`, text, 'text-gray-300');
                 }
             }
@@ -558,17 +588,17 @@
                     if (call === myCallsign) cClass += " my-station";
                     
                     const icon = L.divIcon({ className: cClass, iconSize: [12, 12] });
-                    const tooltipHtml = `<b>${call}</b><br><span class="text-xs text-gray-400">${st.path || ''}</span>`;
+                    const tooltipHtml = `<b>${call}</b><br><span class="text-xs text-gray-500 font-mono">${st.path || ''}</span>`;
                     st.marker = L.marker([latestPos.lat, latestPos.lon], {icon: icon})
                                  .bindTooltip(tooltipHtml, {direction: 'top', offset: [0, -10]})
                                  .addTo(map);
                 } else {
                     st.marker.setLatLng([latestPos.lat, latestPos.lon]);
-                    st.marker.setTooltipContent(`<b>${call}</b><br><span class="text-xs text-gray-400">${st.path || ''}</span>`);
+                    st.marker.setTooltipContent(`<b>${call}</b><br><span class="text-xs text-gray-500 font-mono">${st.path || ''}</span>`);
                 }
 
                 if (!st.polyline) {
-                    st.polyline = L.polyline(latLngs, {color: '#3b82f6', weight: 2, opacity: 0.6}).addTo(map);
+                    st.polyline = L.polyline(latLngs, {color: '#3b82f6', weight: 2, opacity: 0.5}).addTo(map);
                 } else {
                     st.polyline.setLatLngs(latLngs);
                 }
@@ -578,7 +608,7 @@
                     if (radius > 0) {
                         if (!st.phgCircle) {
                             st.phgCircle = L.circle([latestPos.lat, latestPos.lon], {
-                                radius: radius, color: '#10b981', weight: 1, fillOpacity: 0.1
+                                radius: radius, color: '#10b981', weight: 1, fillOpacity: 0.05
                             }).addTo(map);
                         } else {
                             st.phgCircle.setLatLng([latestPos.lat, latestPos.lon]);
@@ -612,7 +642,7 @@
                 if(st.type === 'cwop') typeColor = "text-green-400";
                 if(st.type === 'ogn') typeColor = "text-yellow-500";
 
-                let locStr = "No valid coords";
+                let locStr = "No Coords";
                 if (st.positions.length > 0) {
                     const p = st.positions[st.positions.length-1];
                     locStr = `${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}`;
@@ -621,10 +651,10 @@
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td class="p-3 font-bold ${typeColor}">${call}</td>
-                    <td class="p-3 font-mono text-xs text-gray-400 max-w-[150px] truncate" title="${st.path}">${st.path}</td>
-                    <td class="p-3">${d.toLocaleTimeString()}</td>
+                    <td class="p-3 font-mono text-[10px] text-gray-500 truncate max-w-[120px]">${st.path}</td>
+                    <td class="p-3 text-xs text-gray-300">${d.toLocaleTimeString()}</td>
                     <td class="p-3 font-mono text-xs">${locStr}</td>
-                    <td class="p-3 font-mono text-xs text-gray-500 truncate max-w-xs" title="${st.raw}">${st.raw}</td>
+                    <td class="p-3 font-mono text-[10px] text-gray-600 truncate max-w-xs">${st.raw}</td>
                 `;
                 tbody.appendChild(tr);
             });
@@ -633,7 +663,8 @@
         function sendAuth() {
             myCallsign = document.getElementById('myCall').value.toUpperCase();
             const pass = document.getElementById('myPass').value;
-            ws.send(JSON.stringify({ type: "auth", callsign: myCallsign, passcode: pass, software: "BrowserWebClient 1.0" }));
+            if(!myCallsign || !pass) return;
+            ws.send(JSON.stringify({ type: "auth", callsign: myCallsign, passcode: pass, software: "WebNOC 2.0" }));
         }
 
         function doLogout() {
@@ -649,7 +680,7 @@
         }
 
         function sendMsg() {
-            if (!myCallsign) return alert("You must login to transmit.");
+            if (!myCallsign) return;
             const to = document.getElementById('destCall').value.toUpperCase().padEnd(9, ' ');
             let text = document.getElementById('msgText').value.trim();
             if (!text) return;
@@ -672,11 +703,9 @@
 
         function centerOnUser() {
             if ("geolocation" in navigator) {
-                navigator.geolocation.getCurrentPosition((position) => {
-                    map.setView([position.coords.latitude, position.coords.longitude], 12);
+                navigator.geolocation.getCurrentPosition((pos) => {
+                    map.setView([pos.coords.latitude, pos.coords.longitude], 12);
                 });
-            } else {
-                alert("Geolocation is not supported by your browser");
             }
         }
 
@@ -684,27 +713,30 @@
             const headers = await getAuthHeaders();
             if (!headers) return togglePanel('map');
 
-            const res = await fetch('/api/config', { headers });
-            if (res.status === 401) {
-                alert("Invalid credentials.");
-                adminAuth = null;
-                togglePanel('map');
-                return;
+            try {
+                const res = await fetch('/api/config', { headers });
+                if (res.status === 401) {
+                    adminAuth = null;
+                    alert("Authentication failure.");
+                    return togglePanel('map');
+                }
+                const data = await res.json();
+                document.getElementById('admName').value = data.server_name;
+                document.getElementById('admVers').value = data.software_vers;
+                document.getElementById('admCall').value = data.callsign;
+                document.getElementById('admPass').value = data.passcode;
+                document.getElementById('admUpstream').value = data.upstream_addr;
+                document.getElementById('admFilter').value = data.server_filter;
+                document.getElementById('admDropPi').checked = data.drop_pistar;
+                document.getElementById('admDropD').checked = data.drop_dstar;
+                document.getElementById('admDropDesk').checked = data.drop_apdesk;
+                document.getElementById('admGeoEn').checked = data.enable_geofence;
+                document.getElementById('admLat').value = data.center_lat;
+                document.getElementById('admLon').value = data.center_lon;
+                document.getElementById('admRad').value = data.radius_km;
+            } catch (err) {
+                console.error("Config fetch failed");
             }
-            const data = await res.json();
-            document.getElementById('admName').value = data.server_name;
-            document.getElementById('admVers').value = data.software_vers;
-            document.getElementById('admCall').value = data.callsign;
-            document.getElementById('admPass').value = data.passcode;
-            document.getElementById('admUpstream').value = data.upstream_addr;
-            document.getElementById('admFilter').value = data.server_filter;
-            document.getElementById('admDropPi').checked = data.drop_pistar;
-            document.getElementById('admDropD').checked = data.drop_dstar;
-            document.getElementById('admDropDesk').checked = data.drop_apdesk;
-            document.getElementById('admGeoEn').checked = data.enable_geofence;
-            document.getElementById('admLat').value = data.center_lat;
-            document.getElementById('admLon').value = data.center_lon;
-            document.getElementById('admRad').value = data.radius_km;
         }
 
         async function saveAdmin() {
@@ -722,16 +754,25 @@
                 drop_dstar: document.getElementById('admDropD').checked,
                 drop_apdesk: document.getElementById('admDropDesk').checked,
                 enable_geofence: document.getElementById('admGeoEn').checked,
-                center_lat: parseFloat(document.getElementById('admLat').value),
-                center_lon: parseFloat(document.getElementById('admLon').value),
-                radius_km: parseFloat(document.getElementById('admRad').value)
+                center_lat: parseFloat(document.getElementById('admLat').value) || 0,
+                center_lon: parseFloat(document.getElementById('admLon').value) || 0,
+                radius_km: parseFloat(document.getElementById('admRad').value) || 0
             };
-            await fetch('/api/config', {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify(payload)
-            });
-            alert("Backend reloaded successfully.");
+
+            const indicator = document.getElementById('save-indicator');
+            try {
+                const res = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify(payload)
+                });
+                if(res.ok) {
+                    indicator.classList.remove('hidden');
+                    setTimeout(() => indicator.classList.add('hidden'), 3000);
+                }
+            } catch (err) {
+                alert("Failed to update backend.");
+            }
         }
 
         connectWS();
