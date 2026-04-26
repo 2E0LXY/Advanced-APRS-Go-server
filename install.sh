@@ -14,6 +14,9 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+# Wipe corrupted Caddy lists from previous failed attempts
+rm -f /etc/apt/sources.list.d/caddy-stable.list
+
 apt update
 apt install -y curl wget git ufw debian-keyring debian-archive-keyring apt-transport-https
 
@@ -27,7 +30,7 @@ fi
 
 if ! command -v caddy &> /dev/null; then
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+    echo "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" > /etc/apt/sources.list.d/caddy-stable.list
     apt update && apt install caddy -y
 fi
 
