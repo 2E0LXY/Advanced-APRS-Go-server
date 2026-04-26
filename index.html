@@ -42,14 +42,14 @@
             <button onclick="togglePanel('messages')" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded">Messages</button>
             <button onclick="togglePanel('status')" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded">Status</button>
             <button onclick="togglePanel('help')" class="px-3 py-1 bg-green-900 hover:bg-green-800 rounded">API & Help</button>
-            <button onclick="togglePanel('admin')" class="px-3 py-1 bg-red-900 hover:bg-red-800 rounded">Admin</button>
+            <button onclick="togglePanel('admin')" class="px-3 py-1 bg-red-900 hover:bg-red-800 rounded shadow-sm">Admin</button>
         </div>
     </div>
 
     <div class="flex-1 relative flex overflow-hidden">
         <div id="controls-sidebar" class="w-72 bg-gray-800 border-r border-gray-700 p-4 flex flex-col space-y-5 overflow-y-auto z-20">
             <div>
-                <h3 class="text-xs uppercase text-gray-400 font-bold mb-2">Map Layers</h3>
+                <h3 class="text-xs uppercase text-gray-400 font-bold mb-2 text-gray-200">Map Layers</h3>
                 <select id="map-style" class="w-full bg-gray-700 p-2 rounded text-sm outline-none mb-2" onchange="changeMapStyle()">
                     <option value="osm">Standard Street</option>
                     <option value="topo">Terrain / Outdoors</option>
@@ -68,7 +68,7 @@
             </div>
 
             <div>
-                <h3 class="text-xs uppercase text-gray-400 font-bold mb-2">Tail Length</h3>
+                <h3 class="text-xs uppercase text-gray-400 font-bold mb-2 text-gray-200">Tail Length</h3>
                 <select id="tail-length" class="w-full bg-gray-700 p-2 rounded text-sm outline-none" onchange="redrawMap()">
                     <option value="300">5 Minutes</option>
                     <option value="900">15 Minutes</option>
@@ -80,7 +80,7 @@
             </div>
 
             <div>
-                <h3 class="text-xs uppercase text-gray-400 font-bold mb-2">Station Filters</h3>
+                <h3 class="text-xs uppercase text-gray-400 font-bold mb-2 text-gray-200">Station Filters</h3>
                 <div class="space-y-1 text-sm">
                     <label class="flex items-center space-x-2 cursor-pointer">
                         <input type="checkbox" id="show-aprs" class="rounded bg-gray-700" checked onchange="redrawMap()"> 
@@ -163,7 +163,7 @@
                     
                     <div class="flex-1 bg-gray-800 rounded border border-gray-700 flex flex-col overflow-hidden">
                         <div class="p-3 bg-gray-700 border-b border-gray-600 font-bold text-xs uppercase tracking-widest text-gray-300">Local Traffic Log</div>
-                        <div id="chat-log" class="flex-1 p-4 overflow-y-auto font-mono text-xs space-y-2"></div>
+                        <div id="chat-log" class="flex-1 p-4 overflow-y-auto font-mono text-xs space-y-2 text-gray-200"></div>
                     </div>
                 </div>
             </div>
@@ -191,7 +191,7 @@
                     </div>
 
                     <div class="bg-gray-800 rounded border border-gray-700">
-                        <div class="p-3 bg-gray-700 border-b border-gray-600 font-bold uppercase text-xs tracking-widest">Connected Clients</div>
+                        <div class="p-3 bg-gray-700 border-b border-gray-600 font-bold uppercase text-xs tracking-widest text-gray-300">Connected Clients</div>
                         <table class="w-full text-left text-sm">
                             <thead class="bg-gray-800 text-gray-400 text-xs uppercase">
                                 <tr>
@@ -270,7 +270,6 @@
                             <option value="t2csngrad.aprs2.net:14580">T2CSNGRAD</option>
                             <option value="t2czech.aprs2.net:14580">T2CZECH</option>
                             <option value="t2dallas.aprs2.net:14580">T2DALLAS</option>
-                            <option value="t2uk.aprs2.net:14580">T2UK</option>
                         </datalist>
                     </div>
 
@@ -302,16 +301,16 @@
                             <span class="text-gray-300 group-hover:text-white transition-colors text-sm">Enable</span>
                         </label>
                         <div>
-                            <label class="block text-gray-500 text-[10px] uppercase font-bold mb-1">Center Lat</label>
-                            <input type="number" id="admLat" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-sm outline-none focus:border-red-500" step="any">
+                            <label class="block text-gray-500 text-[10px] uppercase font-bold mb-1">Centre Lat</label>
+                            <input type="number" id="admLat" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-sm outline-none focus:border-red-500 text-white" step="any">
                         </div>
                         <div>
-                            <label class="block text-gray-500 text-[10px] uppercase font-bold mb-1">Center Lon</label>
-                            <input type="number" id="admLon" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-sm outline-none focus:border-red-500" step="any">
+                            <label class="block text-gray-500 text-[10px] uppercase font-bold mb-1">Centre Lon</label>
+                            <input type="number" id="admLon" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-sm outline-none focus:border-red-500 text-white" step="any">
                         </div>
                         <div>
                             <label class="block text-gray-500 text-[10px] uppercase font-bold mb-1">Radius (km)</label>
-                            <input type="number" id="admRad" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-sm outline-none focus:border-red-500">
+                            <input type="number" id="admRad" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-sm outline-none focus:border-red-500 text-white">
                         </div>
                     </div>
 
