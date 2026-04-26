@@ -7,7 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://rawcdn.githack.com/dudinea/leaflet-maidenhead/master/src/maidenhead.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/dudinea/leaflet-maidenhead@master/src/maidenhead.js"></script>
     <script src="https://unpkg.com/@joergdietrich/leaflet.terminator"></script>
     <style>
         .custom-div-icon {
@@ -294,6 +294,16 @@
         let msgCounter = 1;
         let packetCount = 0;
 
+        function logChat(sender, message, colorClass) {
+            const chatLog = document.getElementById('chat-log');
+            if (!chatLog) return;
+            const entry = document.createElement('div');
+            const time = new Date().toLocaleTimeString();
+            entry.innerHTML = `<span class="text-gray-500">[${time}]</span> <span class="font-bold ${colorClass}">${sender}:</span> <span class="text-gray-300 break-words">${message}</span>`;
+            chatLog.appendChild(entry);
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+
         function formatBytes(bytes) {
             if (bytes === 0) return '0 B';
             const k = 1024;
@@ -381,7 +391,7 @@
                     tbody.appendChild(tr);
                 });
             } catch (err) {
-                console.error("Status fetch failed");
+                console.error("Status fetch failed:", err);
             }
         }
 
