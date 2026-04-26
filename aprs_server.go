@@ -776,45 +776,51 @@ func serveSetupPage(w http.ResponseWriter, errMsg string) {
 	if errMsg != "" {
 		errHTML = `<p class="text-red-400 text-sm mb-4 bg-red-900/30 p-3 rounded border border-red-700">` + errMsg + `</p>`
 	}
-	page := `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+	page := `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>APRS Gateway — First Run Setup</title>
-<script src="https://cdn.tailwindcss.com"></script></head>
-<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center">
-<div class="w-full max-w-md p-8 bg-gray-800 rounded-xl border border-gray-700 shadow-2xl">
-  <div class="text-center mb-8">
-    <div class="text-4xl mb-3">📡</div>
-    <h1 class="text-2xl font-bold text-blue-400">APRS Gateway</h1>
-    <p class="text-gray-400 text-sm mt-1">First-run setup — create your admin account</p>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#111827;color:#f9fafb;font-family:system-ui,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1rem}
+.card{background:#1f2937;border:1px solid #374151;border-radius:12px;padding:2.5rem;width:100%;max-width:420px;box-shadow:0 25px 50px rgba(0,0,0,.5)}
+.logo{text-align:center;margin-bottom:2rem}
+.logo .icon{font-size:3rem;margin-bottom:.5rem}
+.logo h1{font-size:1.5rem;font-weight:700;color:#60a5fa}
+.logo p{color:#9ca3af;font-size:.875rem;margin-top:.25rem}
+label{display:block;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af;margin-bottom:.4rem;margin-top:1.25rem}
+input{width:100%;background:#374151;border:1px solid #4b5563;border-radius:6px;padding:.75rem;color:#fff;font-size:.875rem;outline:none;transition:border-color .2s}
+input:focus{border-color:#3b82f6}
+.err{background:rgba(127,29,29,.4);border:1px solid #991b1b;color:#fca5a5;padding:.75rem 1rem;border-radius:6px;font-size:.875rem;margin-top:1rem}
+button{width:100%;margin-top:1.5rem;background:#2563eb;color:#fff;border:none;padding:.875rem;border-radius:6px;font-weight:700;font-size:.875rem;text-transform:uppercase;letter-spacing:.1em;cursor:pointer;transition:background .2s}
+button:hover{background:#1d4ed8}
+.note{text-align:center;font-size:.7rem;color:#6b7280;margin-top:1.5rem}
+.note code{color:#9ca3af}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <div class="icon">📡</div>
+    <h1>APRS Gateway</h1>
+    <p>First-run setup — create your admin account</p>
   </div>
   ` + errHTML + `
-  <form method="POST" action="/setup" class="space-y-4">
-    <div>
-      <label class="block text-gray-400 text-xs uppercase font-bold mb-1">Admin Username</label>
-      <input type="text" name="username" required minlength="3" autocomplete="username"
-        class="w-full bg-gray-700 p-3 rounded border border-gray-600 text-white outline-none focus:border-blue-500 text-sm"
-        placeholder="e.g. 2e0lxy">
-    </div>
-    <div>
-      <label class="block text-gray-400 text-xs uppercase font-bold mb-1">Password</label>
-      <input type="password" name="password" required minlength="8" autocomplete="new-password"
-        class="w-full bg-gray-700 p-3 rounded border border-gray-600 text-white outline-none focus:border-blue-500 text-sm"
-        placeholder="Minimum 8 characters">
-    </div>
-    <div>
-      <label class="block text-gray-400 text-xs uppercase font-bold mb-1">Confirm Password</label>
-      <input type="password" name="confirm" required autocomplete="new-password"
-        class="w-full bg-gray-700 p-3 rounded border border-gray-600 text-white outline-none focus:border-blue-500 text-sm"
-        placeholder="Repeat password">
-    </div>
-    <button type="submit"
-      class="w-full bg-blue-600 hover:bg-blue-500 text-white p-3 rounded font-bold uppercase tracking-widest text-sm mt-2 transition-colors">
-      Create Account &amp; Launch Gateway
-    </button>
+  <form method="POST" action="/setup">
+    <label>Admin Username</label>
+    <input type="text" name="username" required minlength="3" autocomplete="username" placeholder="e.g. 2e0lxy">
+    <label>Password</label>
+    <input type="password" name="password" required minlength="8" autocomplete="new-password" placeholder="Minimum 8 characters">
+    <label>Confirm Password</label>
+    <input type="password" name="confirm" required autocomplete="new-password" placeholder="Repeat password">
+    <button type="submit">Create Account &amp; Launch Gateway</button>
   </form>
-  <p class="text-gray-600 text-xs text-center mt-6">Credentials are stored in <code class="text-gray-400">creds.json</code> on the server. This page is only shown once.</p>
+  <p class="note">Credentials stored in <code>creds.json</code> on the server. Shown once only.</p>
 </div>
-</body></html>`
+</body>
+</html>`
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(page))
 }
