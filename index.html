@@ -437,11 +437,14 @@
                 const linkDisplay = document.getElementById('stat-upstream-link');
                 if (data.upstream_addr) {
                     const host = data.upstream_addr.split(':')[0];
-                    hostDisplay.innerText = data.upstream_addr;
+                    const connLabel = data.upstream_connected ? ' ✓ Connected' : ' ⏳ Connecting...';
+                    hostDisplay.innerText = data.upstream_addr + connLabel;
+                    hostDisplay.className = 'text-lg font-mono ' + (data.upstream_connected ? 'text-green-400' : 'text-yellow-400');
                     linkDisplay.href = `http://${host}:14501`;
                     linkDisplay.classList.remove('hidden');
                 } else {
                     hostDisplay.innerText = 'Disconnected';
+                    hostDisplay.className = 'text-lg font-mono text-red-400';
                     linkDisplay.classList.add('hidden');
                 }
 
@@ -466,14 +469,35 @@
             }
         }
 
+
+        function pollUpstreamStatus() {
+            fetch('/api/status').then(r => r.json()).then(data => {
+                const dot = document.getElementById('conn-status');
+                dot.classList.remove('bg-red-500', 'bg-yellow-500', 'bg-green-500');
+                if (data.upstream_connected) {
+                    dot.classList.add('bg-green-500');
+                    dot.title = 'APRS-IS connected: ' + (data.upstream_addr || '');
+                } else {
+                    dot.classList.add('bg-yellow-500');
+                    dot.title = 'WebSocket OK - APRS-IS upstream connecting...';
+                }
+            }).catch(() => {});
+        }
+
         function connectWS() {
             ws = new WebSocket((window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.host + '/ws');
             ws.onopen = () => {
-                document.getElementById('conn-status').classList.replace('bg-red-500', 'bg-green-500');
-                loadHistory(); 
+                const dot = document.getElementById('conn-status');
+                dot.classList.replace('bg-red-500', 'bg-yellow-500');
+                dot.title = 'WebSocket connected - checking APRS-IS upstream...';
+                loadHistory();
+                pollUpstreamStatus();
+                setInterval(pollUpstreamStatus, 5000);
             };
             ws.onclose = () => {
-                document.getElementById('conn-status').classList.replace('bg-green-500', 'bg-red-500');
+                const dot = document.getElementById('conn-status');
+                dot.className = 'w-3 h-3 rounded-full bg-red-500';
+                dot.title = 'Disconnected';
                 doLogout();
                 setTimeout(connectWS, 3000);
             };
@@ -481,7 +505,7 @@
                 const data = JSON.parse(e.data);
                 
                 if (data.type === 'sys') {
-                    if (!data.packet.startsWith('#')) logChat('SYSTEM', data.packet, 'text-yellow-500');
+                    logChat('SYSTEM', data.packet, 'text-yellow-500'); // log all sys/keepalive
                 } else if (data.type === 'auth_ack') {
                     if (data.status === 'success') {
                         document.getElementById('auth-section').classList.add('hidden');
