@@ -195,8 +195,35 @@
 
     <!-- ADMIN -->
     <div id="admin-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
-      <div class="max-w-2xl mx-auto space-y-4">
-        <h2 class="text-xl font-bold text-red-500">Core Configuration</h2>
+
+      <!-- Login gate — shown until authenticated -->
+      <div id="admin-login-gate" class="flex items-center justify-center min-h-full">
+        <div class="w-full max-w-sm bg-gray-800 border border-gray-700 rounded-xl p-8 shadow-2xl">
+          <div class="text-center mb-6">
+            <div class="text-3xl mb-2">🔐</div>
+            <h2 class="text-lg font-bold text-red-400">Admin Login</h2>
+            <p class="text-gray-400 text-xs mt-1">Enter your admin credentials</p>
+          </div>
+          <div id="admin-login-err" class="hidden text-red-400 text-xs bg-red-900/30 border border-red-800 rounded p-2 mb-4 text-center"></div>
+          <div class="space-y-3">
+            <input type="text" id="adminLoginUser" placeholder="Username" autocomplete="username"
+              class="w-full bg-gray-700 p-2.5 rounded border border-gray-600 text-white outline-none focus:border-red-500 text-sm">
+            <input type="password" id="adminLoginPass" placeholder="Password" autocomplete="current-password"
+              class="w-full bg-gray-700 p-2.5 rounded border border-gray-600 text-white outline-none focus:border-red-500 text-sm"
+              onkeydown="if(event.key==='Enter')doAdminLogin()">
+            <button onclick="doAdminLogin()" class="w-full bg-red-700 hover:bg-red-600 text-white p-2.5 rounded font-bold text-sm uppercase tracking-wider transition-colors">
+              Login
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Config content — hidden until authenticated -->
+      <div id="admin-content" class="hidden max-w-2xl mx-auto space-y-4">
+        <div class="flex justify-between items-center">
+          <h2 class="text-xl font-bold text-red-500">Core Configuration</h2>
+          <button onclick="doAdminLogout()" class="text-xs text-gray-500 hover:text-white px-3 py-1 bg-gray-800 border border-gray-700 rounded">Logout</button>
+        </div>
 
         <!-- Identity -->
         <div class="bg-gray-800 p-4 rounded border border-gray-700">
@@ -327,8 +354,8 @@
           ⚡ Hot Reload Config
         </button>
         <p id="save-indicator" class="text-center text-green-400 text-xs hidden font-bold">RELOADED SUCCESSFULLY</p>
-      </div>
-    </div>
+      </div><!-- end admin-content -->
+    </div><!-- end admin-panel -->
 
   </div><!-- end panels -->
 </div><!-- end main -->
@@ -411,14 +438,43 @@ function togglePanel(panel) {
   if (panel==='status') { loadStatus(); statusInterval = setInterval(loadStatus, 5000); }
 }
 
-async function getAuthHeaders() {
-  if (!adminAuth) {
-    const user = prompt('Admin username:');
-    const pass = prompt('Admin password:');
-    if (!user||!pass) return null;
-    adminAuth = 'Basic ' + btoa(user+':'+pass);
-  }
+function getAuthHeaders() {
+  if (!adminAuth) return null;
   return {'Authorization': adminAuth, 'Content-Type': 'application/json'};
+}
+
+async function doAdminLogin() {
+  const user = document.getElementById('adminLoginUser').value.trim();
+  const pass = document.getElementById('adminLoginPass').value;
+  const err  = document.getElementById('admin-login-err');
+  if (!user || !pass) { err.innerText='Enter username and password'; err.classList.remove('hidden'); return; }
+  const creds = 'Basic ' + btoa(user + ':' + pass);
+  try {
+    const r = await fetch('/api/config', {headers: {'Authorization': creds}});
+    if (r.status === 401) {
+      err.innerText = 'Invalid username or password';
+      err.classList.remove('hidden');
+      document.getElementById('adminLoginPass').value = '';
+      return;
+    }
+    // Success
+    adminAuth = creds;
+    err.classList.add('hidden');
+    document.getElementById('admin-login-gate').classList.add('hidden');
+    document.getElementById('admin-content').classList.remove('hidden');
+    populateAdmin(await r.json());
+  } catch(e) {
+    err.innerText = 'Connection error — try again';
+    err.classList.remove('hidden');
+  }
+}
+
+function doAdminLogout() {
+  adminAuth = null;
+  document.getElementById('admin-login-gate').classList.remove('hidden');
+  document.getElementById('admin-content').classList.add('hidden');
+  document.getElementById('adminLoginUser').value = '';
+  document.getElementById('adminLoginPass').value = '';
 }
 
 // ─── Status ───────────────────────────────────────────────────────────────────
@@ -728,12 +784,23 @@ function centerOnUser() {
   navigator.geolocation.getCurrentPosition(pos=>map.setView([pos.coords.latitude,pos.coords.longitude],12));
 }
 
-async function loadAdmin() {
-  const h = await getAuthHeaders(); if (!h) return togglePanel('map');
-  try {
-    const r = await fetch('/api/config',{headers:h});
-    if (r.status===401) { adminAuth=null; alert('Auth failed'); return togglePanel('map'); }
-    const d = await r.json();
+function loadAdmin() {
+  // If already authenticated, go straight to content; otherwise show login gate
+  if (adminAuth) {
+    document.getElementById('admin-login-gate').classList.add('hidden');
+    document.getElementById('admin-content').classList.remove('hidden');
+    // Refresh config data
+    fetch('/api/config', {headers: getAuthHeaders()})
+      .then(r => { if(r.status===401){doAdminLogout();} return r.json(); })
+      .then(d => populateAdmin(d))
+      .catch(e => console.error('Config fetch fail', e));
+  } else {
+    document.getElementById('admin-login-gate').classList.remove('hidden');
+    document.getElementById('admin-content').classList.add('hidden');
+  }
+}
+
+function populateAdmin(d) {
     document.getElementById('admName').value=d.server_name;
     document.getElementById('admVers').value=d.software_vers;
     document.getElementById('admCall').value=d.callsign;
@@ -747,20 +814,17 @@ async function loadAdmin() {
     document.getElementById('admLat').value=d.center_lat;
     document.getElementById('admLon').value=d.center_lon;
     document.getElementById('admRad').value=d.radius_km;
-    // Pre-select upstream dropdown if it matches
     const sel=document.getElementById('admUpstreamSelect');
     let matched=false;
-    for (let o of sel.options) { if (o.value===d.upstream_addr) { sel.value=d.upstream_addr; matched=true; break; } }
+    for (let o of sel.options) { if (o.value===d.upstream_addr){sel.value=d.upstream_addr;matched=true;break;} }
     if (!matched&&d.upstream_addr) sel.value='custom';
-    // Pre-fill filter builder lat/lon from geofence
     document.getElementById('fLat').value=d.center_lat;
     document.getElementById('fLon').value=d.center_lon;
     document.getElementById('fRad').value=d.radius_km;
-  } catch(e) { console.error('Config fetch fail',e); }
 }
 
 async function saveAdmin() {
-  const h = await getAuthHeaders(); if (!h) return;
+  const h = getAuthHeaders(); if (!h) { doAdminLogout(); return; }
   const payload = {
     server_name: document.getElementById('admName').value,
     software_vers: document.getElementById('admVers').value,
@@ -778,6 +842,7 @@ async function saveAdmin() {
   };
   try {
     const r = await fetch('/api/config',{method:'POST',headers:h,body:JSON.stringify(payload)});
+    if (r.status===401) { doAdminLogout(); return; }
     if (r.ok) {
       const ind=document.getElementById('save-indicator');
       ind.classList.remove('hidden'); setTimeout(()=>ind.classList.add('hidden'),3000);
@@ -790,7 +855,7 @@ async function changePassword() {
   const msg=document.getElementById('pass-msg');
   if (!p1) { msg.innerText='Enter a new password'; msg.className='text-xs mt-2 text-red-400'; msg.classList.remove('hidden'); return; }
   if (p1!==p2) { msg.innerText='Passwords do not match'; msg.className='text-xs mt-2 text-red-400'; msg.classList.remove('hidden'); return; }
-  const h = await getAuthHeaders(); if (!h) return;
+  const h = getAuthHeaders(); if (!h) { doAdminLogout(); return; }
   try {
     const r = await fetch('/api/password',{method:'POST',headers:h,body:JSON.stringify({new_password:p1})});
     if (r.ok) {
