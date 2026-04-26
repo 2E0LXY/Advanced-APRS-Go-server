@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global APRS Gateway Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://rawcdn.githack.com/dudinea/leaflet-maidenhead/master/src/maidenhead.js"></script>
+    <script src="https://unpkg.com/@joergdietrich/leaflet.terminator"></script>
+    <style>
+        .custom-div-icon {
+            border: 2px solid white;
+            border-radius: 50%;
+            box-shadow: 0 0 4px rgba(0,0,0,0.5);
+            text-align: center;
+            line-height: 12px;
+            font-size: 10px;
+            color: white;
+            font-weight: bold;
+        }
+        .sym-aprs { background-color: #3b82f6; }
+        .sym-cwop { background-color: #10b981; }
+        .sym-ogn { background-color: #f59e0b; }
+        .my-station { background-color: #ef4444; border-color: yellow; }
+    </style>
+</head>
+<body class="bg-gray-900 h-screen flex flex-col text-white font-sans overflow-hidden">
+    <div class="flex-none bg-gray-800 border-b border-gray-700 p-3 flex justify-between items-center shadow-lg z-50">
+        <div class="flex items-center space-x-4">
+            <h1 class="text-xl font-bold tracking-tight text-blue-400">APRS Net</h1>
+            <span id="conn-status" class="w-3 h-3 rounded-full bg-red-500"></span>
+            <span id="rx-count" class="text-xs text-gray-400 font-mono">RX: 0</span>
+        </div>
+        <div class="flex space-x-2 text-sm font-medium">
+            <button onclick="togglePanel('map')" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded">Map</button>
+            <button onclick="togglePanel('search')" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded">List</button>
+            <button onclick="togglePanel('messages')" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded">Messages</button>
+            <button onclick="togglePanel('status')" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded">Status</button>
+            <button onclick="togglePanel('help')" class="px-3 py-1 bg-green-900 hover:bg-green-800 rounded">API & Help</button>
+            <button onclick="togglePanel('admin')" class="px-3 py-1 bg-red-900 hover:bg-red-800 rounded">Admin</button>
+        </div>
+    </div>
+
+    <div class="flex-1 relative flex">
+        <div id="controls-sidebar" class="w-72 bg-gray-800 border-r border-gray-700 p-4 flex flex-col space-y-5 overflow-y-auto z-20">
+            <div>
+                <h3 class="text-xs uppercase text-gray-400 font-bold mb-2">Map Layers</h3>
+                <select id="map-style" class="w-full bg-gray-700 p-2 rounded text-sm outline-none mb-2" onchange="changeMapStyle()">
+                    <option value="osm">Standard Street</option>
+                    <option value="topo">Terrain / Outdoors</option>
+                    <option value="sat">Satellite</option>
+                </select>
+                <div class="space-y-1 text-sm mt-2">
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="layer-grid" class="rounded bg-gray-700" onchange="toggleOverlay('grid')"> 
+                        <span>Show Locator Grid</span>
+                    </label>
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="layer-night" class="rounded bg-gray-700" onchange="toggleOverlay('night')"> 
+                        <span>Show Day/Night</span>
+                    </label>
+                </div>
+            </div>
+
+            <div>
+                <h3 class="text-xs uppercase text-gray-400 font-bold mb-2">Tail Length</h3>
+                <select id="tail-length" class="w-full bg-gray-700 p-2 rounded text-sm outline-none" onchange="redrawMap()">
+                    <option value="300">5 Minutes</option>
+                    <option value="900">15 Minutes</option>
+                    <option value="1800">30 Minutes</option>
+                    <option value="3600" selected>1 Hour</option>
+                    <option value="10800">3 Hours</option>
+                    <option value="21600">6 Hours</option>
+                </select>
+            </div>
+
+            <div>
+                <h3 class="text-xs uppercase text-gray-400 font-bold mb-2">Station Filters</h3>
+                <div class="space-y-1 text-sm">
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="show-aprs" class="rounded bg-gray-700" checked onchange="redrawMap()"> 
+                        <span class="text-blue-400 font-bold">●</span> <span>Ham APRS</span>
+                    </label>
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="show-cwop" class="rounded bg-gray-700" checked onchange="redrawMap()"> 
+                        <span class="text-green-400 font-bold">●</span> <span>CWOP Weather</span>
+                    </label>
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="show-ogn" class="rounded bg-gray-700" checked onchange="redrawMap()"> 
+                        <span class="text-yellow-500 font-bold">●</span> <span>OGN Gliders</span>
+                    </label>
+                    <div class="h-2"></div>
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="hide-static" class="rounded bg-gray-700" onchange="redrawMap()"> 
+                        <span>Hide Static Stations</span>
+                    </label>
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="show-phg" class="rounded bg-gray-700" onchange="redrawMap()"> 
+                        <span>Show PHG Circles</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="mt-auto pt-4 border-t border-gray-700">
+                <button onclick="centerOnUser()" class="w-full py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-bold mb-2">Track My Location</button>
+                <button onclick="loadHistory()" class="w-full py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-bold">Refresh Data Sync</button>
+            </div>
+        </div>
+
+        <div class="flex-1 relative">
+            <div id="map-panel" class="absolute inset-0 z-10">
+                <div id="map" class="w-full h-full bg-gray-900"></div>
+            </div>
+
+            <div id="search-panel" class="absolute inset-0 z-20 bg-gray-900 hidden p-6 overflow-y-auto">
+                <h2 class="text-xl font-bold mb-4">Latest Heard Stations</h2>
+                <input type="text" id="search-box" placeholder="Filter by callsign..." class="w-full max-w-md bg-gray-700 p-2 rounded mb-4 uppercase" onkeyup="renderList()">
+                <div class="bg-gray-800 rounded border border-gray-700">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-gray-700 text-gray-300">
+                            <tr>
+                                <th class="p-3">Callsign</th>
+                                <th class="p-3">Path</th>
+                                <th class="p-3">Last Heard</th>
+                                <th class="p-3">Coordinates</th>
+                                <th class="p-3">Raw Packet</th>
+                            </tr>
+                        </thead>
+                        <tbody id="station-list" class="divide-y divide-gray-700"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="messages-panel" class="absolute inset-0 z-20 bg-gray-900 hidden flex flex-col p-6">
+                <div class="flex space-x-6 h-full">
+                    <div class="w-1/3 flex flex-col space-y-4">
+                        
+                        <div id="auth-section" class="bg-gray-800 p-4 rounded border border-gray-700">
+                            <h2 class="font-bold mb-3 text-blue-400">APRS-IS Authentication</h2>
+                            <p class="text-xs text-gray-400 mb-4">You must connect using a valid callsign and generated APRS passcode.</p>
+                            <input type="text" id="myCall" placeholder="Callsign" class="w-full bg-gray-700 p-2 rounded mb-2 uppercase text-sm">
+                            <input type="password" id="myPass" placeholder="Passcode" class="w-full bg-gray-700 p-2 rounded mb-3 text-sm">
+                            <button onclick="sendAuth()" class="w-full bg-blue-600 hover:bg-blue-500 p-2 rounded text-sm font-bold">Login to Network</button>
+                        </div>
+                        
+                        <div id="logged-in-section" class="bg-gray-800 p-4 rounded border border-green-700 hidden">
+                            <h2 class="font-bold mb-3 text-green-400">Authenticated Client</h2>
+                            <p class="text-sm mb-3 text-gray-300">Operating as: <span id="active-call" class="font-bold text-white text-lg"></span></p>
+                            <button onclick="doLogout()" class="w-full bg-red-600 hover:bg-red-500 p-2 rounded text-sm font-bold">Disconnect</button>
+                        </div>
+
+                        <div id="compose-section" class="bg-gray-800 p-4 rounded border border-gray-700 flex-1 flex flex-col opacity-50 pointer-events-none">
+                            <h2 class="font-bold mb-3">Compose Traffic</h2>
+                            <input type="text" id="destCall" disabled placeholder="To Callsign" class="w-full bg-gray-700 p-2 rounded mb-2 uppercase text-sm disabled:bg-gray-800">
+                            <textarea id="msgText" disabled placeholder="Type message..." class="w-full bg-gray-700 p-2 rounded mb-3 text-sm flex-1 resize-none disabled:bg-gray-800"></textarea>
+                            <button onclick="sendMsg()" disabled class="w-full bg-green-600 hover:bg-green-500 p-2 rounded text-sm font-bold disabled:bg-gray-600">Send Message</button>
+                        </div>
+                    </div>
+                    
+                    <div class="flex-1 bg-gray-800 rounded border border-gray-700 flex flex-col">
+                        <div class="p-3 bg-gray-700 border-b border-gray-600 font-bold">Local Traffic Log</div>
+                        <div id="chat-log" class="flex-1 p-4 overflow-y-auto font-mono text-sm space-y-1"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="status-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-6 overflow-y-auto">
+                <div class="max-w-4xl mx-auto space-y-6">
+                    <h2 class="text-2xl font-bold text-blue-400">Server Health & Metrics</h2>
+                    
+                    <div class="grid grid-cols-4 gap-4">
+                        <div class="bg-gray-800 p-4 rounded border border-gray-700">
+                            <p class="text-gray-400 text-xs uppercase font-bold">Uptime</p>
+                            <p id="stat-uptime" class="text-xl font-mono">0s</p>
+                        </div>
+                        <div class="bg-gray-800 p-4 rounded border border-gray-700">
+                            <p class="text-gray-400 text-xs uppercase font-bold">Packets RX / TX</p>
+                            <p id="stat-pkts" class="text-xl font-mono text-green-400">0 / 0</p>
+                        </div>
+                        <div class="bg-gray-800 p-4 rounded border border-gray-700">
+                            <p class="text-gray-400 text-xs uppercase font-bold">Bytes RX / TX</p>
+                            <p id="stat-bytes" class="text-xl font-mono text-blue-400">0 / 0</p>
+                        </div>
+                        <div class="bg-gray-800 p-4 rounded border border-gray-700">
+                            <p class="text-gray-400 text-xs uppercase font-bold">Dropped Packets</p>
+                            <p id="stat-dropped" class="text-xl font-mono text-red-400">0</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-800 rounded border border-gray-700">
+                        <div class="p-3 bg-gray-700 border-b border-gray-600 font-bold">Connected Clients</div>
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-gray-800 text-gray-400">
+                                <tr>
+                                    <th class="p-3">Callsign</th>
+                                    <th class="p-3">Type</th>
+                                    <th class="p-3">Remote Addr</th>
+                                    <th class="p-3">Software</th>
+                                    <th class="p-3">Online Since</th>
+                                </tr>
+                            </thead>
+                            <tbody id="client-list" class="divide-y divide-gray-700"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div id="help-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-6 overflow-y-auto">
+                <div class="max-w-3xl mx-auto space-y-6">
+                    <h2 class="text-2xl font-bold text-green-400">Integration Help & API Reference</h2>
+                    
+                    <div class="bg-gray-800 p-6 rounded border border-gray-700">
+                        <h3 class="text-lg font-bold text-white mb-2">Connecting via UDP (Blind Submit)</h3>
+                        <p class="text-gray-400 text-sm mb-4">Hardware trackers can fire stateless UDP packets directly to port 14580. The server will automatically inject the <code class="text-blue-300">qAU</code> construct and route it to the master network.</p>
+                        <code class="block bg-gray-900 p-3 rounded text-green-300 font-mono text-sm border border-gray-700">
+                            echo "M0XYZ>APRS,TCPIP*:=5342.10N/00130.50W-UDP Test" | nc -u -w1 your-server-ip 14580
+                        </code>
+                    </div>
+
+                    <div class="bg-gray-800 p-6 rounded border border-gray-700">
+                        <h3 class="text-lg font-bold text-white mb-2">Connecting via Bi-Directional WebSocket</h3>
+                        <p class="text-gray-400 text-sm mb-4">Open a WebSocket connection to <code class="text-blue-300">ws://your-server-ip:8080/ws</code> to receive live JSON telemetry and transmit your own packets using <code class="text-blue-300">qAC</code> routing.</p>
+                        
+                        <h4 class="font-bold text-sm text-gray-300 mt-4 mb-2">1. Authenticate to unlock TX</h4>
+                        <code class="block bg-gray-900 p-3 rounded text-blue-300 font-mono text-sm border border-gray-700 whitespace-pre">
+{
+    "type": "auth",
+    "callsign": "M0XYZ",
+    "passcode": "12345",
+    "software": "CustomApp 1.0"
+}
+                        </code>
+
+                        <h4 class="font-bold text-sm text-gray-300 mt-4 mb-2">2. Parsing Incoming RX Data</h4>
+                        <p class="text-gray-400 text-sm mb-2">The server sends system keepalives every 20 seconds. Standard packets include parsed coordinate structures.</p>
+                        <code class="block bg-gray-900 p-3 rounded text-yellow-300 font-mono text-sm border border-gray-700 whitespace-pre">
+{
+    "type": "rx",
+    "packet": "M0XYZ>APRS,TCPIP*,qAC,T2CUSTOM:=5342.10N/00130.50W-Test Beacon",
+    "data": {
+        "ts": 1714083840,
+        "call": "M0XYZ",
+        "path": "APRS,TCPIP*,qAC,T2CUSTOM",
+        "lat": 53.7016,
+        "lon": -1.5083,
+        "sym": "/-",
+        "raw": "M0XYZ>APRS..."
+    }
+}
+                        </code>
+
+                        <h4 class="font-bold text-sm text-gray-300 mt-4 mb-2">3. Submitting TX Data</h4>
+                        <p class="text-gray-400 text-sm mb-2">Send raw TNC2 strings. Rate limited to 1 packet per second.</p>
+                        <code class="block bg-gray-900 p-3 rounded text-red-300 font-mono text-sm border border-gray-700 whitespace-pre">
+{
+    "type": "tx",
+    "packet": "M0XYZ>APRS,TCPIP*::2E0LXY   :Hello{01"
+}
+                        </code>
+                    </div>
+                </div>
+            </div>
+
+            <div id="admin-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-6 overflow-y-auto">
+                <div class="max-w-2xl mx-auto bg-gray-800 p-6 rounded border border-gray-700">
+                    <h2 class="text-xl font-bold mb-6 text-red-400">Core Configuration</h2>
+                    <div class="grid grid-cols-2 gap-4 mb-4 text-sm">
+                        <div>
+                            <label class="block text-gray-400 mb-1">Server Identity Name</label>
+                            <input type="text" id="admName" class="w-full bg-gray-700 p-2 rounded uppercase" placeholder="e.g. T2CUSTOM">
+                        </div>
+                        <div>
+                            <label class="block text-gray-400 mb-1">Software Version String</label>
+                            <input type="text" id="admVers" class="w-full bg-gray-700 p-2 rounded" placeholder="e.g. CustomGoAPRS 10.0">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4 mb-4 text-sm">
+                        <div>
+                            <label class="block text-gray-400 mb-1">Uplink Callsign</label>
+                            <input type="text" id="admCall" class="w-full bg-gray-700 p-2 rounded uppercase">
+                        </div>
+                        <div>
+                            <label class="block text-gray-400 mb-1">Uplink Passcode</label>
+                            <input type="password" id="admPass" class="w-full bg-gray-700 p-2 rounded">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4 text-sm">
+                        <label class="block text-gray-400 mb-1">Upstream Server</label>
+                        <input list="aprs-servers" id="admUpstream" class="w-full bg-gray-700 p-2 rounded">
+                        <datalist id="aprs-servers">
+                            <option value="rotate.aprs2.net:14580">Global Rotate</option>
+                            <option value="euro.aprs2.net:14580">Europe Rotate</option>
+                            <option value="t2uk.aprs2.net:14580">T2UK</option>
+                            <option value="t2gb.aprs2.net:14580">T2GB</option>
+                        </datalist>
+                    </div>
+
+                    <div class="mb-8 text-sm">
+                        <label class="block text-gray-400 mb-1">Subscription String</label>
+                        <input type="text" id="admFilter" class="w-full bg-gray-700 p-2 rounded font-mono">
+                    </div>
+
+                    <h3 class="font-bold mb-3 text-gray-300">Filtering Engine</h3>
+                    <div class="space-y-2 mb-6 text-sm">
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="admDropPi" class="rounded bg-gray-700"> <span>Drop Pi-Star Strings</span></label>
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="admDropD" class="rounded bg-gray-700"> <span>Drop D-STAR Routes</span></label>
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="admDropDesk" class="rounded bg-gray-700"> <span>Drop APDESK status</span></label>
+                    </div>
+
+                    <h3 class="font-bold mb-3 text-gray-300">Geofence Boundary</h3>
+                    <div class="grid grid-cols-4 gap-4 mb-6 text-sm items-end">
+                        <label class="flex items-center space-x-2 pb-2"><input type="checkbox" id="admGeoEn" class="rounded bg-gray-700"> <span>Enable</span></label>
+                        <div><label class="block text-gray-400 text-xs mb-1">Center Lat</label><input type="number" id="admLat" class="w-full bg-gray-700 p-2 rounded" step="any"></div>
+                        <div><label class="block text-gray-400 text-xs mb-1">Center Lon</label><input type="number" id="admLon" class="w-full bg-gray-700 p-2 rounded" step="any"></div>
+                        <div><label class="block text-gray-400 text-xs mb-1">Radius (km)</label><input type="number" id="admRad" class="w-full bg-gray-700 p-2 rounded"></div>
+                    </div>
+
+                    <button onclick="saveAdmin()" class="bg-red-600 hover:bg-red-500 px-6 py-2 rounded font-bold w-full mt-4">Hot Reload Config</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const map = L.map('map').setView([53.7, -1.5], 7);
+        let currentTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+        
+        let gridLayer = null;
+        let nightLayer = null;
+        let statusInterval = null;
+        
+        let stations = {}; 
+        let ws;
+        let myCallsign = "";
+        let msgCounter = 1;
+        let packetCount = 0;
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function changeMapStyle() {
+            const style = document.getElementById('map-style').value;
+            map.removeLayer(currentTiles);
+            if (style === 'osm') {
+                currentTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+            } else if (style === 'topo') {
+                currentTiles = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17 }).addTo(map);
+            } else if (style === 'sat') {
+                currentTiles = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(map);
+            }
+        }
+
+        function toggleOverlay(type) {
+            if (type === 'grid') {
+                const en = document.getElementById('layer-grid').checked;
+                if (en && !gridLayer) { gridLayer = L.maidenhead().addTo(map); }
+                else if (!en && gridLayer) { map.removeLayer(gridLayer); gridLayer = null; }
+            } else if (type === 'night') {
+                const en = document.getElementById('layer-night').checked;
+                if (en && !nightLayer) { nightLayer = L.terminator().addTo(map); }
+                else if (!en && nightLayer) { map.removeLayer(nightLayer); nightLayer = null; }
+            }
+        }
+
+        function togglePanel(panel) {
+            document.getElementById('map-panel').classList.add('hidden');
+            document.getElementById('search-panel').classList.add('hidden');
+            document.getElementById('messages-panel').classList.add('hidden');
+            document.getElementById('status-panel').classList.add('hidden');
+            document.getElementById('help-panel').classList.add('hidden');
+            document.getElementById('admin-panel').classList.add('hidden');
+            document.getElementById(panel + '-panel').classList.remove('hidden');
+            
+            clearInterval(statusInterval);
+            
+            if(panel === 'map') map.invalidateSize();
+            if(panel === 'search') renderList();
+            if(panel === 'admin') loadAdmin();
+            if(panel === 'status') {
+                loadStatus();
+                statusInterval = setInterval(loadStatus, 5000);
+            }
+        }
+
+        async function loadStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+                
+                document.getElementById('stat-uptime').innerText = data.uptime;
+                document.getElementById('stat-pkts').innerText = `${data.pkts_rx.toLocaleString()} / ${data.pkts_tx.toLocaleString()}`;
+                document.getElementById('stat-bytes').innerText = `${formatBytes(data.bytes_rx)} / ${formatBytes(data.bytes_tx)}`;
+                document.getElementById('stat-dropped').innerText = data.pkts_dropped.toLocaleString();
+
+                const tbody = document.getElementById('client-list');
+                tbody.innerHTML = '';
+                
+                data.clients.forEach(c => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="p-3 font-bold text-blue-400">${c.call}</td>
+                        <td class="p-3 uppercase text-xs text-gray-400">WS</td>
+                        <td class="p-3 font-mono text-xs">Masked</td>
+                        <td class="p-3 text-sm">${c.soft}</td>
+                        <td class="p-3 text-sm">Online</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (err) {
+                console.error("Status fetch failed");
+            }
+        }
+
+        function connectWS() {
+            ws = new WebSocket((window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.host + '/ws');
+            ws.onopen = () => {
+                document.getElementById('conn-status').classList.replace('bg-red-500', 'bg-green-500');
+                loadHistory(); 
+            };
+            ws.onclose = () => {
+                document.getElementById('conn-status').classList.replace('bg-green-500', 'bg-red-500');
+                doLogout();
+                setTimeout(connectWS, 2000);
+            };
+            ws.onmessage = function(e) {
+                const data = JSON.parse(e.data);
+                
+                if (data.type === 'sys') {
+                    if (!data.packet.startsWith('#')) {
+                        logChat('SYSTEM', data.packet, 'text-yellow-400');
+                    }
+                } else if (data.type === 'auth_ack') {
+                    if (data.status === 'success') {
+                        document.getElementById('auth-section').classList.add('hidden');
+                        document.getElementById('logged-in-section').classList.remove('hidden');
+                        document.getElementById('active-call').innerText = data.callsign;
+                        
+                        const compose = document.getElementById('compose-section');
+                        compose.classList.remove('opacity-50', 'pointer-events-none');
+                        document.getElementById('destCall').disabled = false;
+                        document.getElementById('msgText').disabled = false;
+                        compose.querySelector('button').disabled = false;
+                    } else {
+                        alert("Authentication failed. Check callsign and APRS passcode.");
+                        myCallsign = "";
+                    }
+                } else if (data.type === 'rx') {
+                    packetCount++;
+                    document.getElementById('rx-count').innerText = `RX: ${packetCount}`;
+                    handleIncoming(data);
+                }
+            };
+        }
+
+        async function loadHistory() {
+            try {
+                const res = await fetch('/api/history');
+                const data = await res.json();
+                if (!data) return;
+                data.sort((a,b) => a.ts - b.ts).forEach(pkt => {
+                    updateStationLocation(pkt.call, pkt.path, pkt.lat, pkt.lon, pkt.phg, pkt.ts, pkt.raw);
+                });
+                redrawMap();
+                renderList();
+            } catch (err) {
+                console.error("History sync failed");
+            }
+        }
+
+        function determineType(callsign, raw) {
+            if (callsign.startsWith('CW') || raw.includes('CWOP')) return 'cwop';
+            if (raw.includes('OGNFLR') || callsign.startsWith('FLR')) return 'ogn';
+            return 'aprs';
+        }
+
+        function handleIncoming(data) {
+            const raw = data.packet;
+            const parts = raw.split(':');
+            if (parts.length < 2) return;
+            const header = parts[0];
+            const callsign = header.split('>')[0];
+            const payload = parts.slice(1).join(':');
+
+            if (payload.startsWith(':')) {
+                const msgMatch = payload.match(/^:([A-Z0-9- ]{9}):(.*)/);
+                if (msgMatch) {
+                    const to = msgMatch[1].trim();
+                    let text = msgMatch[2];
+                    
+                    const ackMatch = text.match(/\{([a-zA-Z0-9]+)$/);
+                    if (ackMatch && to === myCallsign) {
+                        text = text.replace(/\{[a-zA-Z0-9]+$/, '');
+                        sendAck(callsign, ackMatch[1]);
+                    }
+                    
+                    if (text.startsWith('ack')) logChat('SYSTEM', `${callsign} acknowledged`, 'text-green-400');
+                    else logChat(`${callsign} -> ${to}`, text, 'text-gray-300');
+                }
+            }
+
+            if (data.data) {
+                const p = data.data;
+                updateStationLocation(p.call, p.path, p.lat, p.lon, p.phg, p.ts, p.raw);
+                redrawMap();
+            }
+        }
+
+        function calculatePHGRadius(phgStr) {
+            if (!phgStr || phgStr.length !== 7) return 0; 
+            const p = parseInt(phgStr[3]);
+            const h = parseInt(phgStr[4]);
+            if (p === 0 || h === 0) return 0;
+            const rangeMiles = Math.sqrt(2 * (10 * Math.pow(2, h)) * Math.sqrt(Math.pow(p, 2)/10));
+            return rangeMiles * 1609.34; 
+        }
+
+        function updateStationLocation(call, path, lat, lon, phg, ts, raw) {
+            if (!stations[call]) {
+                stations[call] = { positions: [], lastHeard: 0, raw: raw, type: determineType(call, raw) };
+            }
+            
+            const posArr = stations[call].positions;
+            if (posArr.length === 0 || posArr[posArr.length-1].ts !== ts) {
+                posArr.push({lat, lon, ts});
+            }
+            
+            stations[call].lastHeard = ts;
+            stations[call].raw = raw;
+            stations[call].path = path;
+            if (phg) stations[call].phg = phg;
+        }
+
+        function redrawMap() {
+            const now = Math.floor(Date.now() / 1000);
+            const tailSecs = parseInt(document.getElementById('tail-length').value);
+            const hideStatic = document.getElementById('hide-static').checked;
+            const showPhg = document.getElementById('show-phg').checked;
+            const showAprs = document.getElementById('show-aprs').checked;
+            const showCwop = document.getElementById('show-cwop').checked;
+            const showOgn = document.getElementById('show-ogn').checked;
+
+            Object.keys(stations).forEach(call => {
+                const st = stations[call];
+                
+                st.positions = st.positions.filter(p => now - p.ts <= tailSecs);
+
+                let isStatic = false;
+                if (st.positions.length > 1) {
+                    const first = st.positions[0];
+                    const last = st.positions[st.positions.length-1];
+                    const dist = Math.sqrt(Math.pow(first.lat-last.lat, 2) + Math.pow(first.lon-last.lon, 2));
+                    if (dist < 0.0005) isStatic = true; 
+                } else {
+                    isStatic = true;
+                }
+
+                let shouldHide = (hideStatic && isStatic && now - st.lastHeard > 300);
+                
+                if (st.type === 'aprs' && !showAprs) shouldHide = true;
+                if (st.type === 'cwop' && !showCwop) shouldHide = true;
+                if (st.type === 'ogn' && !showOgn) shouldHide = true;
+
+                if (shouldHide || st.positions.length === 0) {
+                    if (st.marker) { map.removeLayer(st.marker); st.marker = null; }
+                    if (st.polyline) { map.removeLayer(st.polyline); st.polyline = null; }
+                    if (st.phgCircle) { map.removeLayer(st.phgCircle); st.phgCircle = null; }
+                    return;
+                }
+
+                const latestPos = st.positions[st.positions.length-1];
+                const latLngs = st.positions.map(p => [p.lat, p.lon]);
+
+                if (!st.marker) {
+                    let cClass = `custom-div-icon sym-${st.type}`;
+                    if (call === myCallsign) cClass += " my-station";
+                    
+                    const icon = L.divIcon({ className: cClass, iconSize: [12, 12] });
+                    const tooltipHtml = `<b>${call}</b><br><span class="text-xs text-gray-400">${st.path || ''}</span>`;
+                    st.marker = L.marker([latestPos.lat, latestPos.lon], {icon: icon})
+                                 .bindTooltip(tooltipHtml, {direction: 'top', offset: [0, -10]})
+                                 .addTo(map);
+                } else {
+                    st.marker.setLatLng([latestPos.lat, latestPos.lon]);
+                    st.marker.setTooltipContent(`<b>${call}</b><br><span class="text-xs text-gray-400">${st.path || ''}</span>`);
+                }
+
+                if (!st.polyline) {
+                    st.polyline = L.polyline(latLngs, {color: '#3b82f6', weight: 2, opacity: 0.6}).addTo(map);
+                } else {
+                    st.polyline.setLatLngs(latLngs);
+                }
+
+                if (showPhg && st.phg && st.type === 'aprs') {
+                    const radius = calculatePHGRadius(st.phg);
+                    if (radius > 0) {
+                        if (!st.phgCircle) {
+                            st.phgCircle = L.circle([latestPos.lat, latestPos.lon], {
+                                radius: radius, color: '#10b981', weight: 1, fillOpacity: 0.1
+                            }).addTo(map);
+                        } else {
+                            st.phgCircle.setLatLng([latestPos.lat, latestPos.lon]);
+                            st.phgCircle.setRadius(radius);
+                        }
+                    }
+                } else if (st.phgCircle) {
+                    map.removeLayer(st.phgCircle);
+                    st.phgCircle = null;
+                }
+            });
+        }
+
+        function renderList() {
+            if (document.getElementById('search-panel').classList.contains('hidden')) return;
+            
+            const filter = document.getElementById('search-box').value.toUpperCase();
+            const tbody = document.getElementById('station-list');
+            tbody.innerHTML = '';
+            
+            const sorted = Object.keys(stations)
+                .filter(c => c.includes(filter))
+                .sort((a,b) => stations[b].lastHeard - stations[a].lastHeard)
+                .slice(0, 100);
+
+            sorted.forEach(call => {
+                const st = stations[call];
+                const d = new Date(st.lastHeard * 1000);
+                
+                let typeColor = "text-blue-400";
+                if(st.type === 'cwop') typeColor = "text-green-400";
+                if(st.type === 'ogn') typeColor = "text-yellow-500";
+
+                let locStr = "No valid coords";
+                if (st.positions.length > 0) {
+                    const p = st.positions[st.positions.length-1];
+                    locStr = `${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}`;
+                }
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="p-3 font-bold ${typeColor}">${call}</td>
+                    <td class="p-3 font-mono text-xs text-gray-400 max-w-[150px] truncate" title="${st.path}">${st.path}</td>
+                    <td class="p-3">${d.toLocaleTimeString()}</td>
+                    <td class="p-3 font-mono text-xs">${locStr}</td>
+                    <td class="p-3 font-mono text-xs text-gray-500 truncate max-w-xs" title="${st.raw}">${st.raw}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function sendAuth() {
+            myCallsign = document.getElementById('myCall').value.toUpperCase();
+            const pass = document.getElementById('myPass').value;
+            ws.send(JSON.stringify({ type: "auth", callsign: myCallsign, passcode: pass, software: "BrowserWebClient 1.0" }));
+        }
+
+        function doLogout() {
+            myCallsign = "";
+            document.getElementById('auth-section').classList.remove('hidden');
+            document.getElementById('logged-in-section').classList.add('hidden');
+            
+            const compose = document.getElementById('compose-section');
+            compose.classList.add('opacity-50', 'pointer-events-none');
+            document.getElementById('destCall').disabled = true;
+            document.getElementById('msgText').disabled = true;
+            compose.querySelector('button').disabled = true;
+            
+            logChat('SYSTEM', 'Disconnected auth state', 'text-yellow-400');
+        }
+
+        function sendMsg() {
+            if (!myCallsign) return alert("You must login to transmit.");
+            const to = document.getElementById('destCall').value.toUpperCase().padEnd(9, ' ');
+            let text = document.getElementById('msgText').value.trim();
+            if (!text) return;
+            
+            const msgId = msgCounter.toString().padStart(2, '0');
+            const packet = `${myCallsign}>APRS,TCPIP*::${to}:${text}{${msgId}`;
+            ws.send(JSON.stringify({ type: "tx", packet: packet }));
+            logChat(`${myCallsign} -> ${to.trim()}`, text, 'text-white');
+            
+            document.getElementById('msgText').value = '';
+            msgCounter = (msgCounter % 99) + 1;
+        }
+
+        function sendAck(toCall, msgId) {
+            if (!myCallsign) return;
+            const to = toCall.padEnd(9, ' ');
+            const packet = `${myCallsign}>APRS,TCPIP*::${to}:ack${msgId}`;
+            ws.send(JSON.stringify({ type: "tx", packet: packet }));
+        }
+
+        function centerOnUser() {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.getCurrentPosition((position) => {
+                    map.setView([position.coords.latitude, position.coords.longitude], 12);
+                });
+            } else {
+                alert("Geolocation is not supported by your browser");
+            }
+        }
+
+        async function loadAdmin() {
+            const res = await fetch('/api/config');
+            if (res.status === 401) {
+                alert("Browser basic auth required. Enter 2e0lxy / 33wf31ug33");
+                return;
+            }
+            const data = await res.json();
+            document.getElementById('admName').value = data.server_name;
+            document.getElementById('admVers').value = data.software_vers;
+            document.getElementById('admCall').value = data.callsign;
+            document.getElementById('admPass').value = data.passcode;
+            document.getElementById('admUpstream').value = data.upstream_addr;
+            document.getElementById('admFilter').value = data.server_filter;
+            document.getElementById('admDropPi').checked = data.drop_pistar;
+            document.getElementById('admDropD').checked = data.drop_dstar;
+            document.getElementById('admDropDesk').checked = data.drop_apdesk;
+            document.getElementById('admGeoEn').checked = data.enable_geofence;
+            document.getElementById('admLat').value = data.center_lat;
+            document.getElementById('admLon').value = data.center_lon;
+            document.getElementById('admRad').value = data.radius_km;
+        }
+
+        async function saveAdmin() {
+            const payload = {
+                server_name: document.getElementById('admName').value,
+                software_vers: document.getElementById('admVers').value,
+                callsign: document.getElementById('admCall').value,
+                passcode: document.getElementById('admPass').value,
+                upstream_addr: document.getElementById('admUpstream').value,
+                server_filter: document.getElementById('admFilter').value,
+                drop_pistar: document.getElementById('admDropPi').checked,
+                drop_dstar: document.getElementById('admDropD').checked,
+                drop_apdesk: document.getElementById('admDropDesk').checked,
+                enable_geofence: document.getElementById('admGeoEn').checked,
+                center_lat: parseFloat(document.getElementById('admLat').value),
+                center_lon: parseFloat(document.getElementById('admLon').value),
+                radius_km: parseFloat(document.getElementById('admRad').value)
+            };
+            await fetch('/api/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            alert("Backend reloaded successfully.");
+        }
+
+        connectWS();
+        setInterval(redrawMap, 30000); 
+    </script>
+</body>
+</html>
