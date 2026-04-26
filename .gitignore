@@ -1,0 +1,3 @@
+
+# Runtime credential store — never commit
+creds.json
