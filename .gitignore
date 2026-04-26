@@ -1,3 +1,6 @@
 
 # Runtime credential store — never commit
 creds.json
+
+# Runtime server config — never commit
+server_config.json

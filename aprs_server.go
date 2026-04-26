@@ -132,6 +132,7 @@ type wsMessage struct {
 
 func main() {
 	loadOrInitCreds()
+	loadSavedConfig()
 
 	go cleanDuplicateCache()
 	go maintainUpstream()
@@ -816,6 +817,9 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 	config.CenterLon = n.CenterLon
 	config.RadiusKm = n.RadiusKm
 	config.Unlock()
+	if err := saveConfig(); err != nil {
+		log.Printf("Warning: config applied but failed to persist: %v", err)
+	}
 	select {
 	case <-reconnectChan:
 	default:
@@ -844,9 +848,56 @@ func handleWhoami(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"ok":true,"user":"` + user + `"}`))
 }
 
+
+// ─── Server config persistence ───────────────────────────────────────────────
+
+// saveConfig writes the current AppConfig to server_config.json.
+func saveConfig() error {
+	config.RLock()
+	data, err := json.MarshalIndent(config, "", "  ")
+	config.RUnlock()
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(configFile, data, 0600)
+}
+
+// loadSavedConfig reads server_config.json if it exists and applies it.
+// Called once at startup before the upstream connection is established.
+func loadSavedConfig() {
+	data, err := os.ReadFile(configFile)
+	if err != nil {
+		log.Printf("No server_config.json found — using defaults")
+		return
+	}
+	var saved AppConfig
+	if err := json.Unmarshal(data, &saved); err != nil {
+		log.Printf("server_config.json parse error: %v — using defaults", err)
+		return
+	}
+	config.Lock()
+	config.ServerName     = saved.ServerName
+	config.SoftwareVers   = saved.SoftwareVers
+	config.Callsign       = saved.Callsign
+	config.Passcode       = saved.Passcode
+	config.UpstreamAddr   = saved.UpstreamAddr
+	config.ServerFilter   = saved.ServerFilter
+	config.DropPiStar     = saved.DropPiStar
+	config.DropDStar      = saved.DropDStar
+	config.DropAPDesk     = saved.DropAPDesk
+	config.EnableGeofence = saved.EnableGeofence
+	config.CenterLat      = saved.CenterLat
+	config.CenterLon      = saved.CenterLon
+	config.RadiusKm       = saved.RadiusKm
+	config.Unlock()
+	log.Printf("Server config loaded: callsign=%s upstream=%s filter=%s",
+		saved.Callsign, saved.UpstreamAddr, saved.ServerFilter)
+}
+
 // ─── First-run credential persistence ────────────────────────────────────────
 
-const credsFile = "creds.json"
+const credsFile  = "creds.json"
+const configFile = "server_config.json"
 
 type storedCreds struct {
 	Username string `json:"username"`
