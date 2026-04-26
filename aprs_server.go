@@ -733,6 +733,8 @@ func keepaliveLoop() {
 		config.RLock()
 		msg := fmt.Sprintf("# %s %s", config.ServerName, config.SoftwareVers)
 		config.RUnlock()
+
+		// WebSocket clients
 		data, _ := json.Marshal(wsMessage{Type: "sys", Packet: msg})
 		clientsMu.Lock()
 		for c := range clients {
@@ -742,8 +744,21 @@ func keepaliveLoop() {
 			}
 		}
 		clientsMu.Unlock()
-		// Also push to TCP APRS-IS clients
-		broadcastToTCPClients(packet)
+
+		// TCP APRS-IS clients — raw keepalive comment
+		tcpClientsMu.Lock()
+		snap := make([]*tcpClient, 0, len(tcpClients))
+		for c := range tcpClients {
+			snap = append(snap, c)
+		}
+		tcpClientsMu.Unlock()
+		for _, c := range snap {
+			go func(cl *tcpClient, m string) {
+				cl.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				fmt.Fprintf(cl.conn, "%s\r\n", m)
+				cl.conn.SetWriteDeadline(time.Time{})
+			}(c, msg)
+		}
 	}
 }
 
