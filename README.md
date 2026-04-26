@@ -1,61 +1,47 @@
-## Project Overview: High-Performance APRS Gateway
-This project is a modern, high-performance **APRS-IS Gateway** designed for stability and efficiency. It replaces resource-heavy legacy implementations with a streamlined stack that runs on minimal hardware. It functions as a central hub for Amateur Radio telemetry, providing a real-time visual interface while maintaining strict routing standards for the global APRS network.
-### Core Technical Stack
- * **Language:** **Go (Golang)**. Leverages native concurrency and a tiny memory footprint, avoiding the bloat of virtual machine runtimes.
- * **Web Server:** **Caddy**. Acts as a high-speed reverse proxy with automatic **HTTPS (SSL)** management.
- * **Frontend:** **Vanilla JavaScript & Tailwind CSS**. Uses **Leaflet.js** for mapping to ensure the browser remains responsive even with hundreds of live markers.
- * **Data Transport:** **WebSockets (WSS)** for the web UI and **TCP/UDP** for upstream network links and hardware trackers.
-### Available Features
-| Feature Category | Capabilities |
-|---|---|
-| **Bidirectional Routing** | Links to global master servers via TCP. Supports full data flow with standard passcode authentication. |
-| **Advanced Filtering** | Integrated engine to drop unwanted telemetry (Pi-Star, D-STAR, etc.) and a server-side geofence to filter by geographic radius. |
-| **Tactical Map UI** | Real-time tracking with Maidenhead Grids, Day/Night overlays, PHG coverage circles, and movement trails. |
-| **Integrated Messaging** | Full station-to-station messaging with automatic protocol acknowledgements (ACK). |
-| **System Metrics** | Real-time dashboard tracking uptime, packet counts, throughput, and active client lists. |
-| **Network Integrity** | Rate limiting (1 pkt/sec) and Q-Construct injection (qAC/qAU) to prevent routing loops and network abuse. |
-| **Hardware Support** | Listener for blind-fire UDP packets from hardware trackers and IoT devices. |
-### Technical Implementation
- * **Behavioral Interfaces:** We used Go interfaces to handle different connection types (WebSocket, UDP, TCP) through a single routing logic, ensuring code remains lean.
- * **In-Memory Ring Buffer:** Historical data is managed in a fast circular buffer, allowing users to sync recent history without the overhead of an external database.
- * **Local Validation:** The server calculates APRS-IS passcode hashes locally to verify users before passing data upstream, protecting the node's reputation.
- * **Path Scrubbing:** Strict duplicate checking hashes packet payloads and cleans TNC-2 headers to ensure network efficiency.
-### Installation Instructions
-This guide is for a fresh **Debian 12** installation with a domain name pointed to the server IP.
-#### 1. System Preparation
-Login as root and update the system:
+# Advanced APRS Go Server
+A high-performance, bidirectional **APRS-IS Gateway** engineered for stability, security, and low latency. This project replaces resource-heavy legacy implementations with a modern Go-based stack, providing a real-time visual NOC (Network Operations Centre) for Amateur Radio telemetry.
+## 🚀 Key Features
+ * **Bidirectional APRS-IS Routing**: Connects to global Tier 2 hubs via TCP with strict loop prevention.
+ * **Modern Web Interface**: High-contrast, neon-themed tactical map using Leaflet.js and Tailwind CSS.
+ * **Intelligent Filtering**: Built-in "Adjunct" engine to strip bloated telemetry (Pi-Star, D-STAR, APDESK) and server-side geofencing.
+ * **Real-time Messaging**: Full station-to-station messaging with automatic protocol acknowledgements (ACK).
+ * **Integrated API**: Secure WebSocket (WSS) and JSON endpoints for third-party developers and live metrics.
+ * **Hardware Support**: Statutory UDP 14580 listener for stateless hardware trackers and IoT devices.
+ * **Automatic SSL**: Powered by Caddy for zero-config HTTPS and encrypted administrative access.
+## 🛠 Technical Stack
+ * **Language**: Go (Golang) — Native concurrency with a tiny memory footprint.
+ * **Web Server**: Caddy — Modern reverse proxy with auto-HTTPS.
+ * **Frontend**: Vanilla JS — Framework-free for maximum browser performance.
+ * **Security**: Token-bucket rate limiting and Q-construct injection (qAC/qAU).
+## 📦 Installation (Debian 12)
+This project includes an automated deployment script that handles Go installation, Caddy configuration, and systemd service setup.
+### 1. Prerequisites
+Ensure your domain A-record (e.g., theloxleys.uk) points to your VPS IP.
+### 2. One-Line Deployment
+Run the following command as **root** to clone and install the entire system:
 ```bash
-apt update && apt upgrade -y
-apt install -y curl wget git ufw debian-keyring debian-archive-keyring apt-transport-https
+apt update && apt install -y git && \
+git clone https://github.com/2E0LXY/Advanced-APRS-Go-server /opt/aprs-gateway && \
+cd /opt/aprs-gateway && chmod +x install.sh && ./install.sh
 
 ```
-#### 2. Install the Go Compiler
-```bash
-wget https://go.dev/dl/go1.22.2.linux-amd64.tar.gz
-rm -rf /usr/local/go && tar -C /usr/local -xzf go1.22.2.linux-amd64.tar.gz
-export PATH=$PATH:/usr/local/go/bin
-echo 'export PATH=$PATH:/usr/local/go/bin' >> /root/.profile
-
-```
-#### 3. Deploy from Repository
-Clone your project files into the application directory:
-```bash
-mkdir -p /opt/aprs-gateway
-cd /opt/aprs-gateway
-# Clone your specific repository here
-git clone <your-repo-url> . 
-chmod +x install.sh
-./install.sh
-
-```
-#### 4. Administrative Credentials
-The gateway is configured with the following default credentials for the Admin panel:
- * **Username:** admin
- * **Password:** adminpass
-#### 5. Port Configuration
-Ensure the following ports are open on your firewall:
- * **80/443 (TCP):** Web interface and SSL.
- * **14580 (UDP):** Incoming hardware telemetry.
- * **14580 (TCP):** Internal routing (proxied by Caddy).
-### Final Summary
-The result is a professional-grade APRS node that adheres to modern network standards. It provides a secure, encrypted frontend for users while maintaining the raw high-speed connections required for global radio telemetry. It is engineered to be accurate, responsive, and extremely stable under heavy load.
+## 🔐 Administrative Access
+The dashboard and configuration API are protected via HTTP Basic Auth.
+ * **Default Username**: 2e0lxy
+ * **Default Password**: 33wf31ug33
+*Note: You can update these credentials directly in the basicAuth function within aprs_server.go.*
+## 📑 API Endpoints
+| Endpoint | Type | Description |
+|---|---|---|
+| / | HTTP | Main Tactical Map Dashboard |
+| /ws | WSS | Bi-directional JSON Data Stream |
+| /api/status | JSON | Real-time Packet & Client Metrics |
+| /api/history | JSON | Recent Station Position History |
+| /api/config | JSON | Protected Server Configuration |
+## 🛡️ Firewall Configuration
+The install.sh script configures ufw automatically. Ensure the following ports are permitted:
+ * **80/443 (TCP)**: Web Traffic & SSL.
+ * **14580 (UDP)**: Incoming Hardware Telemetry.
+ * **14580 (TCP)**: Standard APRS-IS Uplink/Downlink.
+## ⚖️ License
+This project is intended for the Amateur Radio community. Use it to build faster, cleaner infrastructure. Stability and backend logic are prioritised over fashionable bloat.
