@@ -247,14 +247,17 @@
                         <input list="aprs-servers" id="admUpstream" class="w-full bg-gray-700 p-2 rounded">
                         <datalist id="aprs-servers">
                             <option value="rotate.aprs2.net:14580">Global Rotate</option>
-                            <option value="euro.aprs2.net:14580">Europe Rotate</option>
+                            <option value="noam.aprs2.net:14580">North America</option>
+                            <option value="soam.aprs2.net:14580">South America</option>
+                            <option value="euro.aprs2.net:14580">Europe</option>
+                            <option value="asia.aprs2.net:14580">Asia</option>
+                            <option value="aunz.aprs2.net:14580">Oceania</option>
                             <option value="t2uk.aprs2.net:14580">T2UK</option>
-                            <option value="t2gb.aprs2.net:14580">T2GB</option>
                         </datalist>
                     </div>
 
                     <div class="mb-8 text-sm">
-                        <label class="block text-gray-400 mb-1">Subscription String</label>
+                        <label class="block text-gray-400 mb-1">Subscription String (Type 'auto' to use Geofence coords below)</label>
                         <input type="text" id="admFilter" class="w-full bg-gray-700 p-2 rounded font-mono">
                     </div>
 
