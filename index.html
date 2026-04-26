@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>APRS Gateway — 2E0LXY</title>
-<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/tailwindcss@3/dist/tailwind.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/dudinea/leaflet-maidenhead@master/src/maidenhead.js"></script>
@@ -449,20 +449,24 @@ async function doAdminLogin() {
   const err  = document.getElementById('admin-login-err');
   if (!user || !pass) { err.innerText='Enter username and password'; err.classList.remove('hidden'); return; }
   const creds = 'Basic ' + btoa(user + ':' + pass);
+  err.classList.add('hidden');
   try {
-    const r = await fetch('/api/config', {headers: {'Authorization': creds}});
-    if (r.status === 401) {
+    // Use /api/whoami to verify — lightweight, no config data returned on failure
+    const check = await fetch('/api/whoami', {headers: {'Authorization': creds}});
+    if (check.status === 401) {
       err.innerText = 'Invalid username or password';
       err.classList.remove('hidden');
       document.getElementById('adminLoginPass').value = '';
       return;
     }
-    // Success
+    // Credentials good — now fetch config
     adminAuth = creds;
+    const cfgRes = await fetch('/api/config', {headers: {'Authorization': adminAuth}});
+    if (!cfgRes.ok) { err.innerText = 'Config load failed'; err.classList.remove('hidden'); return; }
     err.classList.add('hidden');
     document.getElementById('admin-login-gate').classList.add('hidden');
     document.getElementById('admin-content').classList.remove('hidden');
-    populateAdmin(await r.json());
+    populateAdmin(await cfgRes.json());
   } catch(e) {
     err.innerText = 'Connection error — try again';
     err.classList.remove('hidden');
