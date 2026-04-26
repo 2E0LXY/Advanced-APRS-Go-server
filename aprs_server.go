@@ -92,6 +92,14 @@ var (
 	history    []HistoryPacket
 	historyMu  sync.RWMutex
 	maxHistory = 10000
+
+	// rawRing stores the last hour of all raw packets for replay to new clients
+	rawRing   []RawEntry
+	rawRingMu sync.RWMutex
+
+	// msgStore stores the last hour of APRS messages for replay
+	msgStore   []MsgEntry
+	msgStoreMu sync.RWMutex
 )
 
 var (
@@ -109,6 +117,20 @@ type HistoryPacket struct {
 	Symbol    string  `json:"sym"`
 	PHG       string  `json:"phg,omitempty"`
 	Raw       string  `json:"raw"`
+}
+
+type RawEntry struct {
+	Timestamp int64  `json:"ts"`
+	Packet    string `json:"packet"`
+}
+
+type MsgEntry struct {
+	Timestamp int64  `json:"ts"`
+	From      string `json:"from"`
+	To        string `json:"to"`
+	Text      string `json:"text"`
+	MsgID     string `json:"id,omitempty"`
+	Packet    string `json:"packet"`
 }
 
 type wsClient struct {
@@ -152,6 +174,7 @@ func main() {
 	http.HandleFunc("/api/password", basicAuth(handlePassword))
 	http.HandleFunc("/api/whoami", basicAuth(handleWhoami))
 	http.HandleFunc("/api/version", handleVersion)
+	http.HandleFunc("/api/messages", handleMessages)
 	http.HandleFunc("/api/update", basicAuth(handleUpdate))
 
 	log.Printf("Advanced APRS Gateway active on :8080")
@@ -414,6 +437,46 @@ func parsePacket(packet string) (HistoryPacket, bool) {
 	return hp, true
 }
 
+// parseAPRSMessage extracts an APRS message packet into a MsgEntry.
+// Returns nil if the packet is not a message.
+func parseAPRSMessage(packet string) *MsgEntry {
+	gtIdx := strings.Index(packet, ">")
+	colIdx := strings.Index(packet, ":")
+	if gtIdx == -1 || colIdx == -1 || gtIdx > colIdx {
+		return nil
+	}
+	from := packet[:gtIdx]
+	payload := packet[colIdx+1:]
+	// APRS message format: :CALLSIGN :text{id}
+	if len(payload) < 11 || payload[0] != ':' {
+		return nil
+	}
+	to := strings.TrimSpace(payload[1:10])
+	body := payload[10:]
+	if len(body) < 1 || body[0] != ':' {
+		return nil
+	}
+	body = body[1:]
+	msgID := ""
+	if idx := strings.LastIndex(body, "{"); idx != -1 {
+		msgID = body[idx+1:]
+		body = body[:idx]
+		msgID = strings.TrimRight(msgID, "}")
+	}
+	// Skip acks
+	if strings.HasPrefix(strings.ToLower(body), "ack") {
+		return nil
+	}
+	return &MsgEntry{
+		Timestamp: time.Now().Unix(),
+		From:      from,
+		To:        to,
+		Text:      strings.TrimSpace(body),
+		MsgID:     msgID,
+		Packet:    packet,
+	}
+}
+
 func handleBroadcasts() {
 	for packet := range broadcast {
 		parsed, hasCoords := parsePacket(packet)
@@ -424,6 +487,25 @@ func handleBroadcasts() {
 				history = history[1:]
 			}
 			historyMu.Unlock()
+		}
+
+		// Store in raw ring buffer (trim entries older than 1 hour)
+		now := time.Now().Unix()
+		rawRingMu.Lock()
+		rawRing = append(rawRing, RawEntry{Timestamp: now, Packet: packet})
+		for len(rawRing) > 0 && now-rawRing[0].Timestamp > 3600 {
+			rawRing = rawRing[1:]
+		}
+		rawRingMu.Unlock()
+
+		// Parse and store APRS messages
+		if msg := parseAPRSMessage(packet); msg != nil {
+			msgStoreMu.Lock()
+			msgStore = append(msgStore, *msg)
+			for len(msgStore) > 0 && now-msgStore[0].Timestamp > 3600 {
+				msgStore = msgStore[1:]
+			}
+			msgStoreMu.Unlock()
 		}
 		msg := wsMessage{Type: "rx", Packet: packet}
 		if hasCoords {
@@ -469,6 +551,53 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 	clients[client] = true
 	clientsMu.Unlock()
 	go client.writePump()
+
+	// Send replay of last hour to new client
+	go func() {
+		// Small delay so client JS is ready
+		time.Sleep(300 * time.Millisecond)
+
+		// Raw packet replay
+		rawRingMu.RLock()
+		replay := make([]RawEntry, len(rawRing))
+		copy(replay, rawRing)
+		rawRingMu.RUnlock()
+
+		for _, e := range replay {
+			msg := wsMessage{Type: "rx", Packet: e.Packet}
+			if parsed, ok := parsePacket(e.Packet); ok {
+				msg.Data = parsed
+			}
+			data, _ := json.Marshal(msg)
+			select {
+			case client.send <- data:
+			default:
+			}
+		}
+
+		// Message replay
+		msgStoreMu.RLock()
+		msgs := make([]MsgEntry, len(msgStore))
+		copy(msgs, msgStore)
+		msgStoreMu.RUnlock()
+
+		for _, m := range msgs {
+			data, _ := json.Marshal(wsMessage{Type: "msg_history", Packet: m.Packet,
+				Callsign: m.From, Data: m})
+			select {
+			case client.send <- data:
+			default:
+			}
+		}
+
+		// Signal end of replay
+		data, _ := json.Marshal(wsMessage{Type: "replay_done"})
+		select {
+		case client.send <- data:
+		default:
+		}
+	}()
+
 	defer func() {
 		clientsMu.Lock()
 		delete(clients, client)
@@ -864,6 +993,15 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 func handleVersion(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"version":"` + AppVersion + `"}`))
+}
+
+
+// handleMessages returns the last hour of APRS messages.
+func handleMessages(w http.ResponseWriter, r *http.Request) {
+	msgStoreMu.RLock()
+	defer msgStoreMu.RUnlock()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(msgStore)
 }
 
 // handleWhoami returns the authenticated username — used by the frontend

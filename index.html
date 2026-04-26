@@ -682,12 +682,16 @@
 
 <!-- Footer -->
 <div class="flex-none bg-gray-900 border-t border-gray-800 px-4 py-1.5 flex items-center justify-between text-xs text-gray-600">
-  <span>Advanced APRS Go Server &nbsp;·&nbsp;
+  <span class="flex items-center space-x-2">
+    <span class="text-gray-500 font-medium">Advanced APRS Go Server</span>
+    <span class="text-gray-700">·</span>
+    <span class="text-gray-500">Daren Loxley, 2E0LXY</span>
+    <span class="text-gray-700">·</span>
     <a href="https://github.com/2E0LXY/Advanced-APRS-Go-server" target="_blank" class="hover:text-gray-400 transition-colors">GitHub ↗</a>
-    &nbsp;·&nbsp;
-    <a href="https://github.com/2E0LXY/Advanced-APRS-Go-server/blob/main/LICENCE" target="_blank" class="hover:text-gray-400 transition-colors">GPL v3 Licence ↗</a>
+    <span class="text-gray-700">·</span>
+    <a href="https://github.com/2E0LXY/Advanced-APRS-Go-server/blob/main/LICENCE" target="_blank" class="hover:text-gray-400 transition-colors">GPL v3 ↗</a>
   </span>
-  <span id="footer-version" class="font-mono"></span>
+  <span id="footer-version" class="font-mono text-gray-600"></span>
 </div>
 
 
@@ -928,6 +932,20 @@ async function loadStatus() {
 
 
 // ─── WebSocket ───────────────────────────────────────────────────────────────
+function logMsgHistory(m) {
+  const log = document.getElementById('chat-log'); if (!log) return;
+  const t = new Date(m.ts*1000).toLocaleTimeString();
+  const el = document.createElement('div');
+  el.className = 'opacity-70';
+  el.innerHTML = '<span class="text-gray-600">['+t+' replayed]</span> '
+    +'<span class="font-bold text-purple-400">'+m.from+'</span>'
+    +' <span class="text-gray-500">→</span> '
+    +'<span class="font-bold text-gray-300">'+m.to+'</span>'
+    +': <span class="text-gray-400">'+m.text+'</span>';
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+}
+
 function logChat(sender, message, colorClass) {
   const log = document.getElementById('chat-log'); if (!log) return;
   const el = document.createElement('div');
@@ -981,6 +999,11 @@ function connectWS() {
       packetCount++;
       document.getElementById('rx-count').innerText='RX: '+packetCount;
       handleIncoming(d);
+    } else if (d.type==='msg_history') {
+      if (d.data) logMsgHistory(d.data);
+    } else if (d.type==='replay_done') {
+      redrawMap(); renderList();
+      logChat('SERVER','Replay complete — showing last hour of activity','text-indigo-400');
     }
   };
 }
