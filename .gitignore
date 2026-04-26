@@ -4,3 +4,8 @@ creds.json
 
 # Runtime server config — never commit
 server_config.json
+
+# Temp patch scripts
+*.py
+*.bak
+index_work.html
