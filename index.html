@@ -777,20 +777,18 @@ const SYMBOL_LABELS = {
 
 // Get sprite position for a symbol character in the 16x12 sprite grid
 function getSymbolSprite(table, code) {
-  // APRS symbol sprite: 16 columns, chars start at ASCII 33 (!)
+  // hessu/aprs-symbols: 16 cols x 6 rows, 24x24px each = 384x144px total
   const idx = code.charCodeAt(0) - 33;
   if (idx < 0 || idx > 93) return null;
   const col = idx % 16;
   const row = Math.floor(idx / 16);
-  const px = col * 24;
-  const py = row * 24;
-  // aprs.fi provides two sprite sheets
-  // Sprites served locally from /symbols/ to avoid CORS issues
-  // 16 cols x 6 rows, 24x24px each = 384x144px total
-  const sheet = (table === '/')
-    ? '/symbols/symbols-new.png'
-    : '/symbols/symbols-new2.png';
-  return { sheet, px, py, idx };
+  return {
+    sheet: (table === '/') ? '/symbols/symbols-new.png' : '/symbols/symbols-new2.png',
+    px: col * 24,
+    py: row * 24,
+    w: 384,
+    h: 144
+  };
 }
 
 function baseCall(call) {
