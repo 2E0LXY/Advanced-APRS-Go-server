@@ -706,19 +706,24 @@ func handleTCPClient(conn net.Conn) {
 // Called from handleBroadcasts.
 func broadcastToTCPClients(packet string) {
 	line := packet + "\r\n"
+	// Snapshot the client list so we don't hold the mutex during writes
 	tcpClientsMu.Lock()
-	defer tcpClientsMu.Unlock()
+	snap := make([]*tcpClient, 0, len(tcpClients))
 	for c := range tcpClients {
-		// Send to any client that has completed login (verified or read-only)
-		if c.callsign == "" {
-			continue // not logged in yet — skip
+		if c.callsign != "" {
+			snap = append(snap, c)
 		}
-		c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-		_, err := fmt.Fprint(c.conn, line)
-		c.conn.SetWriteDeadline(time.Time{})
-		if err != nil {
-			log.Printf("TCP client write error for %s: %v", c.callsign, err)
-		}
+	}
+	tcpClientsMu.Unlock()
+	for _, c := range snap {
+		go func(cl *tcpClient, l string) {
+			cl.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			_, err := fmt.Fprint(cl.conn, l)
+			cl.conn.SetWriteDeadline(time.Time{})
+			if err != nil {
+				log.Printf("TCP write error %s: %v", cl.callsign, err)
+			}
+		}(c, line)
 	}
 }
 
