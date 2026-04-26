@@ -65,16 +65,10 @@ systemctl daemon-reload
 systemctl enable aprs
 systemctl restart aprs
 
-cat <<EOF > /etc/caddy/Caddyfile
-theloxleys.uk {
-    reverse_proxy /ws 127.0.0.1:8080
-    reverse_proxy /api/* 127.0.0.1:8080
-    reverse_proxy / 127.0.0.1:8080
-}
-EOF
-
+cp Caddyfile /etc/caddy/Caddyfile
 systemctl restart caddy
 
+ufw allow 22/tcp
 ufw allow 80/tcp
 ufw allow 443/tcp
 ufw allow 14580/udp
