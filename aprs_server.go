@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"os"
 	"fmt"
 	"log"
 	"math"
@@ -127,8 +128,7 @@ type wsMessage struct {
 }
 
 func main() {
-	adminCreds.Username = "2e0lxy"
-	adminCreds.Password = "33wf31ug33"
+	loadOrInitCreds()
 
 	go cleanDuplicateCache()
 	go maintainUpstream()
@@ -136,7 +136,8 @@ func main() {
 	go listenUDP()
 	go keepaliveLoop()
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "index.html") })
+	http.HandleFunc("/", serveIndex)
+	http.HandleFunc("/setup", handleSetup)
 	http.HandleFunc("/ws", handleWS)
 	http.HandleFunc("/api/config", basicAuth(handleConfig))
 	http.HandleFunc("/api/history", handleHistory)
@@ -145,6 +146,15 @@ func main() {
 
 	log.Printf("Advanced APRS Gateway active on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
+}
+
+// serveIndex redirects to /setup if no credentials have been configured yet.
+func serveIndex(w http.ResponseWriter, r *http.Request) {
+	if !credsConfigured() {
+		http.Redirect(w, r, "/setup", http.StatusFound)
+		return
+	}
+	http.ServeFile(w, r, "index.html")
 }
 
 func basicAuth(next http.HandlerFunc) http.HandlerFunc {
@@ -162,27 +172,7 @@ func basicAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// handlePassword changes the admin UI password at runtime.
-// POST /api/password  body: {"new_password":"..."}
-func handlePassword(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	var req struct {
-		NewPassword string `json:"new_password"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.NewPassword) == "" {
-		http.Error(w, "bad request: new_password required", http.StatusBadRequest)
-		return
-	}
-	adminCreds.Lock()
-	adminCreds.Password = req.NewPassword
-	adminCreds.Unlock()
-	log.Printf("Admin password updated")
-	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"ok":true}`))
-}
+// handlePassword is defined below in the first-run setup section.
 
 func verifyPasscode(callsign, passcode string) bool {
 	if passcode == "-1" {
@@ -647,4 +637,184 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	reconnectChan <- struct{}{}
 	w.WriteHeader(http.StatusOK)
+}
+
+
+// ─── First-run credential persistence ────────────────────────────────────────
+
+const credsFile = "creds.json"
+
+type storedCreds struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// credsConfigured returns true if creds.json exists and has non-empty values.
+func credsConfigured() bool {
+	adminCreds.RLock()
+	defer adminCreds.RUnlock()
+	return adminCreds.Username != "" && adminCreds.Password != ""
+}
+
+// loadOrInitCreds loads creds.json if it exists; otherwise sets empty creds
+// so the server redirects to /setup on first visit.
+func loadOrInitCreds() {
+	data, err := os.ReadFile(credsFile)
+	if err != nil {
+		// First run — no creds file yet
+		log.Printf("No creds.json found — first-run setup required at /setup")
+		adminCreds.Lock()
+		adminCreds.Username = ""
+		adminCreds.Password = ""
+		adminCreds.Unlock()
+		return
+	}
+	var sc storedCreds
+	if err := json.Unmarshal(data, &sc); err != nil || sc.Username == "" || sc.Password == "" {
+		log.Printf("creds.json invalid — first-run setup required at /setup")
+		adminCreds.Lock()
+		adminCreds.Username = ""
+		adminCreds.Password = ""
+		adminCreds.Unlock()
+		return
+	}
+	adminCreds.Lock()
+	adminCreds.Username = sc.Username
+	adminCreds.Password = sc.Password
+	adminCreds.Unlock()
+	log.Printf("Admin credentials loaded for user: %s", sc.Username)
+}
+
+// saveCreds writes current credentials to creds.json.
+func saveCreds(username, password string) error {
+	data, err := json.MarshalIndent(storedCreds{Username: username, Password: password}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(credsFile, data, 0600)
+}
+
+// handleSetup serves the first-run setup page and processes the form POST.
+// Once creds are set it redirects to / permanently.
+func handleSetup(w http.ResponseWriter, r *http.Request) {
+	// If already configured, redirect away — setup is one-time only.
+	if credsConfigured() {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+
+	if r.Method == "POST" {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		username := strings.TrimSpace(r.FormValue("username"))
+		password := r.FormValue("password")
+		confirm := r.FormValue("confirm")
+
+		var errMsg string
+		switch {
+		case username == "":
+			errMsg = "Username cannot be empty."
+		case len(username) < 3:
+			errMsg = "Username must be at least 3 characters."
+		case len(password) < 8:
+			errMsg = "Password must be at least 8 characters."
+		case password != confirm:
+			errMsg = "Passwords do not match."
+		}
+
+		if errMsg != "" {
+			serveSetupPage(w, errMsg)
+			return
+		}
+
+		if err := saveCreds(username, password); err != nil {
+			log.Printf("Failed to save creds: %v", err)
+			http.Error(w, "Failed to save credentials", http.StatusInternalServerError)
+			return
+		}
+		adminCreds.Lock()
+		adminCreds.Username = username
+		adminCreds.Password = password
+		adminCreds.Unlock()
+		log.Printf("First-run setup complete — admin user: %s", username)
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+
+	serveSetupPage(w, "")
+}
+
+// handlePassword now also persists the new password to creds.json.
+func handlePassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		NewPassword string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.NewPassword) == "" {
+		http.Error(w, "bad request: new_password required", http.StatusBadRequest)
+		return
+	}
+	adminCreds.Lock()
+	username := adminCreds.Username
+	adminCreds.Password = req.NewPassword
+	adminCreds.Unlock()
+	if err := saveCreds(username, req.NewPassword); err != nil {
+		log.Printf("Warning: password changed in memory but failed to persist: %v", err)
+	}
+	log.Printf("Admin password updated and persisted")
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"ok":true}`))
+}
+
+func serveSetupPage(w http.ResponseWriter, errMsg string) {
+	errHTML := ""
+	if errMsg != "" {
+		errHTML = `<p class="text-red-400 text-sm mb-4 bg-red-900/30 p-3 rounded border border-red-700">` + errMsg + `</p>`
+	}
+	page := `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>APRS Gateway — First Run Setup</title>
+<script src="https://cdn.tailwindcss.com"></script></head>
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center">
+<div class="w-full max-w-md p-8 bg-gray-800 rounded-xl border border-gray-700 shadow-2xl">
+  <div class="text-center mb-8">
+    <div class="text-4xl mb-3">📡</div>
+    <h1 class="text-2xl font-bold text-blue-400">APRS Gateway</h1>
+    <p class="text-gray-400 text-sm mt-1">First-run setup — create your admin account</p>
+  </div>
+  ` + errHTML + `
+  <form method="POST" action="/setup" class="space-y-4">
+    <div>
+      <label class="block text-gray-400 text-xs uppercase font-bold mb-1">Admin Username</label>
+      <input type="text" name="username" required minlength="3" autocomplete="username"
+        class="w-full bg-gray-700 p-3 rounded border border-gray-600 text-white outline-none focus:border-blue-500 text-sm"
+        placeholder="e.g. 2e0lxy">
+    </div>
+    <div>
+      <label class="block text-gray-400 text-xs uppercase font-bold mb-1">Password</label>
+      <input type="password" name="password" required minlength="8" autocomplete="new-password"
+        class="w-full bg-gray-700 p-3 rounded border border-gray-600 text-white outline-none focus:border-blue-500 text-sm"
+        placeholder="Minimum 8 characters">
+    </div>
+    <div>
+      <label class="block text-gray-400 text-xs uppercase font-bold mb-1">Confirm Password</label>
+      <input type="password" name="confirm" required autocomplete="new-password"
+        class="w-full bg-gray-700 p-3 rounded border border-gray-600 text-white outline-none focus:border-blue-500 text-sm"
+        placeholder="Repeat password">
+    </div>
+    <button type="submit"
+      class="w-full bg-blue-600 hover:bg-blue-500 text-white p-3 rounded font-bold uppercase tracking-widest text-sm mt-2 transition-colors">
+      Create Account &amp; Launch Gateway
+    </button>
+  </form>
+  <p class="text-gray-600 text-xs text-center mt-6">Credentials are stored in <code class="text-gray-400">creds.json</code> on the server. This page is only shown once.</p>
+</div>
+</body></html>`
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(page))
 }
