@@ -290,7 +290,8 @@ func connectUpstream() {
 	cLat, cLon, rad := config.CenterLat, config.CenterLon, config.RadiusKm
 	config.RUnlock()
 
-	if filter == "auto" || filter == "" {
+	filter = strings.TrimSpace(filter)
+	if strings.ToLower(filter) == "auto" || filter == "" {
 		filter = fmt.Sprintf("r/%.4f/%.4f/%.0f", cLat, cLon, rad)
 	}
 
@@ -965,7 +966,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 	config.Callsign = n.Callsign
 	config.Passcode = n.Passcode
 	config.UpstreamAddr = n.UpstreamAddr
-	config.ServerFilter = n.ServerFilter
+	config.ServerFilter = strings.TrimSpace(n.ServerFilter)
 	config.DropPiStar = n.DropPiStar
 	config.DropDStar = n.DropDStar
 	config.DropAPDesk = n.DropAPDesk
@@ -1119,7 +1120,7 @@ func loadSavedConfig() {
 	config.Callsign       = saved.Callsign
 	config.Passcode       = saved.Passcode
 	config.UpstreamAddr   = saved.UpstreamAddr
-	config.ServerFilter   = saved.ServerFilter
+	config.ServerFilter   = strings.TrimSpace(saved.ServerFilter)
 	config.DropPiStar     = saved.DropPiStar
 	config.DropDStar      = saved.DropDStar
 	config.DropAPDesk     = saved.DropAPDesk
