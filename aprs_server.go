@@ -19,20 +19,28 @@ import (
 )
 
 type AppConfig struct {
-	ServerName   string  `json:"server_name"`
-	SoftwareVers string  `json:"software_vers"`
-	Callsign     string  `json:"callsign"`
-	Passcode     string  `json:"passcode"`
-	UpstreamAddr string  `json:"upstream_addr"`
-	ServerFilter string  `json:"server_filter"`
-	DropPiStar   bool    `json:"drop_pistar"`
-	DropDStar    bool    `json:"drop_dstar"`
-	DropAPDesk   bool    `json:"drop_apdesk"`
-	EnableGeofence bool  `json:"enable_geofence"`
-	CenterLat    float64 `json:"center_lat"`
-	CenterLon    float64 `json:"center_lon"`
-	RadiusKm     float64 `json:"radius_km"`
-	sync.RWMutex `json:"-"`
+	ServerName     string  `json:"server_name"`
+	SoftwareVers   string  `json:"software_vers"`
+	Callsign       string  `json:"callsign"`
+	Passcode       string  `json:"passcode"`
+	UpstreamAddr   string  `json:"upstream_addr"`
+	ServerFilter   string  `json:"server_filter"`
+	DropPiStar     bool    `json:"drop_pistar"`
+	DropDStar      bool    `json:"drop_dstar"`
+	DropAPDesk     bool    `json:"drop_apdesk"`
+	EnableGeofence bool    `json:"enable_geofence"`
+	CenterLat      float64 `json:"center_lat"`
+	CenterLon      float64 `json:"center_lon"`
+	RadiusKm       float64 `json:"radius_km"`
+	sync.RWMutex   `json:"-"`
+}
+
+// adminCreds holds the HTTP Basic Auth credentials for the admin panel.
+// These are runtime-changeable without restarting.
+var adminCreds struct {
+	sync.RWMutex
+	Username string
+	Password string
 }
 
 var (
@@ -52,7 +60,6 @@ var (
 		RadiusKm:       100.0,
 	}
 
-	// upstreamConnected: 1 = connected & verified, 0 = disconnected
 	upstreamConnected int32
 
 	metrics = struct {
@@ -76,13 +83,12 @@ var (
 	dupes   = make(map[string]time.Time)
 	dupesMu sync.Mutex
 
-	history   []HistoryPacket
-	historyMu sync.RWMutex
+	history    []HistoryPacket
+	historyMu  sync.RWMutex
 	maxHistory = 10000
 )
 
 var (
-	// Covers uncompressed position: !, /, =, @, * prefixes; 2-digit lat deg, 3-digit lon deg
 	posRegex = regexp.MustCompile(`[!\/=@\*](\d{2})(\d{2}\.\d{2})([NS])(.)(\d{3})(\d{2}\.\d{2})([EW])(.)`)
 	phgRegex = regexp.MustCompile(`PHG(\d)(\d)(\d)(\d)`)
 )
@@ -121,6 +127,9 @@ type wsMessage struct {
 }
 
 func main() {
+	adminCreds.Username = "2e0lxy"
+	adminCreds.Password = "33wf31ug33"
+
 	go cleanDuplicateCache()
 	go maintainUpstream()
 	go handleBroadcasts()
@@ -132,6 +141,7 @@ func main() {
 	http.HandleFunc("/api/config", basicAuth(handleConfig))
 	http.HandleFunc("/api/history", handleHistory)
 	http.HandleFunc("/api/status", handleStatus)
+	http.HandleFunc("/api/password", basicAuth(handlePassword))
 
 	log.Printf("Advanced APRS Gateway active on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
@@ -140,13 +150,38 @@ func main() {
 func basicAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		user, pass, ok := r.BasicAuth()
-		if !ok || user != "2e0lxy" || pass != "33wf31ug33" {
-			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
+		adminCreds.RLock()
+		wantUser, wantPass := adminCreds.Username, adminCreds.Password
+		adminCreds.RUnlock()
+		if !ok || user != wantUser || pass != wantPass {
+			w.Header().Set("WWW-Authenticate", `Basic realm="APRS Admin"`)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 		next(w, r)
 	}
+}
+
+// handlePassword changes the admin UI password at runtime.
+// POST /api/password  body: {"new_password":"..."}
+func handlePassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		NewPassword string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.NewPassword) == "" {
+		http.Error(w, "bad request: new_password required", http.StatusBadRequest)
+		return
+	}
+	adminCreds.Lock()
+	adminCreds.Password = req.NewPassword
+	adminCreds.Unlock()
+	log.Printf("Admin password updated")
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"ok":true}`))
 }
 
 func verifyPasscode(callsign, passcode string) bool {
@@ -165,13 +200,10 @@ func verifyPasscode(callsign, passcode string) bool {
 }
 
 
-// injectQConstruct adds the Q-construct to the path header only, not the payload.
 func injectQConstruct(packet, qType string) string {
 	config.RLock()
 	srv := config.ServerName
 	config.RUnlock()
-
-	// Find header/payload boundary (first ':' after the '>' callsign section)
 	gtIdx := strings.Index(packet, ">")
 	if gtIdx == -1 {
 		return packet
@@ -180,10 +212,8 @@ func injectQConstruct(packet, qType string) string {
 	if colIdx == -1 {
 		return packet
 	}
-	colIdx += gtIdx // absolute index
-
+	colIdx += gtIdx
 	header := packet[:colIdx]
-	// Already has a Q-construct — don't add another
 	if strings.Contains(header, ",qA") {
 		return packet
 	}
@@ -191,7 +221,6 @@ func injectQConstruct(packet, qType string) string {
 }
 
 func isDuplicate(packet string) bool {
-	// Strip Q-construct before dedup so qAC and qAU of same packet don't dupe-miss
 	hashData := packet
 	gtIdx := strings.Index(packet, ">")
 	colIdx := strings.Index(packet, ":")
@@ -254,7 +283,6 @@ func connectUpstream() {
 		return
 	}
 
-	// Read and validate the server banner / logresp before marking connected
 	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	scanner := bufio.NewScanner(conn)
 	verified := false
@@ -267,24 +295,20 @@ func connectUpstream() {
 			}
 			break
 		}
-		// Keep reading until we get logresp (skip other # comment lines)
 	}
-	conn.SetReadDeadline(time.Time{}) // clear deadline
+	conn.SetReadDeadline(time.Time{})
 
 	if !verified {
 		log.Printf("APRS-IS login not verified for %s — check callsign/passcode", call)
-		// Still proceed — passcode -1 or read-only is valid for receive-only gateways
 	}
 	atomic.StoreInt32(&upstreamConnected, 1)
 	log.Printf("Connected to APRS-IS upstream: %s (verified=%v)", addr, verified)
-
 
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		for scanner.Scan() {
 			text := scanner.Text()
-			// Log server comments but don't broadcast them
 			if strings.HasPrefix(text, "#") {
 				log.Printf("APRS-IS: %s", text)
 				continue
@@ -321,6 +345,7 @@ func connectUpstream() {
 	}
 }
 
+
 func isAllowed(packet string) bool {
 	gtIdx := strings.Index(packet, ">")
 	colIdx := strings.Index(packet, ":")
@@ -331,7 +356,6 @@ func isAllowed(packet string) bool {
 	config.RLock()
 	dPi, dD, dDesk, geo, cLat, cLon, rad := config.DropPiStar, config.DropDStar, config.DropAPDesk, config.EnableGeofence, config.CenterLat, config.CenterLon, config.RadiusKm
 	config.RUnlock()
-
 	if dPi && strings.Contains(upper, "PISTAR") {
 		return false
 	}
@@ -364,38 +388,30 @@ func parsePacket(packet string) (HistoryPacket, bool) {
 	hp.Path = packet[gtIdx+1 : colIdx]
 	hp.Raw = packet
 	hp.Timestamp = time.Now().Unix()
-
 	payload := packet[colIdx+1:]
 	match := posRegex.FindStringSubmatch(payload)
 	if match == nil {
 		return hp, false
 	}
-
 	lDeg, _ := strconv.ParseFloat(match[1], 64)
 	lMin, _ := strconv.ParseFloat(match[2], 64)
 	hp.Lat = lDeg + lMin/60
 	if match[3] == "S" {
 		hp.Lat = -hp.Lat
 	}
-
 	lnDeg, _ := strconv.ParseFloat(match[5], 64)
 	lnMin, _ := strconv.ParseFloat(match[6], 64)
 	hp.Lon = lnDeg + lnMin/60
 	if match[7] == "W" {
 		hp.Lon = -hp.Lon
 	}
-
 	hp.Symbol = match[4] + match[8]
-
 	if pMatch := phgRegex.FindStringSubmatch(payload); pMatch != nil {
 		hp.PHG = pMatch[0]
 	}
 	return hp, true
 }
 
-
-// handleBroadcasts fans out incoming packets to all WebSocket clients.
-// Each client has its own send channel so a slow client never blocks others.
 func handleBroadcasts() {
 	for packet := range broadcast {
 		parsed, hasCoords := parsePacket(packet)
@@ -407,27 +423,22 @@ func handleBroadcasts() {
 			}
 			historyMu.Unlock()
 		}
-
 		msg := wsMessage{Type: "rx", Packet: packet}
 		if hasCoords {
 			msg.Data = parsed
 		}
 		data, _ := json.Marshal(msg)
-
 		clientsMu.Lock()
 		for c := range clients {
 			select {
 			case c.send <- data:
 			default:
-				// Client send buffer full — drop packet for this client
 			}
 		}
 		clientsMu.Unlock()
 	}
 }
 
-// writePump drains a client's send channel onto the WebSocket.
-// Runs in its own goroutine per client so writes never block broadcasting.
 func (c *wsClient) writePump() {
 	defer c.conn.Close()
 	for data := range c.send {
@@ -436,6 +447,7 @@ func (c *wsClient) writePump() {
 		}
 	}
 }
+
 
 func handleWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -452,16 +464,13 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 	clientsMu.Lock()
 	clients[client] = true
 	clientsMu.Unlock()
-
 	go client.writePump()
-
 	defer func() {
 		clientsMu.Lock()
 		delete(clients, client)
 		clientsMu.Unlock()
 		close(client.send)
 	}()
-
 	for {
 		_, msgData, err := conn.ReadMessage()
 		if err != nil {
@@ -483,7 +492,6 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 				ack, _ := json.Marshal(wsMessage{Type: "auth_ack", Status: "fail"})
 				client.send <- ack
 			}
-
 		case "tx":
 			if !client.authenticated {
 				continue
@@ -511,7 +519,6 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
-
 
 func listenUDP() {
 	addr, err := net.ResolveUDPAddr("udp", ":14580")
@@ -569,6 +576,7 @@ func keepaliveLoop() {
 	}
 }
 
+
 func handleHistory(w http.ResponseWriter, r *http.Request) {
 	historyMu.RLock()
 	defer historyMu.RUnlock()
@@ -580,21 +588,18 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	metrics.RLock()
 	uptime := time.Since(metrics.StartTime).Round(time.Second).String()
 	res := map[string]interface{}{
-		"uptime":        uptime,
-		"pkts_rx":       metrics.PktsRx,
-		"pkts_tx":       metrics.PktsTx,
-		"dropped":       metrics.PktsDropped,
-		"bytes_rx":      metrics.BytesRx,
-		"bytes_tx":      metrics.BytesTx,
+		"uptime":   uptime,
+		"pkts_rx":  metrics.PktsRx,
+		"pkts_tx":  metrics.PktsTx,
+		"dropped":  metrics.PktsDropped,
+		"bytes_rx": metrics.BytesRx,
+		"bytes_tx": metrics.BytesTx,
 	}
 	metrics.RUnlock()
-
 	config.RLock()
 	res["upstream_addr"] = config.UpstreamAddr
 	config.RUnlock()
-
 	res["upstream_connected"] = atomic.LoadInt32(&upstreamConnected) == 1
-
 	active := []map[string]string{}
 	clientsMu.Lock()
 	for c := range clients {
@@ -604,7 +609,6 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	clientsMu.Unlock()
 	res["clients"] = active
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
 }
@@ -637,13 +641,10 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 	config.CenterLon = n.CenterLon
 	config.RadiusKm = n.RadiusKm
 	config.Unlock()
-
-	// Non-blocking drain + send so a busy reconnect loop doesn't deadlock
 	select {
 	case <-reconnectChan:
 	default:
 	}
 	reconnectChan <- struct{}{}
-
 	w.WriteHeader(http.StatusOK)
 }
