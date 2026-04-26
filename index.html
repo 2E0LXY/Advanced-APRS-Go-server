@@ -792,6 +792,11 @@ function getSymbolSprite(table, code) {
   return { sheet, px, py, idx };
 }
 
+function baseCall(call) {
+  // Strip SSID: 2E0LXY-10 -> 2E0LXY, M0ABC-9 -> M0ABC
+  return (call || '').split('-')[0].toUpperCase();
+}
+
 function getSymbolInfo(sym) {
   if (!sym || sym.length < 2) return { label:'APRS', code:'●', color:'#6b7280' };
   const table = sym[0], code = sym[1];
@@ -920,7 +925,7 @@ async function loadStatus() {
         : '<span class="text-green-400">✓ Auth</span>';
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td class="p-2 font-bold ${typeColor}"><a href="https://qrz.com/db/${c.call}" target="_blank" class="hover:underline">${c.call}</a></td>
+        <td class="p-2 font-bold ${typeColor}"><a href="https://qrz.com/db/${baseCall(c.call)}" target="_blank" class="hover:underline">${c.call}</a></td>
         <td class="p-2">${typeBadge}</td>
         <td class="p-2 text-gray-400 text-[10px]">${c.soft||''}</td>
         <td class="p-2 font-mono text-gray-500 text-[10px]">${c.addr||''}</td>
@@ -1184,7 +1189,7 @@ function renderList() {
       tr.innerHTML=`
         <td class="p-2 text-base text-center" title="${si.label}">${si.glyph}</td>
         <td class="p-2 font-bold">
-          <a href="https://qrz.com/db/${call}" target="_blank" class="hover:underline text-blue-400">${call}</a>
+          <a href="https://qrz.com/db/${baseCall(call)}" target="_blank" class="hover:underline text-blue-400">${call}</a>
         </td>
         <td class="p-2 font-mono text-gray-500 truncate max-w-[100px]">${st.path||''}</td>
         <td class="p-2 text-gray-300">${d.toLocaleTimeString()}</td>
@@ -1578,7 +1583,7 @@ function showStationPopup(call, st, latest) {
   }
   document.getElementById('modal-call').innerText=call;
   document.getElementById('modal-symbol-label').innerText=si.label+(st.sym?' ('+st.sym+')':'');
-  document.getElementById('modal-qrz').href='https://qrz.com/db/'+call;
+  document.getElementById('modal-qrz').href='https://qrz.com/db/'+baseCall(call);
   document.getElementById('modal-aprsfi').href='https://aprs.fi/#!call='+call;
   document.getElementById('modal-pos').innerText=latest.lat.toFixed(5)+', '+latest.lon.toFixed(5);
   const ago=Math.floor(Date.now()/1000)-st.lastHeard;
@@ -1660,7 +1665,7 @@ function renderISSLocal() {
     const ago = now - st.lastHeard;
     const agoStr = ago<60?ago+'s':ago<3600?Math.floor(ago/60)+'m':Math.floor(ago/3600)+'h';
     const loc = latest ? latest.lat.toFixed(4)+', '+latest.lon.toFixed(4) : 'n/a';
-    return '<tr><td class="p-1"><a href="https://qrz.com/db/'+call+'" target="_blank" class="text-blue-400 hover:underline">'+call+'</a></td>'
+    return '<tr><td class="p-1"><a href="https://qrz.com/db/'+baseCall(call)+'" target="_blank" class="text-blue-400 hover:underline">'+call+'</a></td>'
       +'<td class="p-1 text-gray-300">'+new Date(st.lastHeard*1000).toLocaleTimeString()+' ('+agoStr+' ago)</td>'
       +'<td class="p-1 text-gray-400">'+loc+'</td></tr>';
   }).join('');
