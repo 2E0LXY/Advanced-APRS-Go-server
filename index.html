@@ -211,7 +211,7 @@
         <div class="bg-gray-800 p-4 rounded border border-gray-700">
           <h3 class="text-sm font-bold text-gray-300 uppercase mb-3">APRS-IS Uplink</h3>
           <div class="grid grid-cols-2 gap-3 mb-3">
-            <div><label class="block text-gray-500 text-xs mb-1">Callsign</label><input type="text" id="admCall" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-red-500 uppercase text-sm"></div>
+            <div><label class="block text-gray-500 text-xs mb-1">Callsign</label><input type="text" id="admCall" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-red-500 uppercase text-sm" oninput="autoPasscode(this.value)"></div>
             <div><label class="block text-gray-500 text-xs mb-1">Passcode</label><input type="password" id="admPass" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-red-500 text-sm"></div>
           </div>
           <div class="mb-3">
@@ -803,6 +803,25 @@ async function changePassword() {
       document.getElementById('newPass1').value=''; document.getElementById('newPass2').value='';
     } else { msg.innerText='Failed to update password'; msg.className='text-xs mt-2 text-red-400'; msg.classList.remove('hidden'); }
   } catch(e) { msg.innerText='Request error'; msg.className='text-xs mt-2 text-red-400'; msg.classList.remove('hidden'); }
+}
+
+
+// ─── APRS-IS Passcode auto-compute ───────────────────────────────────────────
+function calcPasscode(callsign) {
+  const base = callsign.toUpperCase().split('-')[0];
+  let hash = 0x73e2;
+  for (let i = 0; i < base.length; i += 2) {
+    hash ^= base.charCodeAt(i) << 8;
+    if (i + 1 < base.length) hash ^= base.charCodeAt(i + 1);
+  }
+  return String(hash & 0x7fff);
+}
+
+function autoPasscode(val) {
+  const call = val.trim().toUpperCase();
+  if (call.length >= 3) {
+    document.getElementById('admPass').value = calcPasscode(call);
+  }
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
