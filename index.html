@@ -32,6 +32,7 @@
     <button onclick="togglePanel('search')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Stations</button>
     <button onclick="togglePanel('messages')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Messages</button>
     <button onclick="togglePanel('status')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Status</button>
+    <button onclick="togglePanel('iss')" class="px-3 py-1.5 bg-indigo-900 hover:bg-indigo-700 rounded transition-colors">🛸 ISS</button>
     <button onclick="togglePanel('help')" class="px-3 py-1.5 bg-green-900 hover:bg-green-700 rounded transition-colors">Help</button>
     <button onclick="togglePanel('admin')" class="px-3 py-1.5 bg-red-900 hover:bg-red-700 rounded transition-colors">Admin</button>
     <a id="update-btn" href="https://github.com/2E0LXY/Advanced-APRS-Go-server/releases" target="_blank"
@@ -168,6 +169,70 @@
           <div class="p-2 bg-gray-700 border-b border-gray-600 font-bold uppercase text-xs tracking-widest text-gray-300">Connected Clients <span id="client-count" class="text-gray-500 normal-case font-normal"></span></div>
           <table class="w-full text-left text-xs"><thead class="bg-gray-800 text-gray-400 uppercase"><tr><th class="p-2">Callsign</th><th class="p-2">Type</th><th class="p-2">Software</th><th class="p-2">Address</th><th class="p-2">Status</th></tr></thead>
           <tbody id="client-list" class="divide-y divide-gray-700"></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ISS / ARISS -->
+    <div id="iss-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
+      <div class="max-w-3xl mx-auto space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-bold text-indigo-400">🛸 ISS / ARISS APRS</h2>
+          <div class="flex space-x-2">
+            <button onclick="refreshISS()" class="text-xs bg-indigo-800 hover:bg-indigo-700 px-3 py-1 rounded">↻ Refresh</button>
+            <span id="iss-last-update" class="text-xs text-gray-500 self-center"></span>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-3 text-xs">
+          <div class="bg-gray-800 rounded border border-indigo-900 p-3">
+            <p class="text-indigo-400 font-bold uppercase mb-1">ISS Position</p>
+            <p id="iss-pos" class="font-mono text-white text-sm">Loading...</p>
+            <p id="iss-alt" class="text-gray-400 mt-1"></p>
+          </div>
+          <div class="bg-gray-800 rounded border border-indigo-900 p-3">
+            <p class="text-indigo-400 font-bold uppercase mb-1">ARISS Callsign</p>
+            <p class="font-mono text-white text-sm">RS0ISS / NA1SS</p>
+            <p class="text-gray-400 mt-1">Freq: 145.825 MHz FM</p>
+          </div>
+          <div class="bg-gray-800 rounded border border-indigo-900 p-3">
+            <p class="text-indigo-400 font-bold uppercase mb-1">Digipeater</p>
+            <p class="font-mono text-white text-sm">RS0ISS-4</p>
+            <p class="text-gray-400 mt-1">Path: RS0ISS or ARISS</p>
+          </div>
+        </div>
+        <div class="bg-gray-800 rounded border border-gray-700">
+          <div class="flex items-center justify-between p-3 border-b border-gray-700">
+            <h3 class="font-bold text-sm uppercase text-gray-300">Recent ARISS Packets</h3>
+            <span id="ariss-count" class="text-xs text-gray-500"></span>
+          </div>
+          <div id="ariss-loading" class="p-4 text-center text-gray-500 text-sm">Loading from aprs.fi...</div>
+          <table id="ariss-table" class="w-full text-left text-xs hidden">
+            <thead class="bg-gray-700 text-gray-400 uppercase">
+              <tr>
+                <th class="p-2">Time</th>
+                <th class="p-2">From</th>
+                <th class="p-2">To / Via</th>
+                <th class="p-2">Comment</th>
+                <th class="p-2">Coords</th>
+              </tr>
+            </thead>
+            <tbody id="ariss-list" class="divide-y divide-gray-700 font-mono"></tbody>
+          </table>
+        </div>
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <h3 class="font-bold text-sm uppercase text-gray-300 mb-2">Heard via ISS on this gateway</h3>
+          <p class="text-xs text-gray-400 mb-2">Stations received by this gateway that were digipeated via RS0ISS or ARISS:</p>
+          <table class="w-full text-xs">
+            <thead class="text-gray-500 uppercase border-b border-gray-700"><tr><th class="text-left p-1">Callsign</th><th class="text-left p-1">Last Heard</th><th class="text-left p-1">Position</th></tr></thead>
+            <tbody id="iss-local-list" class="divide-y divide-gray-700 font-mono"></tbody>
+          </table>
+          <p id="iss-local-empty" class="text-xs text-gray-600 text-center py-3">No ISS-digipeated packets received yet</p>
+        </div>
+        <div class="bg-indigo-900/20 border border-indigo-800 rounded p-3 text-xs text-gray-300">
+          <p class="font-bold text-indigo-300 mb-1">How to use ARISS APRS</p>
+          <p>Tune to <strong class="text-white">145.825 MHz FM</strong> · Set your path to <code class="text-yellow-400">ARISS</code> or <code class="text-yellow-400">RS0ISS</code> · 
+          Check pass times at <a href="https://www.heavens-above.com" target="_blank" class="text-blue-400 hover:underline">heavens-above.com ↗</a> · 
+          Live ISS track at <a href="https://aprs.fi/?call=RS0ISS" target="_blank" class="text-blue-400 hover:underline">aprs.fi ↗</a></p>
         </div>
       </div>
     </div>
@@ -716,10 +781,11 @@ function getSymbolSprite(table, code) {
   const px = col * 24;
   const py = row * 24;
   // aprs.fi provides two sprite sheets
-  const sheet = (table === '/') 
+  // aprs.fi sprite: 16 cols x 6 rows, 24x24 each, 384x144 total
+  const sheet = (table === '/')
     ? 'https://aprs.fi/img/symbols-new.png'
     : 'https://aprs.fi/img/symbols-new2.png';
-  return { sheet, px, py };
+  return { sheet, px, py, idx };
 }
 
 function getSymbolInfo(sym) {
@@ -766,7 +832,7 @@ function toggleOverlay(type) {
 }
 
 function togglePanel(panel) {
-  ['map','search','messages','status','help','admin'].forEach(p =>
+  ['map','search','messages','status','help','admin','iss'].forEach(p =>
     document.getElementById(p+'-panel').classList.add('hidden'));
   document.getElementById(panel+'-panel').classList.remove('hidden');
   clearInterval(statusInterval);
@@ -774,6 +840,7 @@ function togglePanel(panel) {
   if (panel==='search') renderList();
   if (panel==='admin') { loadAdmin(); if (_latestVersion && _latestVersion !== _runningVersion) showUpdateBanner(); }
   if (panel==='status') { loadStatus(); statusInterval = setInterval(loadStatus, 5000); }
+  if (panel==='iss') { refreshISS(); renderISSLocal(); }
 }
 
 function getAuthHeaders() {
@@ -957,6 +1024,13 @@ function handleIncoming(data) {
 }
 
 // ─── Station Store ────────────────────────────────────────────────────────────
+function parseCseSpd(raw) {
+  if (!raw) return null;
+  const m = raw.match(/([0-9]{3})\/([0-9]{3})/);
+  if (m) { const c=parseInt(m[1]),s=parseInt(m[2]); if(c<=360&&s>0) return {cse:c,spd:s}; }
+  return null;
+}
+
 function updateStation(call,path,lat,lon,phg,ts,raw,sym) {
   if (!stations[call]) stations[call]={positions:[],lastHeard:0,raw:'',type:determineType(call,raw||''),sym:sym||''};
   const pa = stations[call].positions;
@@ -964,6 +1038,7 @@ function updateStation(call,path,lat,lon,phg,ts,raw,sym) {
   stations[call].lastHeard=ts; stations[call].raw=raw||''; stations[call].path=path||'';
   if (phg) stations[call].phg=phg;
   if (sym) stations[call].sym=sym;
+  const mv=parseCseSpd(raw||''); if(mv) stations[call].movement=mv;
   document.getElementById('station-count').innerText='STN: '+Object.keys(stations).length;
 }
 
@@ -981,16 +1056,21 @@ function makeIcon(st, call) {
   const si = getSymbolInfo(st.sym);
   const isMe = call===myCallsign;
   const ring = isMe ? 'outline:3px solid #facc15;outline-offset:2px;' : '';
+  // Age-based opacity: fresh=1.0, 20min=0.8, 80min=0.4, older=0.25
+  const ageSec = Math.floor(Date.now()/1000) - (st.lastHeard||0);
+  const opacity = ageSec < 1200 ? 1.0 : ageSec < 4800 ? 0.8 : ageSec < 7200 ? 0.4 : 0.25;
+  const filter  = ageSec > 4800 ? 'filter:grayscale(60%);' : '';
   let iconHtml;
   if (st.sym && st.sym.length >= 2) {
     const sp = getSymbolSprite(st.sym[0], st.sym[1]);
     if (sp) {
-      iconHtml = `<div style="width:24px;height:24px;${ring}border-radius:2px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.6);image-rendering:pixelated">` +
-        `<div style="width:24px;height:24px;background:url('${sp.sheet}') -${sp.px}px -${sp.py}px;background-size:384px 288px"></div></div>`;
+      iconHtml = '<div style="width:24px;height:24px;'+ring+'border-radius:2px;overflow:hidden;'
+        +'box-shadow:0 1px 4px rgba(0,0,0,.6);image-rendering:pixelated;opacity:'+opacity+';'+filter+'">'
+        +'<div style="width:24px;height:24px;background:url('+sp.sheet+') -'+sp.px+'px -'+sp.py+'px;background-size:384px 288px"></div></div>';
     }
   }
   if (!iconHtml) {
-    iconHtml = `<div style="width:22px;height:22px;background:#4b5563;border-radius:50%;border:2px solid rgba(255,255,255,0.5);${ring}display:flex;align-items:center;justify-content:center;font-size:10px;color:white">?</div>`;
+    iconHtml = '<div style="width:22px;height:22px;background:#4b5563;border-radius:50%;border:2px solid rgba(255,255,255,0.5);'+ring+'opacity:'+opacity+';display:flex;align-items:center;justify-content:center;font-size:10px;color:white">?</div>';
   }
   return L.divIcon({html:iconHtml, className:'', iconSize:[24,24], iconAnchor:[12,12], tooltipAnchor:[12,-12]});
 }
@@ -1020,6 +1100,7 @@ function redrawMap() {
       if (st.marker) { map.removeLayer(st.marker); st.marker=null; }
       if (st.polyline) { map.removeLayer(st.polyline); st.polyline=null; }
       if (st.phgCircle) { map.removeLayer(st.phgCircle); st.phgCircle=null; }
+      if (st.arrow) { map.removeLayer(st.arrow); st.arrow=null; }
       return;
     }
     const latest = st.positions[st.positions.length-1];
@@ -1042,6 +1123,17 @@ function redrawMap() {
     const trailColor = st.type==='cwop'?'#10b981':st.type==='ogn'?'#f59e0b':'#3b82f6';
     if (!st.polyline) st.polyline=L.polyline(lls,{color:trailColor,weight:2,opacity:0.5}).addTo(map);
     else st.polyline.setLatLngs(lls);
+    // Course/speed leader arrow
+    if (st.movement && st.movement.spd > 0) {
+      const rad = st.movement.cse * Math.PI / 180;
+      const kph = st.movement.spd * 1.852;
+      const dist = kph * 0.003; // ~3 min ahead in degrees lat
+      const dlat = dist * Math.cos(rad);
+      const dlon = dist * Math.sin(rad) / Math.cos(latest.lat * Math.PI / 180);
+      const arrowEnd = [latest.lat + dlat, latest.lon + dlon];
+      if (!st.arrow) st.arrow = L.polyline([[latest.lat,latest.lon],arrowEnd],{color:'#facc15',weight:2,opacity:0.8}).addTo(map);
+      else st.arrow.setLatLngs([[latest.lat,latest.lon],arrowEnd]);
+    } else if (st.arrow) { map.removeLayer(st.arrow); st.arrow=null; }
     if (showPhg&&st.phg&&st.type==='aprs') {
       const r = calcPHG(st.phg);
       if (r>0) {
@@ -1443,6 +1535,11 @@ function showStationPopup(call, st, latest) {
   document.getElementById('modal-path').innerText=st.path||'n/a';
   const phgEl=document.getElementById('modal-phg');
   phgEl.innerText=st.phg ? st.phg+' ~ '+(calcPHG(st.phg)/1000).toFixed(1)+'km' : 'n/a';
+  // Course/speed in position field
+  if (st.movement) {
+    const speedKph=(st.movement.spd*1.852).toFixed(0);
+    document.getElementById('modal-pos').innerText += '  |  '+speedKph+'km/h @ '+st.movement.cse+'deg';
+  }
   const cr=document.getElementById('modal-comment-row');
   const cm=parseComment(st.raw);
   if (cm) { document.getElementById('modal-comment').innerText=cm; cr.classList.remove('hidden'); }
@@ -1487,6 +1584,98 @@ async function sendMsgFromModal() {
   err.innerText='Sent to '+_modalTarget+'!'; err.classList.remove('hidden');
   document.getElementById('msg-auth-text').value='';
   setTimeout(()=>{ err.classList.add('hidden'); closeMsgAuthModal(); },2000);
+}
+
+
+// ─── ISS / ARISS ─────────────────────────────────────────────────────────────
+const ARISS_CALLS = ['RS0ISS','RS0ISS-4','NA1SS','ARISS','RS0ISS-11'];
+
+function renderISSLocal() {
+  const now = Math.floor(Date.now()/1000);
+  const tbody = document.getElementById('iss-local-list');
+  const empty = document.getElementById('iss-local-empty');
+  const rows = [];
+  Object.keys(stations).forEach(call => {
+    const st = stations[call];
+    const path = (st.path||'').toUpperCase();
+    if (ARISS_CALLS.some(c => path.includes(c))) {
+      const latest = st.positions[st.positions.length-1];
+      rows.push({call, st, latest});
+    }
+  });
+  if (!rows.length) { empty.classList.remove('hidden'); tbody.innerHTML=''; return; }
+  empty.classList.add('hidden');
+  tbody.innerHTML = rows.map(({call,st,latest}) => {
+    const ago = now - st.lastHeard;
+    const agoStr = ago<60?ago+'s':ago<3600?Math.floor(ago/60)+'m':Math.floor(ago/3600)+'h';
+    const loc = latest ? latest.lat.toFixed(4)+', '+latest.lon.toFixed(4) : 'n/a';
+    return '<tr><td class="p-1"><a href="https://qrz.com/db/'+call+'" target="_blank" class="text-blue-400 hover:underline">'+call+'</a></td>'
+      +'<td class="p-1 text-gray-300">'+new Date(st.lastHeard*1000).toLocaleTimeString()+' ('+agoStr+' ago)</td>'
+      +'<td class="p-1 text-gray-400">'+loc+'</td></tr>';
+  }).join('');
+}
+
+async function refreshISS() {
+  const loading = document.getElementById('ariss-loading');
+  const table   = document.getElementById('ariss-table');
+  const countEl = document.getElementById('ariss-count');
+  const lastEl  = document.getElementById('iss-last-update');
+  loading.classList.remove('hidden'); table.classList.add('hidden');
+
+  try {
+    // Fetch ISS position from open-notify API
+    const issPos = await fetch('https://api.wheretheiss.at/v1/satellites/25544');
+    if (issPos.ok) {
+      const iss = await issPos.json();
+      document.getElementById('iss-pos').innerText =
+        iss.latitude.toFixed(3)+'N, '+iss.longitude.toFixed(3)+'E';
+      document.getElementById('iss-alt').innerText =
+        'Alt: '+Math.round(iss.altitude)+'km  |  Speed: '+Math.round(iss.velocity)+'km/h';
+    }
+  } catch(e) { document.getElementById('iss-pos').innerText = 'Position unavailable'; }
+
+  try {
+    // Fetch recent ARISS packets from aprs.fi API (public, no key needed for basic queries)
+    const url = 'https://api.aprs.fi/api/get?name=RS0ISS,RS0ISS-4,NA1SS&what=loc&apikey=104710.mxTOVTFLMl6la5&format=json';
+    const r = await fetch(url);
+    const d = await r.json();
+    const entries = d.entries || [];
+
+    // Also fetch recent messages VIA the ISS
+    const msgUrl = 'https://api.aprs.fi/api/get?what=msg&dst=RS0ISS*&apikey=104710.mxTOVTFLMl6la5&format=json&howmany=50';
+    let msgs = [];
+    try {
+      const mr = await fetch(msgUrl);
+      const md = await mr.json();
+      msgs = md.entries || [];
+    } catch(e) {}
+
+    const all = [...entries, ...msgs].sort((a,b) => b.time - a.time).slice(0,80);
+    countEl.innerText = all.length + ' entries';
+    lastEl.innerText = 'Updated ' + new Date().toLocaleTimeString();
+
+    const tbody = document.getElementById('ariss-list');
+    tbody.innerHTML = all.map(p => {
+      const t = new Date((p.time||p.lasttime||0)*1000).toLocaleTimeString();
+      const from = p.srccall || p.name || '';
+      const via  = p.path || p.dstcall || '';
+      const comment = (p.comment||p.message||'').substring(0,60);
+      const loc = p.lat && p.lng ? p.lat.toFixed(3)+', '+p.lng.toFixed(3) : '';
+      return '<tr class="hover:bg-gray-750">'
+        +'<td class="p-1.5 text-gray-400">'+t+'</td>'
+        +'<td class="p-1.5"><a href="https://aprs.fi/#!call='+from+'" target="_blank" class="text-blue-400 hover:underline">'+from+'</a></td>'
+        +'<td class="p-1.5 text-gray-400 text-[10px]">'+via+'</td>'
+        +'<td class="p-1.5 text-gray-300 text-[10px] max-w-xs truncate">'+comment+'</td>'
+        +'<td class="p-1.5 text-gray-500 text-[10px]">'+loc+'</td></tr>';
+    }).join('');
+
+    loading.classList.add('hidden');
+    table.classList.remove('hidden');
+  } catch(e) {
+    loading.innerText = 'Could not load ARISS data: ' + e.message;
+  }
+
+  renderISSLocal();
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
