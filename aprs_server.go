@@ -165,6 +165,7 @@ func main() {
 	go listenTCPClients()
 	go keepaliveLoop()
 
+	http.HandleFunc("/symbols/", http.StripPrefix("/symbols/", http.FileServer(http.Dir("symbols"))).ServeHTTP)
 	http.HandleFunc("/", serveIndex)
 	http.HandleFunc("/setup", handleSetup)
 	http.HandleFunc("/ws", handleWS)

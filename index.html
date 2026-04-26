@@ -785,10 +785,11 @@ function getSymbolSprite(table, code) {
   const px = col * 24;
   const py = row * 24;
   // aprs.fi provides two sprite sheets
-  // aprs.fi sprite: 16 cols x 6 rows, 24x24 each, 384x144 total
+  // Sprites served locally from /symbols/ to avoid CORS issues
+  // 16 cols x 6 rows, 24x24px each = 384x144px total
   const sheet = (table === '/')
-    ? 'https://aprs.fi/img/symbols-new.png'
-    : 'https://aprs.fi/img/symbols-new2.png';
+    ? '/symbols/symbols-new.png'
+    : '/symbols/symbols-new2.png';
   return { sheet, px, py, idx };
 }
 
