@@ -322,13 +322,7 @@ func connectUpstream() {
 				metrics.PktsDropped++
 				metrics.Unlock()
 			}
-			// Log every 50th packet so we can confirm flow without spamming
-			if metrics.PktsRx%50 == 0 {
-				tcpClientsMu.Lock()
-				n := len(tcpClients)
-				tcpClientsMu.Unlock()
-				log.Printf("RX %d packets upstream, %d TCP clients connected", metrics.PktsRx, n)
-			}
+
 		}
 	}()
 
