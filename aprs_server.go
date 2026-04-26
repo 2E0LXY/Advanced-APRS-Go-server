@@ -275,6 +275,7 @@ func connectUpstream() {
 	defer conn.Close()
 
 	loginLine := fmt.Sprintf("user %s pass %s vers %s filter %s\r\n", call, pass, vers, filter)
+	log.Printf("APRS-IS login: user=%s filter=%s", call, filter)
 	if _, err := fmt.Fprint(conn, loginLine); err != nil {
 		return
 	}
@@ -759,19 +760,30 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	res["upstream_addr"] = config.UpstreamAddr
 	config.RUnlock()
 	res["upstream_connected"] = atomic.LoadInt32(&upstreamConnected) == 1
-	active := []map[string]string{}
+	active := []map[string]interface{}{}
 	clientsMu.Lock()
 	for c := range clients {
 		if c.authenticated {
-			active = append(active, map[string]string{"call": c.callsign, "soft": c.software})
+			active = append(active, map[string]interface{}{
+				"call": c.callsign, "soft": c.software, "type": "websocket",
+				"addr": c.remoteAddr, "since": c.connectedAt,
+			})
 		}
 	}
 	clientsMu.Unlock()
-	res["clients"] = active
 	tcpClientsMu.Lock()
-	tcpCount := len(tcpClients)
+	for c := range tcpClients {
+		if c.callsign != "" {
+			active = append(active, map[string]interface{}{
+				"call": c.callsign, "soft": "TCP/APRS-IS", "type": "tcp",
+				"addr": c.remoteAddr, "since": c.connectedAt,
+				"verified": c.verified,
+			})
+		}
+	}
+	res["tcp_clients"] = len(tcpClients)
 	tcpClientsMu.Unlock()
-	res["tcp_clients"] = tcpCount
+	res["clients"] = active
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
 }

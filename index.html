@@ -165,8 +165,8 @@
           </div>
         </div>
         <div class="bg-gray-800 rounded border border-gray-700">
-          <div class="p-2 bg-gray-700 border-b border-gray-600 font-bold uppercase text-xs tracking-widest text-gray-300">Connected Clients</div>
-          <table class="w-full text-left text-xs"><thead class="bg-gray-800 text-gray-400 uppercase"><tr><th class="p-2">Callsign</th><th class="p-2">Software</th><th class="p-2">Since</th></tr></thead>
+          <div class="p-2 bg-gray-700 border-b border-gray-600 font-bold uppercase text-xs tracking-widest text-gray-300">Connected Clients <span id="client-count" class="text-gray-500 normal-case font-normal"></span></div>
+          <table class="w-full text-left text-xs"><thead class="bg-gray-800 text-gray-400 uppercase"><tr><th class="p-2">Callsign</th><th class="p-2">Type</th><th class="p-2">Software</th><th class="p-2">Address</th><th class="p-2">Status</th></tr></thead>
           <tbody id="client-list" class="divide-y divide-gray-700"></tbody></table>
         </div>
       </div>
@@ -624,9 +624,24 @@ async function loadStatus() {
       hl.classList.remove('hidden');
     } else { hd.innerText='Disconnected'; hd.className='text-base font-mono text-red-400'; hl.classList.add('hidden'); }
     const tb = document.getElementById('client-list'); tb.innerHTML='';
-    (d.clients||[]).forEach(c => {
+    const clients = d.clients||[];
+    const cc = document.getElementById('client-count');
+    if(cc) cc.innerText = '('+clients.length+' connected)';
+    clients.forEach(c => {
+      const typeColor = c.type==='tcp' ? 'text-purple-400' : 'text-blue-400';
+      const typeBadge = c.type==='tcp'
+        ? '<span class="bg-purple-900 text-purple-300 px-1 rounded">TCP</span>'
+        : '<span class="bg-blue-900 text-blue-300 px-1 rounded">WS</span>';
+      const verified = c.type==='tcp'
+        ? (c.verified ? '<span class="text-green-400">✓ Verified</span>' : '<span class="text-yellow-400">Unverified (RX only)</span>')
+        : '<span class="text-green-400">✓ Auth</span>';
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td class="p-2 font-bold text-blue-400"><a href="https://qrz.com/db/${c.call}" target="_blank" class="hover:underline">${c.call}</a></td><td class="p-2 text-xs">${c.soft}</td><td class="p-2 text-xs text-green-500">Connected</td>`;
+      tr.innerHTML = `
+        <td class="p-2 font-bold ${typeColor}"><a href="https://qrz.com/db/${c.call}" target="_blank" class="hover:underline">${c.call}</a></td>
+        <td class="p-2">${typeBadge}</td>
+        <td class="p-2 text-gray-400 text-[10px]">${c.soft||''}</td>
+        <td class="p-2 font-mono text-gray-500 text-[10px]">${c.addr||''}</td>
+        <td class="p-2">${verified}</td>`;
       tb.appendChild(tr);
     });
   } catch(e) { console.error('Status fail',e); }
