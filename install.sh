@@ -1,9 +1,20 @@
 #!/bin/bash
 
 # Advanced APRS Gateway Auto-Deploy
-# Target: https://theloxleys.uk
 
 set -e
+
+# ── Configuration ─────────────────────────────────────────────────────────────
+APP_DIR="/opt/aprs-gateway"
+
+if [ -z "$DOMAIN" ]; then
+  read -p "Enter your domain name (e.g. aprs.example.com): " DOMAIN
+fi
+if [ -z "$DOMAIN" ]; then
+  echo "ERROR: Domain name is required."
+  exit 1
+fi
+echo "Domain: $DOMAIN"
 
 APP_DIR="/opt/aprs-gateway"
 REPO_URL="https://github.com/2E0LXY/Advanced-APRS-Go-server"
@@ -68,7 +79,7 @@ systemctl daemon-reload
 systemctl enable aprs
 systemctl restart aprs
 
-cp Caddyfile /etc/caddy/Caddyfile
+sed "s/YOUR-DOMAIN.COM/$DOMAIN/g" Caddyfile > /etc/caddy/Caddyfile
 systemctl restart caddy
 
 ufw allow 22/tcp

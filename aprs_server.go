@@ -1037,7 +1037,7 @@ func loadOrInitCreds() {
 	adminCreds.Username = sc.Username
 	adminCreds.Password = sc.Password
 	adminCreds.Unlock()
-	log.Printf("Admin credentials loaded for user: %s", sc.Username)
+	log.Printf("Admin credentials loaded: %s", sc.Username)
 }
 
 // saveCreds writes current credentials to creds.json.

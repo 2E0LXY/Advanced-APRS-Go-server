@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>APRS Gateway — 2E0LXY</title>
+<title>Advanced APRS Gateway</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -473,7 +473,7 @@
                 <span class="text-gray-500 text-[10px] max-w-xs text-right">Pass all traffic from these exact callsigns (including SSID). Wildcard * allowed e.g. <code>2E0LXY*</code> matches all SSIDs.</span>
               </div>
               <div class="flex space-x-1">
-                <input type="text" id="fBud" placeholder="Callsigns: 2E0LXY-9 M0XYZ G4ABC*" class="w-full bg-gray-700 p-1 rounded outline-none border border-gray-600 text-white uppercase">
+                <input type="text" id="fBud" placeholder="e.g. M0ABC-9 G4XYZ* (wildcards ok)" class="w-full bg-gray-700 p-1 rounded outline-none border border-gray-600 text-white uppercase">
                 <button onclick="buildFilter('bud')" class="px-2 bg-blue-700 hover:bg-blue-600 rounded font-bold">+ Add</button>
               </div>
             </div>
@@ -666,7 +666,7 @@
     <p class="text-xs text-gray-400 mb-4">Enter your callsign and APRS-IS passcode to send a message to <strong id="msg-target-display" class="text-white"></strong></p>
     <div id="msg-auth-err" class="hidden text-red-400 text-xs bg-red-900/30 border border-red-800 rounded p-2 mb-3"></div>
     <div class="space-y-2 mb-4">
-      <input type="text" id="msg-auth-call" placeholder="Your callsign (e.g. 2E0LXY)" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none text-sm uppercase">
+      <input type="text" id="msg-auth-call" placeholder="Your callsign (e.g. M0ABC)" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none text-sm uppercase">
       <input type="password" id="msg-auth-pass" placeholder="APRS-IS passcode" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none text-sm">
       <textarea id="msg-auth-text" placeholder="Message text..." rows="3" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none text-sm resize-none"></textarea>
     </div>
