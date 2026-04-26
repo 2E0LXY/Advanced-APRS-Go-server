@@ -138,6 +138,7 @@ func main() {
 	go maintainUpstream()
 	go handleBroadcasts()
 	go listenUDP()
+	go listenTCPClients()
 	go keepaliveLoop()
 
 	http.HandleFunc("/", serveIndex)
@@ -432,6 +433,8 @@ func handleBroadcasts() {
 			}
 		}
 		clientsMu.Unlock()
+		// Also push to TCP APRS-IS clients
+		broadcastToTCPClients(packet)
 	}
 }
 
@@ -554,6 +557,165 @@ func listenUDP() {
 	}
 }
 
+
+// ─── TCP APRS-IS Client Listener (port 14580) ────────────────────────────────
+// Allows standard APRS clients (APRSDroid, Xastir, YAAC, Direwolf) to connect
+// directly to this server using the standard APRS-IS protocol.
+
+type tcpClient struct {
+	conn        net.Conn
+	callsign    string
+	verified    bool
+	filter      string
+	remoteAddr  string
+	connectedAt int64
+}
+
+var (
+	tcpClients   = make(map[*tcpClient]bool)
+	tcpClientsMu sync.Mutex
+)
+
+func listenTCPClients() {
+	ln, err := net.Listen("tcp", ":14580")
+	if err != nil {
+		log.Printf("TCP client listener failed: %v", err)
+		return
+	}
+	defer ln.Close()
+	log.Printf("TCP APRS-IS client listener active on :14580")
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			continue
+		}
+		go handleTCPClient(conn)
+	}
+}
+
+func handleTCPClient(conn net.Conn) {
+	defer conn.Close()
+	client := &tcpClient{
+		conn:        conn,
+		remoteAddr:  conn.RemoteAddr().String(),
+		connectedAt: time.Now().Unix(),
+	}
+
+	config.RLock()
+	srvName := config.ServerName
+	srvVers := config.SoftwareVers
+	config.RUnlock()
+
+	// Send server banner
+	fmt.Fprintf(conn, "# %s %s\r\n", srvName, srvVers)
+
+	tcpClientsMu.Lock()
+	tcpClients[client] = true
+	tcpClientsMu.Unlock()
+	defer func() {
+		tcpClientsMu.Lock()
+		delete(tcpClients, client)
+		tcpClientsMu.Unlock()
+		if client.callsign != "" {
+			log.Printf("TCP client disconnected: %s (%s)", client.callsign, client.remoteAddr)
+		}
+	}()
+
+	scanner := bufio.NewScanner(conn)
+	loggedIn := false
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		// Login line: user CALLSIGN pass PASSCODE vers SOFTWARE filter FILTER
+		if !loggedIn && strings.HasPrefix(strings.ToLower(line), "user ") {
+			parts := strings.Fields(line)
+			call, pass := "", ""
+			for i, p := range parts {
+				if strings.ToLower(p) == "user" && i+1 < len(parts) {
+					call = strings.ToUpper(parts[i+1])
+				}
+				if strings.ToLower(p) == "pass" && i+1 < len(parts) {
+					pass = parts[i+1]
+				}
+				if strings.ToLower(p) == "filter" && i+1 < len(parts) {
+					client.filter = strings.Join(parts[i+1:], " ")
+				}
+			}
+			client.callsign = call
+			client.verified = verifyPasscode(call, pass)
+
+			status := "unverified"
+			if client.verified {
+				status = "verified"
+			}
+			config.RLock()
+			srv := config.ServerName
+			config.RUnlock()
+			fmt.Fprintf(conn, "# logresp %s %s, server %s\r\n", call, status, srv)
+			log.Printf("TCP client login: %s %s from %s", call, status, client.remoteAddr)
+			loggedIn = true
+
+			metrics.Lock()
+			metrics.PktsRx++
+			metrics.Unlock()
+			continue
+		}
+
+		if !loggedIn {
+			continue
+		}
+
+		// Ignore comment lines from client
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Incoming packet from client — must start with their callsign
+		if !strings.HasPrefix(strings.ToUpper(line), client.callsign+">") {
+			continue
+		}
+		if !client.verified {
+			// Read-only clients cannot inject packets
+			continue
+		}
+
+		metrics.Lock()
+		metrics.PktsRx++
+		metrics.BytesRx += uint64(len(line))
+		metrics.Unlock()
+
+		routed := injectQConstruct(line, "qAC")
+		if isAllowed(routed) && !isDuplicate(routed) {
+			broadcast <- routed
+			upstreamOut <- routed
+		} else {
+			metrics.Lock()
+			metrics.PktsDropped++
+			metrics.Unlock()
+		}
+	}
+}
+
+// broadcastToTCPClients sends a packet to all connected TCP clients.
+// Called from handleBroadcasts.
+func broadcastToTCPClients(packet string) {
+	line := packet + "\r\n"
+	tcpClientsMu.Lock()
+	defer tcpClientsMu.Unlock()
+	for c := range tcpClients {
+		if !c.verified && c.callsign == "" {
+			continue // not logged in yet
+		}
+		c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		fmt.Fprint(c.conn, line)
+		c.conn.SetWriteDeadline(time.Time{})
+	}
+}
+
 func keepaliveLoop() {
 	for {
 		time.Sleep(20 * time.Second)
@@ -569,6 +731,8 @@ func keepaliveLoop() {
 			}
 		}
 		clientsMu.Unlock()
+		// Also push to TCP APRS-IS clients
+		broadcastToTCPClients(packet)
 	}
 }
 
@@ -605,6 +769,10 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	clientsMu.Unlock()
 	res["clients"] = active
+	tcpClientsMu.Lock()
+	tcpCount := len(tcpClients)
+	tcpClientsMu.Unlock()
+	res["tcp_clients"] = tcpCount
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
 }

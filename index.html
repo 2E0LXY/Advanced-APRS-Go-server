@@ -155,6 +155,7 @@
           <div class="bg-gray-800 p-3 rounded border border-gray-700"><p class="text-gray-400 text-xs uppercase font-bold mb-1">RX / TX Packets</p><p id="stat-pkts" class="text-lg font-mono text-green-400">0 / 0</p></div>
           <div class="bg-gray-800 p-3 rounded border border-gray-700"><p class="text-gray-400 text-xs uppercase font-bold mb-1">RX / TX Bytes</p><p id="stat-bytes" class="text-lg font-mono text-blue-400">0 B</p></div>
           <div class="bg-gray-800 p-3 rounded border border-gray-700"><p class="text-gray-400 text-xs uppercase font-bold mb-1">Dropped</p><p id="stat-dropped" class="text-lg font-mono text-red-400">0</p></div>
+          <div class="bg-gray-800 p-3 rounded border border-gray-700"><p class="text-gray-400 text-xs uppercase font-bold mb-1">TCP Clients</p><p id="stat-tcp" class="text-lg font-mono text-purple-400">0</p></div>
         </div>
         <div class="bg-gray-800 p-3 rounded border border-blue-900">
           <p class="text-gray-400 text-xs uppercase font-bold mb-1">Upstream</p>
@@ -495,6 +496,7 @@ async function loadStatus() {
     document.getElementById('stat-pkts').innerText = `${(d.pkts_rx||0).toLocaleString()} / ${(d.pkts_tx||0).toLocaleString()}`;
     document.getElementById('stat-bytes').innerText = `${formatBytes(d.bytes_rx)} / ${formatBytes(d.bytes_tx)}`;
     document.getElementById('stat-dropped').innerText = (d.dropped||0).toLocaleString();
+    const tcpEl = document.getElementById('stat-tcp'); if(tcpEl) tcpEl.innerText = (d.tcp_clients||0);
     const hd = document.getElementById('stat-upstream-host'), hl = document.getElementById('stat-upstream-link');
     if (d.upstream_addr) {
       hd.innerText = d.upstream_addr + (d.upstream_connected ? ' ✓' : ' ⏳');
