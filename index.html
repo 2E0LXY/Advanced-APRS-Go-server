@@ -747,204 +747,83 @@
 </div>
 
 <script>
-const SYM = {
-  // ── Primary table symbols (table '/') ─────────────────────────────────────
-  // Each entry: { bg, svg, label }
-  // SVG paths use 24x24 viewBox
+// ─── APRS Symbol Rendering ───────────────────────────────────────────────────
+// Uses the official aprs.fi symbols sprite sheet (same as aprs.fi map)
+// Primary table: symbol char is offset into a 16-col sprite grid
+// Alternate table: uses the alt sprite sheet
 
-  // Common infrastructure
-  '#':{ bg:'#1d4ed8', label:'Digipeater',
-    svg:'<polygon points="12,2 20,6.5 20,17.5 12,22 4,17.5 4,6.5" fill="none" stroke="#fff" stroke-width="2.5"/><circle cx="12" cy="12" r="3" fill="#fff"/>'},
-  '&':{ bg:'#0369a1', label:'iGate',
-    svg:'<circle cx="12" cy="12" r="8" fill="none" stroke="#fff" stroke-width="2"/><path d="M12,4 L12,20 M4,12 L20,12" stroke="#fff" stroke-width="1.5"/><circle cx="12" cy="12" r="3" fill="#fff"/>'},
-  'r':{ bg:'#4f46e5', label:'Antenna',
-    svg:'<line x1="12" y1="20" x2="12" y2="10" stroke="#fff" stroke-width="2.5"/><path d="M6,14 Q12,6 18,14" fill="none" stroke="#fff" stroke-width="2"/><path d="M8,17 Q12,11 16,17" fill="none" stroke="#fff" stroke-width="1.5"/><line x1="9" y1="20" x2="15" y2="20" stroke="#fff" stroke-width="2"/>'},
-  'I':{ bg:'#0891b2', label:'TCP/IP',
-    svg:'<rect x="3" y="5" width="18" height="12" rx="2" fill="none" stroke="#fff" stroke-width="2"/><line x1="7" y1="19" x2="17" y2="19" stroke="#fff" stroke-width="2"/><line x1="12" y1="17" x2="12" y2="19" stroke="#fff" stroke-width="2"/><line x1="7" y1="9" x2="17" y2="9" stroke="#fff" stroke-width="1.5"/><line x1="7" y1="12" x2="14" y2="12" stroke="#fff" stroke-width="1.5"/>'},
-  'n':{ bg:'#1d4ed8', label:'Net Node',
-    svg:'<circle cx="12" cy="12" r="9" fill="none" stroke="#fff" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="#fff"/><circle cx="4" cy="8" r="2" fill="#fff"/><circle cx="20" cy="8" r="2" fill="#fff"/><circle cx="12" cy="21" r="2" fill="#fff"/><line x1="6" y1="9" x2="10" y2="11" stroke="#fff" stroke-width="1"/><line x1="18" y1="9" x2="14" y2="11" stroke="#fff" stroke-width="1"/><line x1="12" y1="16" x2="12" y2="19" stroke="#fff" stroke-width="1"/>'},
-
-  // Vehicles
-  '>':{ bg:'#16a34a', label:'Car',
-    svg:'<rect x="2" y="12" width="20" height="7" rx="2" fill="#fff"/><rect x="5" y="8" width="14" height="6" rx="2" fill="#fff"/><circle cx="7" cy="20" r="2.5" fill="#16a34a" stroke="#fff" stroke-width="1"/><circle cx="17" cy="20" r="2.5" fill="#16a34a" stroke="#fff" stroke-width="1"/>'},
-  'j':{ bg:'#15803d', label:'Jeep',
-    svg:'<rect x="2" y="10" width="20" height="9" rx="1" fill="#fff"/><rect x="4" y="7" width="16" height="5" rx="1" fill="#fff"/><circle cx="7" cy="20" r="2.5" fill="#15803d" stroke="#fff" stroke-width="1"/><circle cx="17" cy="20" r="2.5" fill="#15803d" stroke="#fff" stroke-width="1"/>'},
-  'k':{ bg:'#b45309', label:'Truck',
-    svg:'<rect x="1" y="10" width="14" height="9" rx="1" fill="#fff"/><rect x="15" y="13" width="8" height="6" rx="1" fill="#fff"/><circle cx="5" cy="20" r="2.5" fill="#b45309" stroke="#fff" stroke-width="1"/><circle cx="11" cy="20" r="2.5" fill="#b45309" stroke="#fff" stroke-width="1"/><circle cx="19" cy="20" r="2.5" fill="#b45309" stroke="#fff" stroke-width="1"/>'},
-  'u':{ bg:'#d97706', label:'Truck',
-    svg:'<rect x="1" y="10" width="14" height="9" rx="1" fill="#fff"/><rect x="15" y="13" width="8" height="6" rx="1" fill="#fff"/><circle cx="5" cy="20" r="2.5" fill="#d97706" stroke="#fff" stroke-width="1"/><circle cx="11" cy="20" r="2.5" fill="#d97706" stroke="#fff" stroke-width="1"/><circle cx="19" cy="20" r="2.5" fill="#d97706" stroke="#fff" stroke-width="1"/>'},
-  'v':{ bg:'#d97706', label:'Van',
-    svg:'<rect x="2" y="9" width="20" height="10" rx="2" fill="#fff"/><rect x="4" y="6" width="10" height="5" rx="1" fill="#fff"/><circle cx="7" cy="20" r="2.5" fill="#d97706" stroke="#fff" stroke-width="1"/><circle cx="17" cy="20" r="2.5" fill="#d97706" stroke="#fff" stroke-width="1"/>'},
-  'U':{ bg:'#d97706', label:'Bus',
-    svg:'<rect x="2" y="5" width="20" height="15" rx="2" fill="#fff"/><line x1="2" y1="13" x2="22" y2="13" stroke="#d97706" stroke-width="1"/><rect x="4" y="7" width="4" height="4" rx="1" fill="#d97706" opacity="0.5"/><rect x="10" y="7" width="4" height="4" rx="1" fill="#d97706" opacity="0.5"/><rect x="16" y="7" width="4" height="4" rx="1" fill="#d97706" opacity="0.5"/><circle cx="7" cy="21" r="2" fill="#d97706" stroke="#fff" stroke-width="1"/><circle cx="17" cy="21" r="2" fill="#d97706" stroke="#fff" stroke-width="1"/>'},
-  'R':{ bg:'#92400e', label:'RV',
-    svg:'<rect x="1" y="8" width="22" height="12" rx="2" fill="#fff"/><rect x="16" y="5" width="7" height="7" rx="1" fill="#fff"/><circle cx="6" cy="21" r="2.5" fill="#92400e" stroke="#fff" stroke-width="1"/><circle cx="16" cy="21" r="2.5" fill="#92400e" stroke="#fff" stroke-width="1"/>'},
-  '<':{ bg:'#65a30d', label:'Motorcycle',
-    svg:'<circle cx="7" cy="15" r="6" fill="none" stroke="#fff" stroke-width="2"/><circle cx="17" cy="15" r="6" fill="none" stroke="#fff" stroke-width="2"/><path d="M7,15 L12,7 L17,15" stroke="#fff" stroke-width="2" fill="none"/><circle cx="12" cy="7" r="2" fill="#fff"/>'},
-  'b':{ bg:'#16a34a', label:'Bicycle',
-    svg:'<circle cx="6" cy="15" r="5" fill="none" stroke="#fff" stroke-width="2"/><circle cx="18" cy="15" r="5" fill="none" stroke="#fff" stroke-width="2"/><path d="M6,15 L12,5 L18,15 M12,5 L14,9 L18,15" stroke="#fff" stroke-width="2" fill="none"/>'},
-
-  // Aircraft
-  '^':{ bg:'#0891b2', label:'Aircraft',
-    svg:'<path d="M12,2 L15,10 L23,13 L15,15 L14,21 L12,19 L10,21 L9,15 L1,13 L9,10 Z" fill="#fff"/>'},
-  "'":{ bg:'#06b6d4', label:'Small Aircraft',
-    svg:'<path d="M12,4 L14,10 L21,12 L14,13.5 L13,18 L12,17 L11,18 L10,13.5 L3,12 L10,10 Z" fill="#fff"/>'},
-  'g':{ bg:'#65a30d', label:'Glider',
-    svg:'<path d="M2,13 L22,11 L12,15 Z" fill="#fff"/><line x1="12" y1="5" x2="12" y2="15" stroke="#fff" stroke-width="2"/><line x1="10" y1="18" x2="14" y2="18" stroke="#fff" stroke-width="1.5"/>'},
-  'X':{ bg:'#0891b2', label:'Helicopter',
-    svg:'<line x1="2" y1="8" x2="22" y2="8" stroke="#fff" stroke-width="2.5"/><ellipse cx="12" cy="8" rx="2" ry="1.5" fill="#0891b2" stroke="#fff" stroke-width="1"/><rect x="9" y="9" width="6" height="9" rx="1" fill="#fff"/><line x1="10" y1="18" x2="8" y2="22" stroke="#fff" stroke-width="1.5"/><line x1="14" y1="18" x2="16" y2="22" stroke="#fff" stroke-width="1.5"/>'},
-
-  // Maritime
-  's':{ bg:'#0369a1', label:'Ship',
-    svg:'<path d="M4,13 L8,7 L16,7 L20,13 Z" fill="#fff"/><path d="M2,13 L22,13 L20,19 L4,19 Z" fill="#fff" fill-opacity="0.9"/>'},
-  'Y':{ bg:'#0369a1', label:'Yacht',
-    svg:'<line x1="12" y1="3" x2="12" y2="19" stroke="#fff" stroke-width="2.5"/><path d="M12,5 L21,17 L3,17 Z" fill="#fff" fill-opacity="0.9"/><path d="M3,19 L21,19 L19,22 L5,22 Z" fill="#fff"/>'},
-
-  // Weather
-  '_':{ bg:'#0284c7', label:'WX Station',
-    svg:'<path d="M12,4 Q17,4 17,8.5 Q20.5,8.5 20.5,12 Q20.5,15 17,15 L7,15 Q3.5,15 3.5,12 Q3.5,8.5 7,8.5 Q7,4 12,4 Z" fill="#fff"/><line x1="8" y1="17" x2="7" y2="22" stroke="#fff" stroke-width="2"/><line x1="12" y1="17" x2="12" y2="22" stroke="#fff" stroke-width="2"/><line x1="16" y1="17" x2="17" y2="22" stroke="#fff" stroke-width="2"/>'},
-  'W':{ bg:'#0369a1', label:'NWS Site',
-    svg:'<path d="M12,4 Q17,4 17,8.5 Q20.5,8.5 20.5,12 Q20.5,15 17,15 L7,15 Q3.5,15 3.5,12 Q3.5,8.5 7,8.5 Q7,4 12,4 Z" fill="#fff"/><text x="12" y="21" text-anchor="middle" font-size="5" font-weight="bold" fill="#fff">NWS</text>'},
-  'w':{ bg:'#0891b2', label:'Water Station',
-    svg:'<path d="M12,3 C8,8 5,12 5,15 A7,7 0 0,0 19,15 C19,12 16,8 12,3 Z" fill="#fff"/>'},
-
-  // People
-  '[':{ bg:'#7c3aed', label:'Human/Jogger',
-    svg:'<circle cx="12" cy="5" r="3" fill="#fff"/><path d="M12,8 L10,16 L8,22 M12,8 L14,16 L16,22 M8,12 L16,12" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/>'},
-  'A':{ bg:'#dc2626', label:'Aid Station',
-    svg:'<rect x="3" y="3" width="18" height="18" rx="3" fill="none" stroke="#fff" stroke-width="2"/><line x1="12" y1="6" x2="12" y2="18" stroke="#fff" stroke-width="3"/><line x1="6" y1="12" x2="18" y2="12" stroke="#fff" stroke-width="3"/>'},
-  'a':{ bg:'#dc2626', label:'Ambulance',
-    svg:'<rect x="2" y="9" width="16" height="11" rx="2" fill="#fff"/><rect x="14" y="6" width="8" height="7" rx="1" fill="#fff"/><line x1="7" y1="12" x2="7" y2="17" stroke="#dc2626" stroke-width="2"/><line x1="4" y1="14.5" x2="10" y2="14.5" stroke="#dc2626" stroke-width="2"/><circle cx="6" cy="21" r="2.5" fill="#dc2626" stroke="#fff" stroke-width="1"/><circle cx="16" cy="21" r="2.5" fill="#dc2626" stroke="#fff" stroke-width="1"/>'},
-  'h':{ bg:'#dc2626', label:'Hospital',
-    svg:'<rect x="3" y="3" width="18" height="18" rx="2" fill="#fff"/><line x1="12" y1="6" x2="12" y2="18" stroke="#dc2626" stroke-width="4"/><line x1="6" y1="12" x2="18" y2="12" stroke="#dc2626" stroke-width="4"/>'},
-  'f':{ bg:'#dc2626', label:'Fire Truck',
-    svg:'<rect x="1" y="10" width="18" height="9" rx="1" fill="#fff"/><rect x="3" y="7" width="8" height="5" rx="1" fill="#fff"/><rect x="19" y="13" width="4" height="6" rx="1" fill="#fff"/><circle cx="6" cy="20" r="2.5" fill="#dc2626" stroke="#fff" stroke-width="1"/><circle cx="14" cy="20" r="2.5" fill="#dc2626" stroke="#fff" stroke-width="1"/>'},
-  'P':{ bg:'#1d4ed8', label:'Police',
-    svg:'<rect x="2" y="10" width="20" height="9" rx="2" fill="#fff"/><rect x="5" y="7" width="14" height="5" rx="1" fill="#fff"/><circle cx="7" cy="20" r="2.5" fill="#1d4ed8" stroke="#fff" stroke-width="1"/><circle cx="17" cy="20" r="2.5" fill="#1d4ed8" stroke="#fff" stroke-width="1"/>'},
-
-  // Fixed stations
-  '-':{ bg:'#1d4ed8', label:'House',
-    svg:'<polygon points="12,2 22,10 19,10 19,22 14,22 14,15 10,15 10,22 5,22 5,10 2,10" fill="#fff"/>'},
-  'K':{ bg:'#d97706', label:'School',
-    svg:'<polygon points="12,2 22,10 19,10 19,22 5,22 5,10 2,10" fill="#fff"/><rect x="9" y="15" width="6" height="7" fill="#d97706"/><polygon points="8,8 16,8 16,13 12,10 8,13" fill="#d97706"/>'},
-  'H':{ bg:'#1d4ed8', label:'Hotel',
-    svg:'<rect x="4" y="3" width="16" height="18" rx="1" fill="#fff"/><rect x="6" y="5" width="4" height="4" fill="#1d4ed8" opacity="0.4"/><rect x="14" y="5" width="4" height="4" fill="#1d4ed8" opacity="0.4"/><rect x="6" y="11" width="4" height="4" fill="#1d4ed8" opacity="0.4"/><rect x="14" y="11" width="4" height="4" fill="#1d4ed8" opacity="0.4"/><rect x="9" y="17" width="6" height="4" fill="#1d4ed8" opacity="0.5"/>'},
-  '+':{ bg:'#4f46e5', label:'Church',
-    svg:'<line x1="12" y1="2" x2="12" y2="22" stroke="#fff" stroke-width="3"/><line x1="5" y1="8" x2="19" y2="8" stroke="#fff" stroke-width="3"/>'},
-
-  // Objects/misc
-  'O':{ bg:'#f59e0b', label:'Balloon',
-    svg:'<ellipse cx="12" cy="10" rx="7" ry="8" fill="#fff"/><line x1="9" y1="17" x2="10" y2="21" stroke="#fff" stroke-width="1.5"/><line x1="15" y1="17" x2="14" y2="21" stroke="#fff" stroke-width="1.5"/><line x1="10" y1="21" x2="14" y2="21" stroke="#fff" stroke-width="1.5"/>'},
-  '*':{ bg:'#38bdf8', label:'Snowflake',
-    svg:'<line x1="12" y1="2" x2="12" y2="22" stroke="#fff" stroke-width="2"/><line x1="2" y1="12" x2="22" y2="12" stroke="#fff" stroke-width="2"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1" stroke="#fff" stroke-width="2"/><line x1="19.1" y1="4.9" x2="4.9" y2="19.1" stroke="#fff" stroke-width="2"/>'},
-  ':':{ bg:'#dc2626', label:'Fire',
-    svg:'<path d="M12,2 C9,5 7,8 9,11 C7,10 7,13 9,14 C8,13 10,12 10,15 C11,13 13,14 12,17 C14,15 15,13 14,11 C16,13 16,10 14,8 C14,11 12,11 12,9 C11,6 13,4 12,2 Z" fill="#fff"/>'},
-  '@':{ bg:'#ef4444', label:'Hurricane',
-    svg:'<path d="M12,4 A8,8 0 0,1 20,12 A6,6 0 0,1 12,18 A4,4 0 0,1 8,14 A3,3 0 0,1 12,11 A2,2 0 0,1 14,13" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>'},
-  '$':{ bg:'#059669', label:'Phone',
-    svg:'<rect x="6" y="2" width="12" height="20" rx="3" fill="#fff"/><line x1="9" y1="18" x2="15" y2="18" stroke="#059669" stroke-width="2"/><rect x="8" y="5" width="8" height="10" rx="1" fill="#059669" opacity="0.3"/>'},
-  '%':{ bg:'#7c3aed', label:'DX Cluster',
-    svg:'<circle cx="5" cy="12" r="4" fill="none" stroke="#fff" stroke-width="2"/><circle cx="19" cy="12" r="4" fill="none" stroke="#fff" stroke-width="2"/><path d="M9,9 L15,15 M9,15 L15,9" stroke="#fff" stroke-width="2"/>'},
-  'N':{ bg:'#1d4ed8', label:'NTS Net',
-    svg:'<polygon points="4,20 4,4 12,14 20,4 20,20" fill="none" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/>'},
-  'T':{ bg:'#7c3aed', label:'SSTV',
-    svg:'<rect x="3" y="5" width="18" height="13" rx="2" fill="none" stroke="#fff" stroke-width="2"/><line x1="7" y1="18" x2="17" y2="18" stroke="#fff" stroke-width="2"/><line x1="12" y1="18" x2="12" y2="22" stroke="#fff" stroke-width="2"/><text x="12" y="14" text-anchor="middle" font-size="6" font-weight="bold" fill="#fff">TV</text>'},
-  'S':{ bg:'#94a3b8', label:'Space Shuttle',
-    svg:'<path d="M12,2 L15,8 L15,18 L12,22 L9,18 L9,8 Z" fill="#fff"/><path d="M9,10 L5,16 L9,16" fill="#fff" opacity="0.7"/><path d="M15,10 L19,16 L15,16" fill="#fff" opacity="0.7"/>'},
-  '/':{ bg:'#4b5563', label:'Waypoint',
-    svg:'<circle cx="12" cy="12" r="5" fill="#fff"/><circle cx="12" cy="12" r="2" fill="#4b5563"/>'},
-  'e':{ bg:'#65a30d', label:'Horse',
-    svg:'<path d="M8,20 L9,14 L7,10 L9,6 C11,3 15,4 15,7 L16,10 L18,8 L20,10 L17,12 L17,20" stroke="#fff" stroke-width="2" fill="none" stroke-linejoin="round"/>'},
-  'c':{ bg:'#2563eb', label:'IRLP/Echolink',
-    svg:'<circle cx="12" cy="12" r="9" fill="none" stroke="#fff" stroke-width="2"/><path d="M8,8 L8,16 L16,12 Z" fill="#fff"/>'},
-  'L':{ bg:'#16a34a', label:'PC User',
-    svg:'<rect x="3" y="5" width="18" height="12" rx="2" fill="none" stroke="#fff" stroke-width="2"/><line x1="7" y1="19" x2="17" y2="19" stroke="#fff" stroke-width="2"/><line x1="12" y1="17" x2="12" y2="19" stroke="#fff" stroke-width="2"/>'},
-  'q':{ bg:'#4f46e5', label:'Grid Square',
-    svg:'<rect x="3" y="3" width="18" height="18" fill="none" stroke="#fff" stroke-width="2"/><line x1="3" y1="12" x2="21" y2="12" stroke="#fff" stroke-width="1"/><line x1="12" y1="3" x2="12" y2="21" stroke="#fff" stroke-width="1"/>'},
-  'i':{ bg:'#0369a1', label:'IOTA/Island',
-    svg:'<path d="M5,18 Q8,8 12,6 Q16,8 19,18 Z" fill="#fff" opacity="0.9"/><path d="M3,18 L21,18" stroke="#fff" stroke-width="2"/><path d="M7,18 Q8,14 10,12" stroke="#fff" stroke-width="1.5" fill="none"/>'},
-  'y':{ bg:'#4f46e5', label:'Yagi',
-    svg:'<line x1="12" y1="4" x2="12" y2="20" stroke="#fff" stroke-width="2.5"/><line x1="4" y1="8" x2="20" y2="8" stroke="#fff" stroke-width="2"/><line x1="6" y1="12" x2="18" y2="12" stroke="#fff" stroke-width="1.5"/><line x1="8" y1="16" x2="16" y2="16" stroke="#fff" stroke-width="1"/>'},
-  'z':{ bg:'#374151', label:'Shelter',
-    svg:'<path d="M3,14 L12,4 L21,14 L19,14 L19,22 L5,22 L5,14 Z" fill="#fff"/>'},
-  'p':{ bg:'#65a30d', label:'Rover/Dog',
-    svg:'<ellipse cx="12" cy="14" rx="7" ry="5" fill="#fff"/><circle cx="12" cy="9" r="4" fill="#fff"/><line x1="5" y1="15" x2="3" y2="20" stroke="#fff" stroke-width="2"/><line x1="19" y1="15" x2="21" y2="20" stroke="#fff" stroke-width="2"/>'},
-  'm':{ bg:'#7c3aed', label:'Mic-E',
-    svg:'<rect x="4" y="6" width="16" height="12" rx="3" fill="#fff"/><circle cx="9" cy="12" r="2" fill="#7c3aed" opacity="0.5"/><circle cx="15" cy="12" r="2" fill="#7c3aed" opacity="0.5"/><line x1="9" y1="18" x2="9" y2="22" stroke="#fff" stroke-width="2"/><line x1="15" y1="18" x2="15" y2="22" stroke="#fff" stroke-width="2"/><line x1="9" y1="22" x2="15" y2="22" stroke="#fff" stroke-width="2"/>'},
-  'o':{ bg:'#d97706', label:'EOC',
-    svg:'<rect x="2" y="8" width="20" height="14" rx="2" fill="#fff"/><polygon points="2,8 12,2 22,8" fill="#fff"/><rect x="9" y="14" width="6" height="8" fill="#d97706" opacity="0.4"/>'},
-  '0':{ bg:'#374151', label:'TNC',
-    svg:'<rect x="3" y="6" width="18" height="12" rx="2" fill="#fff"/><line x1="7" y1="10" x2="17" y2="10" stroke="#374151" stroke-width="1.5"/><line x1="7" y1="13" x2="13" y2="13" stroke="#374151" stroke-width="1.5"/>'},
-  'B':{ bg:'#1d4ed8', label:'BBS',
-    svg:'<rect x="3" y="3" width="18" height="18" rx="2" fill="#fff"/><line x1="7" y1="8" x2="17" y2="8" stroke="#1d4ed8" stroke-width="1.5"/><line x1="7" y1="12" x2="17" y2="12" stroke="#1d4ed8" stroke-width="1.5"/><line x1="7" y1="16" x2="12" y2="16" stroke="#1d4ed8" stroke-width="1.5"/>'},
-  'C':{ bg:'#0891b2', label:'Canoe',
-    svg:'<path d="M3,14 Q12,6 21,14" fill="none" stroke="#fff" stroke-width="3"/><path d="M5,14 Q12,10 19,14 L17,18 Q12,16 7,18 Z" fill="#fff"/>'},
-  'd':{ bg:'#dc2626', label:'Fire Dept',
-    svg:'<path d="M12,2 C9,5 7,8 9,11 C7,10 7,13 9,14 C8,13 10,12 10,15 C11,13 13,14 12,17 C14,15 15,13 14,11 C16,13 16,10 14,8 C14,11 12,11 12,9 C11,6 13,4 12,2 Z" fill="#fff"/><rect x="4" y="17" width="16" height="5" rx="1" fill="#fff"/>'},
-  'G':{ bg:'#4f46e5', label:'Grid Square',
-    svg:'<rect x="3" y="3" width="18" height="18" fill="none" stroke="#fff" stroke-width="2"/><line x1="3" y1="12" x2="21" y2="12" stroke="#fff" stroke-width="1.5"/><line x1="12" y1="3" x2="12" y2="21" stroke="#fff" stroke-width="1.5"/>'},
-  'E':{ bg:'#f59e0b', label:'Eyeball',
-    svg:'<ellipse cx="12" cy="12" rx="10" ry="6" fill="none" stroke="#fff" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="#fff"/><circle cx="12" cy="12" r="2" fill="#f59e0b"/>'},
-  'M':{ bg:'#6b7280', label:'Mac',
-    svg:'<rect x="4" y="3" width="16" height="13" rx="2" fill="none" stroke="#fff" stroke-width="2"/><rect x="2" y="16" width="20" height="3" rx="1" fill="#fff"/><rect x="8" y="19" width="8" height="2" fill="#fff"/>'},
-  'V':{ bg:'#7c3aed', label:'ATV',
-    svg:'<rect x="2" y="5" width="20" height="13" rx="2" fill="none" stroke="#fff" stroke-width="2"/><polygon points="9,8 9,15 17,11.5" fill="#fff"/>'},
-  'F':{ bg:'#65a30d', label:'Farm Vehicle',
-    svg:'<circle cx="7" cy="16" r="6" fill="none" stroke="#fff" stroke-width="2"/><circle cx="17" cy="17" r="4" fill="none" stroke="#fff" stroke-width="2"/><rect x="7" y="9" width="12" height="9" rx="1" fill="#fff"/>'},
-  '|':{ bg:'#f59e0b', label:'Thunderstorm',
-    svg:'<path d="M12,3 Q17,3 17,7.5 Q20,7.5 20,11 Q20,14 17,14 L7,14 Q4,14 4,11 Q4,7.5 7,7.5 Q7,3 12,3 Z" fill="#fff"/><polygon points="13,14 10,19 12,19 9,24 16,17 13,17" fill="#fff"/>'},
-  '~':{ bg:'#38bdf8', label:'Rain',
-    svg:'<path d="M12,4 Q16,4 16,8 Q19,8 19,11 Q19,14 16,14 L8,14 Q5,14 5,11 Q5,8 8,8 Q8,4 12,4 Z" fill="#fff"/><line x1="8" y1="17" x2="7" y2="22" stroke="#fff" stroke-width="2"/><line x1="12" y1="17" x2="11" y2="22" stroke="#fff" stroke-width="2"/><line x1="16" y1="17" x2="15" y2="22" stroke="#fff" stroke-width="2"/>'},
-  '(':{ bg:'#64748b', label:'Cloudy',
-    svg:'<path d="M12,5 Q17,5 17,9.5 Q20,9.5 20,13 Q20,16 17,16 L7,16 Q4,16 4,13 Q4,9.5 7,9.5 Q7,5 12,5 Z" fill="#fff"/>'},
+const SYMBOL_LABELS = {
+  '!':'Police','"':'No symbol','"':'Reserved','#':'Digi','$':'Phone',
+  '%':'DX Cluster','&':'Gateway','\'':'Small Aircraft','(':'Cloudy',
+  ')':'Firenet MEO','*':'Snowflake','+':'Church',',':'Girl Scout',
+  '-':'House QTH','.':'X','/':'Dot','0':'TNC','1':'T1','2':'T2',
+  '3':'T3','4':'T4','5':'T5','6':'T6','7':'T7','8':'T8','9':'T9',
+  ':':'Fire','<':'Motorcycle','=':'Railroad Engine','>':'Car','?':'File Server',
+  '@':'Hurricane','A':'Aid Station','B':'BBS','C':'Canoe','D':'n/a',
+  'E':'Eyeball','F':'Farm Vehicle','G':'Grid Square','H':'Hotel',
+  'I':'TCP/IP','J':'n/a','K':'School','L':'PC User','M':'Mac',
+  'N':'NTS Net','O':'Balloon','P':'Police','Q':'TBD','R':'RV',
+  'S':'Space Shuttle','T':'SSTV','U':'Bus','V':'ATV','W':'NWS Site',
+  'X':'Helicopter','Y':'Yacht','Z':'WinAPRS','[':'Jogger','\\':'TNC',
+  ']':'Jeep','^':'Aircraft','_':'Weather Station','`':'Dish Antenna',
+  'a':'Ambulance','b':'Bike','c':'IRLP/Echolink','d':'Fire Dept',
+  'e':'Horse','f':'Fire Truck','g':'Glider','h':'Hospital',
+  'i':'IOTA','j':'Jeep','k':'Truck','l':'Area Locations',
+  'm':'Mic-E','n':'Node','o':'EOC','p':'Rover',
+  'q':'Grid Square','r':'Antenna','s':'Power Boat','t':'Truck Stop',
+  'u':'Truck','v':'Van','w':'Water Station','x':'xAPRS',
+  'y':'Yagi','z':'Shelter','{':'n/a','|':'T-storm','}':'n/a','~':'Rain'
 };
 
-// Fallback for unknown symbols — coloured square with letter
-function getSymbolSVG(table, code) {
-  return SYM[code] || { bg:'#374151', svg:'<text x="12" y="16" text-anchor="middle" font-size="11" font-family="monospace" fill="#fff">'+code+'</text>', label:code };
+// Get sprite position for a symbol character in the 16x12 sprite grid
+function getSymbolSprite(table, code) {
+  // APRS symbol sprite: 16 columns, chars start at ASCII 33 (!)
+  const idx = code.charCodeAt(0) - 33;
+  if (idx < 0 || idx > 93) return null;
+  const col = idx % 16;
+  const row = Math.floor(idx / 16);
+  const px = col * 24;
+  const py = row * 24;
+  // aprs.fi provides two sprite sheets
+  // aprs.fi sprite: 16 cols x 6 rows, 24x24 each, 384x144 total
+  // Sprites served locally - see /symbols/ directory
+  const sheet = (table === '/')
+    ? '/symbols/symbols-new.png'
+    : '/symbols/symbols-new2.png';
+  return { sheet: sheet, px: px, py: py, sheetW: 384, sheetH: 144 };
+}
+
+function baseCall(call) {
+  // Strip SSID: 2E0LXY-10 -> 2E0LXY, M0ABC-9 -> M0ABC
+  return (call || '').split('-')[0].toUpperCase();
 }
 
 function getSymbolInfo(sym) {
-  if (!sym || sym.length < 2) return { label:'APRS', bg:'#374151' };
-  const e = SYM[sym[1]];
-  return e ? { label:e.label, bg:e.bg } : { label:sym[1], bg:'#374151' };
+  if (!sym || sym.length < 2) return { label:'APRS', code:'●', color:'#6b7280' };
+  const table = sym[0], code = sym[1];
+  const label = SYMBOL_LABELS[code] || 'APRS';
+  return { label, table, code, color:'#6b7280' };
 }
 
-const SYMBOL_LABELS = {
-  '!':'Police Station','#':'Digi','$':'Phone','%':'DX Cluster','&':'iGate',
-  "'": 'Small Aircraft','(':'Cloud',')':'Firenet','*':'Snow','+':'Church',
-  ',':'Girl Scout','-':'House QTH','.':'X','/':'Dot',
-  '0':'Circle 0','1':'1','2':'2','3':'3','4':'4',
-  '5':'5','6':'6','7':'7','8':'8','9':'9',
-  ':':'Fire',';':'Campground','<':'Motorcycle','=':'Railroad','>':'Car',
-  '?':'File Server','@':'Hurricane','A':'Aid Station','B':'BBS','C':'Canoe',
-  'D':'Dual Overlay','E':'Eyeball','F':'Farm Vehicle','G':'Grid Square','H':'Hotel',
-  'I':'TCP/IP','J':'Work Zone','K':'School','L':'PC User','M':'Mac',
-  'N':'NTS Net','O':'Balloon','P':'Police Car','Q':'TBD','R':'RV',
-  'S':'Space Shuttle','T':'SSTV','U':'Bus','V':'ATV','W':'NWS Site',
-  'X':'Helicopter','Y':'Yacht','Z':'WinAPRS','[':'Jogger',
-  ']':'Jeep','^':'Aircraft','_':'WX Station','`':'Dish Antenna',
-  'a':'Ambulance','b':'Bicycle','c':'IRLP/Echolink','d':'Fire Dept',
-  'e':'Horse','f':'Fire Truck','g':'Glider','h':'Hospital',
-  'i':'IOTA Island','j':'Jeep','k':'Truck','l':'Area Locations',
-  'm':'Mic-E','n':'Node','o':'EOC','p':'Rover/Dog',
-  'q':'Grid Square','r':'Antenna Tower','s':'Power Boat','t':'Truck Stop',
-  'u':'18-Wheeler','v':'Van','w':'Water Station','x':'xAPRS',
-  'y':'Yagi Antenna','z':'Shelter','{':'Fog','}':'TNC'
-};
+// ─── Map Init ────────────────────────────────────────────────────────────────
+const map = L.map('map').setView([53.7, -1.5], 9);
+let currentTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19,attribution:'© OSM'}).addTo(map);
+let gridLayer = null, nightLayer = null, statusInterval = null, adminAuth = null;
+let stations = {}, ws, myCallsign = '', msgCounter = 1, packetCount = 0;
 
-function getSymbolSprite(table, code) {
-  var idx = (code || ' ').charCodeAt(0) - 33;
-  if (idx < 0 || idx > 93) return null;
-  var col = idx % 16;
-  var row = Math.floor(idx / 16);
-  var sheet = (table === '/') ? '/symbols/symbols-new.png' : '/symbols/symbols-new2.png';
-  return { sheet: sheet, px: col * 24, py: row * 24, sheetW: 384, sheetH: 144 };
+function formatBytes(b) {
+  if (!b || isNaN(b) || b === 0) return '0 B';
+  const k = 1024, s = ['B','KB','MB','GB'], i = Math.floor(Math.log(b)/Math.log(k));
+  return (b/Math.pow(k,i)).toFixed(1)+' '+s[i];
 }
 
-
-
-
+function changeMapStyle() {
+  map.removeLayer(currentTiles);
+  const v = document.getElementById('map-style').value;
+  if (v==='osm') currentTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+  else if (v==='topo') currentTiles = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17}).addTo(map);
+  else if (v==='sat') currentTiles = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19}).addTo(map);
+}
 
 function toggleOverlay(type) {
   if (type==='grid') {
@@ -1203,27 +1082,26 @@ function calcPHG(phgStr) {
 
 // ─── Map Rendering ────────────────────────────────────────────────────────────
 function makeIcon(st, call) {
-  var isMe = call === myCallsign;
-  var ageSec = Math.floor(Date.now()/1000) - (st.lastHeard || 0);
-  var opacity = ageSec < 1200 ? 1.0 : ageSec < 4800 ? 0.75 : ageSec < 7200 ? 0.45 : 0.25;
-  var grey = ageSec > 4800 ? 'filter:grayscale(60%);' : '';
-  var ring = isMe ? 'outline:3px solid #facc15;outline-offset:1px;' : '';
-  var table = (st.sym && st.sym.length >= 2) ? st.sym[0] : '/';
-  var code  = (st.sym && st.sym.length >= 2) ? st.sym[1] : '-';
-  var sp = getSymbolSprite(table, code);
-  var iconHtml;
-  if (sp) {
-    iconHtml = '<div style="width:24px;height:24px;overflow:hidden;image-rendering:pixelated;'
-      + ring + grey + 'opacity:' + opacity + ';box-shadow:0 1px 3px rgba(0,0,0,0.4)">'
-      + '<div style="width:24px;height:24px;background:url(' + sp.sheet + ') -' + sp.px + 'px -' + sp.py + 'px;'
-      + 'background-size:' + sp.sheetW + 'px ' + sp.sheetH + 'px;background-repeat:no-repeat"></div>'
-      + '</div>';
-  } else {
-    iconHtml = '<div style="width:24px;height:24px;background:#374151;border-radius:3px;'
-      + ring + grey + 'opacity:' + opacity
-      + ';display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff">' + code + '</div>';
+  const si = getSymbolInfo(st.sym);
+  const isMe = call===myCallsign;
+  const ring = isMe ? 'outline:3px solid #facc15;outline-offset:2px;' : '';
+  // Age-based opacity: fresh=1.0, 20min=0.8, 80min=0.4, older=0.25
+  const ageSec = Math.floor(Date.now()/1000) - (st.lastHeard||0);
+  const opacity = ageSec < 1200 ? 1.0 : ageSec < 4800 ? 0.8 : ageSec < 7200 ? 0.4 : 0.25;
+  const filter  = ageSec > 4800 ? 'filter:grayscale(60%);' : '';
+  let iconHtml;
+  if (st.sym && st.sym.length >= 2) {
+    const sp = getSymbolSprite(st.sym[0], st.sym[1]);
+    if (sp) {
+      iconHtml = '<div style="width:24px;height:24px;'+ring+'border-radius:2px;overflow:hidden;'
+        +'box-shadow:0 1px 4px rgba(0,0,0,.6);image-rendering:pixelated;opacity:'+opacity+';'+filter+'">'
+        +'<div style="width:24px;height:24px;background:url('+sp.sheet+') -'+sp.px+'px -'+sp.py+'px;background-size:384px 144px"></div></div>';
+    }
   }
-  return L.divIcon({ html: iconHtml, className: '', iconSize: [24,24], iconAnchor: [12,12], tooltipAnchor: [12,-12] });
+  if (!iconHtml) {
+    iconHtml = '<div style="width:22px;height:22px;background:#4b5563;border-radius:50%;border:2px solid rgba(255,255,255,0.5);'+ring+'opacity:'+opacity+';display:flex;align-items:center;justify-content:center;font-size:10px;color:white">?</div>';
+  }
+  return L.divIcon({html:iconHtml, className:'', iconSize:[24,24], iconAnchor:[12,12], tooltipAnchor:[12,-12]});
 }
 
 function redrawMap() {
@@ -1310,7 +1188,7 @@ function renderList() {
       if (st.positions.length) { const p=st.positions[st.positions.length-1]; loc=`${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}`; }
       const tr=document.createElement('tr');
       tr.innerHTML=`
-        <td class="p-2 text-center"><div style="width:22px;height:22px;border-radius:3px;background:${(SYM[st.sym&&st.sym[1]]||{bg:'#4b5563'}).bg};display:inline-block"><svg viewBox='0 0 24 24' width='22' height='22'>${(SYM[st.sym&&st.sym[1]]||{svg:''}).svg||''}</svg></div></td>
+        <td class="p-2 text-base text-center" title="${si.label}">${si.glyph}</td>
         <td class="p-2 font-bold">
           <a href="https://qrz.com/db/${baseCall(call)}" target="_blank" class="hover:underline text-blue-400">${call}</a>
         </td>
@@ -1701,7 +1579,7 @@ function showStationPopup(call, st, latest) {
   if (st.sym&&st.sym.length>=2) {
     const sp=getSymbolSprite(st.sym[0],st.sym[1]);
     iconEl.innerHTML = sp
-      ? '<div style="width:32px;height:32px;background:url('+sp.sheet+') -'+sp.px+'px -'+sp.py+'px;background-size:384px 288px;image-rendering:pixelated"></div>'
+      ? '<div style="width:32px;height:32px;background:url('+sp.sheet+') -'+sp.px+'px -'+sp.py+'px;background-size:384px 144px;image-rendering:pixelated"></div>'
       : '<div style="font-size:20px">?</div>';
   }
   document.getElementById('modal-call').innerText=call;
