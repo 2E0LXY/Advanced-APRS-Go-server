@@ -6,7 +6,10 @@
 <title>Advanced APRS Gateway</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/dudinea/leaflet-maidenhead@master/src/maidenhead.js"></script>
 <script src="https://unpkg.com/@joergdietrich/leaflet.terminator"></script>
 <style>
@@ -15,6 +18,14 @@
   .my-station-ring{outline:2px solid #facc15;outline-offset:2px;border-radius:50%}
   .leaflet-tooltip{background:#1e293b;border:1px solid #334155;color:#e2e8f0;font-size:12px;padding:4px 8px}
   .leaflet-tooltip-top:before{border-top-color:#334155}
+  /* Cluster icon styles */
+  .marker-cluster-small,.marker-cluster-medium,.marker-cluster-large{background-clip:padding-box;border-radius:20px}
+  .marker-cluster-small{background-color:rgba(29,78,216,0.6)}
+  .marker-cluster-small div{background-color:rgba(29,78,216,0.9);border-radius:15px;color:#fff;font-weight:bold;font-size:12px;line-height:28px;text-align:center}
+  .marker-cluster-medium{background-color:rgba(234,88,12,0.6)}
+  .marker-cluster-medium div{background-color:rgba(234,88,12,0.9);border-radius:15px;color:#fff;font-weight:bold;font-size:12px;line-height:28px;text-align:center}
+  .marker-cluster-large{background-color:rgba(185,28,28,0.6)}
+  .marker-cluster-large div{background-color:rgba(185,28,28,0.9);border-radius:15px;color:#fff;font-weight:bold;font-size:12px;line-height:28px;text-align:center}
 </style>
 </head>
 <body class="bg-gray-900 h-screen flex flex-col text-white font-sans overflow-hidden">
@@ -77,6 +88,7 @@
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-ogn" checked onchange="redrawMap()"><span class="text-yellow-500">●</span><span>OGN Gliders</span></label>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="hide-static" onchange="redrawMap()"><span>Hide Static (&gt;5min)</span></label>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-phg" onchange="redrawMap()"><span>PHG Circles</span></label>
+        <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="cluster-enable" checked onchange="toggleClustering()"><span>Cluster Markers</span></label>
       </div>
     </div>
     <div class="mt-auto pt-3 border-t border-gray-700 space-y-2">
@@ -807,6 +819,24 @@ function getSymbolInfo(sym) {
 
 // ─── Map Init ────────────────────────────────────────────────────────────────
 const map = L.map('map').setView([53.7, -1.5], 9);
+// Marker cluster group — stations cluster at low zoom, expand at high zoom
+const clusterGroup = L.markerClusterGroup({
+  maxClusterRadius: 60,
+  spiderfyOnMaxZoom: true,
+  showCoverageOnHover: false,
+  zoomToBoundsOnClick: true,
+  disableClusteringAtZoom: 13,
+  iconCreateFunction: function(cluster) {
+    const count = cluster.getChildCount();
+    const size = count < 10 ? 'small' : count < 50 ? 'medium' : 'large';
+    return L.divIcon({
+      html: '<div><span>' + count + '</span></div>',
+      className: 'marker-cluster marker-cluster-' + size,
+      iconSize: L.point(40, 40)
+    });
+  }
+});
+map.addLayer(clusterGroup);
 let currentTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19,attribution:'© OSM'}).addTo(map);
 let gridLayer = null, nightLayer = null, statusInterval = null, adminAuth = null;
 let stations = {}, ws, myCallsign = '', msgCounter = 1, packetCount = 0;
@@ -1126,7 +1156,7 @@ function redrawMap() {
       ||(st.type==='ogn'&&!showOgn)
       ||st.positions.length===0;
     if (hide) {
-      if (st.marker) { map.removeLayer(st.marker); st.marker=null; }
+      if (st.marker) { clusterGroup.removeLayer(st.marker); map.removeLayer(st.marker); st.marker=null; }
       if (st.polyline) { map.removeLayer(st.polyline); st.polyline=null; }
       if (st.phgCircle) { map.removeLayer(st.phgCircle); st.phgCircle=null; }
       if (st.arrow) { map.removeLayer(st.arrow); st.arrow=null; }
@@ -1139,8 +1169,8 @@ function redrawMap() {
     const tip = `<b style="color:#60a5fa">${call}</b> <span style="color:#94a3b8;font-size:10px">${si.label}</span>`;
     if (!st.marker) {
       st.marker = L.marker([latest.lat,latest.lon],{icon})
-        .bindTooltip(tip,{direction:'top',offset:[0,-12],permanent:false})
-        .addTo(map);
+        .bindTooltip(tip,{direction:'top',offset:[0,-12],permanent:false});
+      addMarkerToMap(st.marker);
       st.marker.on('click',()=>showStationPopup(call, st, latest));
     } else {
       st.marker.setLatLng([latest.lat,latest.lon]);
@@ -1733,6 +1763,36 @@ async function refreshISS() {
   }
 
   renderISSLocal();
+}
+
+
+// ─── Clustering toggle ───────────────────────────────────────────────────────
+function toggleClustering() {
+  const enabled = document.getElementById('cluster-enable').checked;
+  // Remove all markers from both map and clusterGroup
+  clusterGroup.clearLayers();
+  Object.values(stations).forEach(st => {
+    if (st.marker) {
+      map.removeLayer(st.marker);
+      st.marker = null;
+    }
+  });
+  if (enabled) {
+    if (!map.hasLayer(clusterGroup)) map.addLayer(clusterGroup);
+  } else {
+    if (map.hasLayer(clusterGroup)) map.removeLayer(clusterGroup);
+  }
+  redrawMap();
+}
+
+// Override addMarkerToMap to respect cluster toggle
+function addMarkerToMap(marker) {
+  const clustered = document.getElementById('cluster-enable');
+  if (clustered && clustered.checked) {
+    clusterGroup.addLayer(marker);
+  } else {
+    marker.addTo(map);
+  }
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
