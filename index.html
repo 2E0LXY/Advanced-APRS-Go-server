@@ -43,6 +43,7 @@
     <button onclick="togglePanel('search')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Stations</button>
     <button onclick="togglePanel('messages')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Messages</button>
     <button onclick="togglePanel('status')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Status</button>
+    <button onclick="togglePanel('watch')" class="px-3 py-1.5 bg-amber-900 hover:bg-amber-700 rounded transition-colors">👁 Watch</button>
     <button onclick="togglePanel('iss')" class="px-3 py-1.5 bg-indigo-900 hover:bg-indigo-700 rounded transition-colors">🛸 ISS</button>
     <button onclick="togglePanel('help')" class="px-3 py-1.5 bg-green-900 hover:bg-green-700 rounded transition-colors">Help</button>
     <button onclick="togglePanel('admin')" class="px-3 py-1.5 bg-red-900 hover:bg-red-700 rounded transition-colors">Admin</button>
@@ -181,6 +182,60 @@
           <div class="p-2 bg-gray-700 border-b border-gray-600 font-bold uppercase text-xs tracking-widest text-gray-300">Connected Clients <span id="client-count" class="text-gray-500 normal-case font-normal"></span></div>
           <table class="w-full text-left text-xs"><thead class="bg-gray-800 text-gray-400 uppercase"><tr><th class="p-2">Callsign</th><th class="p-2">Type</th><th class="p-2">Software</th><th class="p-2">Address</th><th class="p-2">Status</th></tr></thead>
           <tbody id="client-list" class="divide-y divide-gray-700"></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- WATCHLIST -->
+    <div id="watch-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
+      <div class="max-w-2xl mx-auto space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-bold text-amber-400">👁 Station Watchlist</h2>
+          <div class="flex items-center space-x-2">
+            <span id="notif-status" class="text-xs text-gray-500"></span>
+            <button onclick="requestNotifPermission()" id="notif-btn"
+              class="text-xs bg-amber-800 hover:bg-amber-700 px-3 py-1 rounded">
+              🔔 Enable Notifications
+            </button>
+          </div>
+        </div>
+
+        <div class="bg-gray-800 p-4 rounded border border-gray-700">
+          <p class="text-xs text-gray-400 mb-3">
+            Add callsigns to watch. You'll get a browser notification and the station
+            will be highlighted on the map whenever it's heard.
+          </p>
+          <div class="flex space-x-2 mb-3">
+            <input type="text" id="watch-input" placeholder="Callsign (e.g. M0ABC or M0ABC-9)"
+              class="flex-1 bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none
+                     focus:border-amber-500 text-sm uppercase"
+              onkeydown="if(event.key==='Enter')addToWatchlist()">
+            <button onclick="addToWatchlist()"
+              class="px-4 bg-amber-700 hover:bg-amber-600 text-white rounded text-sm font-bold">
+              Add
+            </button>
+          </div>
+          <div id="watch-list" class="space-y-2"></div>
+          <p id="watch-empty" class="text-xs text-gray-600 text-center py-3">
+            No stations being watched. Add a callsign above.
+          </p>
+        </div>
+
+        <div class="bg-gray-800 rounded border border-gray-700">
+          <div class="p-3 bg-gray-700 border-b border-gray-600 font-bold text-xs uppercase tracking-widest text-gray-300">
+            Recent Alerts <span id="alert-count" class="text-gray-500 normal-case font-normal"></span>
+          </div>
+          <div id="alert-log" class="divide-y divide-gray-700 max-h-64 overflow-y-auto">
+            <p id="alert-empty" class="text-xs text-gray-600 text-center py-4">No alerts yet</p>
+          </div>
+        </div>
+
+        <div class="bg-amber-900/20 border border-amber-800 rounded p-3 text-xs text-gray-300">
+          <p class="font-bold text-amber-300 mb-1">ℹ️ How it works</p>
+          <p>Callsigns are matched with or without SSID — watching <code class="text-white">M0ABC</code>
+          will alert for <code class="text-white">M0ABC</code>, <code class="text-white">M0ABC-9</code>,
+          <code class="text-white">M0ABC-10</code> etc. Wildcards supported:
+          <code class="text-white">G*</code> matches all G-prefix callsigns.</p>
         </div>
       </div>
     </div>
@@ -878,7 +933,7 @@ function toggleOverlay(type) {
 }
 
 function togglePanel(panel) {
-  ['map','search','messages','status','help','admin','iss'].forEach(p =>
+  ['map','search','messages','status','help','admin','iss','watch'].forEach(p =>
     document.getElementById(p+'-panel').classList.add('hidden'));
   document.getElementById(panel+'-panel').classList.remove('hidden');
   clearInterval(statusInterval);
@@ -887,6 +942,7 @@ function togglePanel(panel) {
   if (panel==='admin') { loadAdmin(); if (_latestVersion && _latestVersion !== _runningVersion) showUpdateBanner(); }
   if (panel==='status') { loadStatus(); statusInterval = setInterval(loadStatus, 5000); }
   if (panel==='iss') { refreshISS(); renderISSLocal(); }
+  if (panel==='watch') { renderWatchlist(); }
 }
 
 function getAuthHeaders() {
@@ -1084,6 +1140,7 @@ function handleIncoming(data) {
   if (data.data) {
     const p = data.data;
     updateStation(p.call,p.path,p.lat,p.lon,p.phg,p.ts,p.raw,p.sym);
+    checkWatchlist(p.call, p.raw);
     redrawMap();
   }
 }
@@ -1798,6 +1855,212 @@ function addMarkerToMap(marker) {
     clusterGroup.addLayer(marker);
   } else {
     marker.addTo(map);
+  }
+}
+
+
+// ─── Watchlist & Notifications ───────────────────────────────────────────────
+var watchlist   = JSON.parse(localStorage.getItem('aprs_watchlist') || '[]');
+var alertLog    = [];
+var notifGranted = false;
+
+function saveWatchlist() {
+  localStorage.setItem('aprs_watchlist', JSON.stringify(watchlist));
+}
+
+function callsignMatches(heard, pattern) {
+  // Strip SSID from heard for base comparison
+  var base = heard.split('-')[0].toUpperCase();
+  var pat  = pattern.toUpperCase();
+  // Wildcard support
+  if (pat.endsWith('*')) {
+    return heard.toUpperCase().startsWith(pat.slice(0,-1)) ||
+           base.startsWith(pat.slice(0,-1));
+  }
+  // Exact or base match
+  return heard.toUpperCase() === pat || base === pat;
+}
+
+function checkWatchlist(callsign, packet) {
+  if (!watchlist.length) return;
+  for (var i = 0; i < watchlist.length; i++) {
+    if (callsignMatches(callsign, watchlist[i])) {
+      triggerAlert(callsign, watchlist[i], packet);
+      break;
+    }
+  }
+}
+
+function triggerAlert(callsign, pattern, packet) {
+  var now  = new Date();
+  var entry = {
+    ts: Math.floor(now.getTime()/1000),
+    callsign: callsign,
+    pattern: pattern,
+    time: now.toLocaleTimeString(),
+    packet: packet
+  };
+  alertLog.unshift(entry);
+  if (alertLog.length > 50) alertLog.pop();
+
+  // Browser notification
+  if (notifGranted && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+    try {
+      new Notification('APRS Watch: ' + callsign, {
+        body: 'Station heard at ' + entry.time + (packet ? '
+' + packet.substring(0,80) : ''),
+        icon: '/symbols/symbols-new.png',
+        tag: 'aprs-watch-' + callsign,
+        renotify: true
+      });
+    } catch(e) { console.warn('Notification failed:', e); }
+  }
+
+  // Flash the watch button
+  var btn = document.querySelector('[onclick="togglePanel(\'watch\')"]');
+  if (btn) {
+    btn.classList.add('bg-amber-500');
+    setTimeout(function(){ btn.classList.remove('bg-amber-500'); }, 3000);
+  }
+
+  // Highlight on map
+  highlightStation(callsign);
+
+  // Re-render alert log if panel is open
+  if (!document.getElementById('watch-panel').classList.contains('hidden')) {
+    renderAlertLog();
+  }
+}
+
+function highlightStation(callsign) {
+  var st = stations[callsign];
+  if (!st || !st.marker) return;
+  // Bounce animation via CSS class on the icon element
+  var el = st.marker.getElement();
+  if (el) {
+    el.style.transform = (el.style.transform || '') + ' scale(1.8)';
+    el.style.transition = 'transform 0.3s';
+    el.style.zIndex = '9999';
+    setTimeout(function(){
+      el.style.transform = el.style.transform.replace(' scale(1.8)', '');
+      el.style.zIndex = '';
+    }, 1500);
+  }
+}
+
+function requestNotifPermission() {
+  if (typeof Notification === 'undefined') {
+    document.getElementById('notif-status').innerText = 'Notifications not supported in this browser';
+    return;
+  }
+  Notification.requestPermission().then(function(perm) {
+    notifGranted = perm === 'granted';
+    var btn = document.getElementById('notif-btn');
+    var st  = document.getElementById('notif-status');
+    if (perm === 'granted') {
+      btn.innerText = '✓ Notifications enabled';
+      btn.classList.replace('bg-amber-800','bg-green-800');
+      st.innerText = 'You will be notified when watched stations are heard';
+    } else {
+      st.innerText = 'Permission denied — alerts still shown in panel';
+    }
+  });
+}
+
+function addToWatchlist() {
+  var val = document.getElementById('watch-input').value.trim().toUpperCase();
+  if (!val) return;
+  if (watchlist.includes(val)) {
+    document.getElementById('watch-input').value = '';
+    return;
+  }
+  watchlist.push(val);
+  saveWatchlist();
+  document.getElementById('watch-input').value = '';
+  renderWatchlist();
+}
+
+function removeFromWatchlist(call) {
+  watchlist = watchlist.filter(function(c){ return c !== call; });
+  saveWatchlist();
+  renderWatchlist();
+}
+
+function renderWatchlist() {
+  var list  = document.getElementById('watch-list');
+  var empty = document.getElementById('watch-empty');
+  if (!list) return;
+  if (!watchlist.length) {
+    list.innerHTML = '';
+    empty.classList.remove('hidden');
+  } else {
+    empty.classList.add('hidden');
+    list.innerHTML = watchlist.map(function(call) {
+      var st = stations[call] || stations[call.split('-')[0]];
+      var lastSeen = st ? new Date(st.lastHeard*1000).toLocaleTimeString() : 'Not yet heard';
+      var color = st && (Math.floor(Date.now()/1000)-st.lastHeard) < 3600 ? 'text-green-400' : 'text-gray-400';
+      return '<div class="flex items-center justify-between bg-gray-700 rounded p-2 text-sm">'
+        + '<div class="flex items-center space-x-3">'
+        + '<span class="font-bold font-mono text-amber-300">' + call + '</span>'
+        + '<span class="text-xs ' + color + '">' + lastSeen + '</span>'
+        + '</div>'
+        + '<div class="flex space-x-2">'
+        + '<button onclick="centerOnStation('' + call + '')" class="text-xs text-blue-400 hover:text-blue-300">📍 Map</button>'
+        + '<button onclick="removeFromWatchlist('' + call + '')" class="text-xs text-red-400 hover:text-red-300">✕ Remove</button>'
+        + '</div></div>';
+    }).join('');
+  }
+  renderAlertLog();
+  updateNotifBtn();
+}
+
+function updateNotifBtn() {
+  var btn = document.getElementById('notif-btn');
+  var st  = document.getElementById('notif-status');
+  if (!btn) return;
+  if (typeof Notification === 'undefined') {
+    btn.classList.add('hidden');
+    return;
+  }
+  if (Notification.permission === 'granted') {
+    notifGranted = true;
+    btn.innerText = '✓ Notifications enabled';
+    btn.classList.replace('bg-amber-800','bg-green-800');
+  } else if (Notification.permission === 'denied') {
+    st.innerText = 'Notifications blocked — enable in browser settings';
+    btn.classList.add('hidden');
+  }
+}
+
+function renderAlertLog() {
+  var log   = document.getElementById('alert-log');
+  var empty = document.getElementById('alert-empty');
+  var count = document.getElementById('alert-count');
+  if (!log) return;
+  if (!alertLog.length) {
+    empty.classList.remove('hidden');
+    if (count) count.innerText = '';
+  } else {
+    empty.classList.add('hidden');
+    if (count) count.innerText = '(' + alertLog.length + ')';
+    log.innerHTML = alertLog.map(function(e) {
+      return '<div class="p-2 text-xs">'
+        + '<span class="text-gray-400">' + e.time + '</span> '
+        + '<a href="https://qrz.com/db/' + e.callsign.split('-')[0] + '" target="_blank"'
+        + ' class="font-bold text-amber-300 hover:underline">' + e.callsign + '</a>'
+        + '<span class="text-gray-500 ml-2 font-mono text-[10px] break-all">' + (e.packet||'').substring(0,60) + '</span>'
+        + '</div>';
+    }).join('');
+  }
+}
+
+function centerOnStation(call) {
+  var st = stations[call] || stations[call.split('-')[0]];
+  if (st && st.positions.length) {
+    var p = st.positions[st.positions.length-1];
+    map.setView([p.lat, p.lon], 13);
+    togglePanel('map');
+    if (st.marker) st.marker.openTooltip();
   }
 }
 
