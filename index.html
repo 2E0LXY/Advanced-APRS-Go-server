@@ -819,24 +819,30 @@ function getSymbolInfo(sym) {
 
 // ─── Map Init ────────────────────────────────────────────────────────────────
 const map = L.map('map').setView([53.7, -1.5], 9);
-// Marker cluster group — stations cluster at low zoom, expand at high zoom
-const clusterGroup = L.markerClusterGroup({
-  maxClusterRadius: 60,
-  spiderfyOnMaxZoom: true,
-  showCoverageOnHover: false,
-  zoomToBoundsOnClick: true,
-  disableClusteringAtZoom: 13,
-  iconCreateFunction: function(cluster) {
-    const count = cluster.getChildCount();
-    const size = count < 10 ? 'small' : count < 50 ? 'medium' : 'large';
-    return L.divIcon({
-      html: '<div><span>' + count + '</span></div>',
-      className: 'marker-cluster marker-cluster-' + size,
-      iconSize: L.point(40, 40)
-    });
-  }
-});
-map.addLayer(clusterGroup);
+// Marker cluster group — safe init with fallback if plugin not loaded
+let clusterGroup;
+if (typeof L.markerClusterGroup === 'function') {
+  clusterGroup = L.markerClusterGroup({
+    maxClusterRadius: 60,
+    spiderfyOnMaxZoom: true,
+    showCoverageOnHover: false,
+    zoomToBoundsOnClick: true,
+    disableClusteringAtZoom: 13,
+    iconCreateFunction: function(cluster) {
+      const count = cluster.getChildCount();
+      const size = count < 10 ? 'small' : count < 50 ? 'medium' : 'large';
+      return L.divIcon({
+        html: '<div><span>' + count + '</span></div>',
+        className: 'marker-cluster marker-cluster-' + size,
+        iconSize: L.point(40, 40)
+      });
+    }
+  });
+  map.addLayer(clusterGroup);
+} else {
+  console.warn('MarkerCluster plugin not loaded - clustering disabled');
+  clusterGroup = { addLayer: function(m){ m.addTo(map); }, removeLayer: function(m){ map.removeLayer(m); }, clearLayers: function(){} };
+}
 let currentTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19,attribution:'© OSM'}).addTo(map);
 let gridLayer = null, nightLayer = null, statusInterval = null, adminAuth = null;
 let stations = {}, ws, myCallsign = '', msgCounter = 1, packetCount = 0;
@@ -1788,7 +1794,7 @@ function toggleClustering() {
 // Override addMarkerToMap to respect cluster toggle
 function addMarkerToMap(marker) {
   const clustered = document.getElementById('cluster-enable');
-  if (clustered && clustered.checked) {
+  if (clustered && clustered.checked && clusterGroup && typeof clusterGroup.addLayer === 'function') {
     clusterGroup.addLayer(marker);
   } else {
     marker.addTo(map);
