@@ -910,27 +910,41 @@ function getSymbolInfo(sym) {
   return e ? { label:e.label, bg:e.bg } : { label:sym[1], bg:'#374151' };
 }
 
-function getSymbolSprite() { return null; }
+const SYMBOL_LABELS = {
+  '!':'Police Station','#':'Digi','$':'Phone','%':'DX Cluster','&':'iGate',
+  "'": 'Small Aircraft','(':'Cloud',')':'Firenet','*':'Snow','+':'Church',
+  ',':'Girl Scout','-':'House QTH','.':'X','/':'Dot',
+  '0':'Circle 0','1':'1','2':'2','3':'3','4':'4',
+  '5':'5','6':'6','7':'7','8':'8','9':'9',
+  ':':'Fire',';':'Campground','<':'Motorcycle','=':'Railroad','>':'Car',
+  '?':'File Server','@':'Hurricane','A':'Aid Station','B':'BBS','C':'Canoe',
+  'D':'Dual Overlay','E':'Eyeball','F':'Farm Vehicle','G':'Grid Square','H':'Hotel',
+  'I':'TCP/IP','J':'Work Zone','K':'School','L':'PC User','M':'Mac',
+  'N':'NTS Net','O':'Balloon','P':'Police Car','Q':'TBD','R':'RV',
+  'S':'Space Shuttle','T':'SSTV','U':'Bus','V':'ATV','W':'NWS Site',
+  'X':'Helicopter','Y':'Yacht','Z':'WinAPRS','[':'Jogger',
+  ']':'Jeep','^':'Aircraft','_':'WX Station','`':'Dish Antenna',
+  'a':'Ambulance','b':'Bicycle','c':'IRLP/Echolink','d':'Fire Dept',
+  'e':'Horse','f':'Fire Truck','g':'Glider','h':'Hospital',
+  'i':'IOTA Island','j':'Jeep','k':'Truck','l':'Area Locations',
+  'm':'Mic-E','n':'Node','o':'EOC','p':'Rover/Dog',
+  'q':'Grid Square','r':'Antenna Tower','s':'Power Boat','t':'Truck Stop',
+  'u':'18-Wheeler','v':'Van','w':'Water Station','x':'xAPRS',
+  'y':'Yagi Antenna','z':'Shelter','{':'Fog','}':'TNC'
+};
 
-// ─── Map Init ────────────────────────────────────────────────────────────────
-const map = L.map('map').setView([53.7, -1.5], 9);
-let currentTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19,attribution:'© OSM'}).addTo(map);
-let gridLayer = null, nightLayer = null, statusInterval = null, adminAuth = null;
-let stations = {}, ws, myCallsign = '', msgCounter = 1, packetCount = 0;
-
-function formatBytes(b) {
-  if (!b || isNaN(b) || b === 0) return '0 B';
-  const k = 1024, s = ['B','KB','MB','GB'], i = Math.floor(Math.log(b)/Math.log(k));
-  return (b/Math.pow(k,i)).toFixed(1)+' '+s[i];
+function getSymbolSprite(table, code) {
+  var idx = (code || ' ').charCodeAt(0) - 33;
+  if (idx < 0 || idx > 93) return null;
+  var col = idx % 16;
+  var row = Math.floor(idx / 16);
+  var sheet = (table === '/') ? '/symbols/symbols-new.png' : '/symbols/symbols-new2.png';
+  return { sheet: sheet, px: col * 24, py: row * 24, sheetW: 384, sheetH: 144 };
 }
 
-function changeMapStyle() {
-  map.removeLayer(currentTiles);
-  const v = document.getElementById('map-style').value;
-  if (v==='osm') currentTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
-  else if (v==='topo') currentTiles = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17}).addTo(map);
-  else if (v==='sat') currentTiles = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19}).addTo(map);
-}
+
+
+
 
 function toggleOverlay(type) {
   if (type==='grid') {
@@ -1189,25 +1203,27 @@ function calcPHG(phgStr) {
 
 // ─── Map Rendering ────────────────────────────────────────────────────────────
 function makeIcon(st, call) {
-  const isMe = call === myCallsign;
-  const ring = isMe ? 'box-shadow:0 0 0 3px #facc15;' : '';
-  const ageSec = Math.floor(Date.now()/1000) - (st.lastHeard||0);
-  const opacity = ageSec < 1200 ? 1.0 : ageSec < 4800 ? 0.75 : ageSec < 7200 ? 0.45 : 0.25;
-  const grey = ageSec > 4800 ? 'filter:grayscale(70%);' : '';
-
-  const code = st.sym && st.sym.length >= 2 ? st.sym[1] : '/';
-  const table = st.sym && st.sym.length >= 2 ? st.sym[0] : '/';
-  const entry = SYM[code] || { bg:'#4b5563', svg:'<text x="12" y="16" text-anchor="middle" font-size="11" fill="#fff">'+code+'</text>', label:code };
-
-  const svgBody = entry.svg || '';
-  const bg = entry.bg || '#4b5563';
-
-  const iconHtml =
-    '<div style="width:26px;height:26px;border-radius:4px;background:'+bg+';'+ring+grey+'opacity:'+opacity+';box-shadow:0 1px 3px rgba(0,0,0,0.5)">' +
-    '<svg viewBox="0 0 24 24" width="26" height="26" xmlns="http://www.w3.org/2000/svg">'+svgBody+'</svg>' +
-    '</div>';
-
-  return L.divIcon({html:iconHtml, className:'', iconSize:[26,26], iconAnchor:[13,13], tooltipAnchor:[13,-13]});
+  var isMe = call === myCallsign;
+  var ageSec = Math.floor(Date.now()/1000) - (st.lastHeard || 0);
+  var opacity = ageSec < 1200 ? 1.0 : ageSec < 4800 ? 0.75 : ageSec < 7200 ? 0.45 : 0.25;
+  var grey = ageSec > 4800 ? 'filter:grayscale(60%);' : '';
+  var ring = isMe ? 'outline:3px solid #facc15;outline-offset:1px;' : '';
+  var table = (st.sym && st.sym.length >= 2) ? st.sym[0] : '/';
+  var code  = (st.sym && st.sym.length >= 2) ? st.sym[1] : '-';
+  var sp = getSymbolSprite(table, code);
+  var iconHtml;
+  if (sp) {
+    iconHtml = '<div style="width:24px;height:24px;overflow:hidden;image-rendering:pixelated;'
+      + ring + grey + 'opacity:' + opacity + ';box-shadow:0 1px 3px rgba(0,0,0,0.4)">'
+      + '<div style="width:24px;height:24px;background:url(' + sp.sheet + ') -' + sp.px + 'px -' + sp.py + 'px;'
+      + 'background-size:' + sp.sheetW + 'px ' + sp.sheetH + 'px;background-repeat:no-repeat"></div>'
+      + '</div>';
+  } else {
+    iconHtml = '<div style="width:24px;height:24px;background:#374151;border-radius:3px;'
+      + ring + grey + 'opacity:' + opacity
+      + ';display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff">' + code + '</div>';
+  }
+  return L.divIcon({ html: iconHtml, className: '', iconSize: [24,24], iconAnchor: [12,12], tooltipAnchor: [12,-12] });
 }
 
 function redrawMap() {
