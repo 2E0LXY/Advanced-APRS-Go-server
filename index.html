@@ -818,7 +818,7 @@ function getSymbolInfo(sym) {
 }
 
 // ─── Map Init ────────────────────────────────────────────────────────────────
-const map = L.map('map').setView([53.7, -1.5], 9);
+const map = L.map('map', {maxZoom: 19}).setView([53.7, -1.5], 9);
 // Marker cluster group — safe init with fallback if plugin not loaded
 let clusterGroup;
 if (typeof L.markerClusterGroup === 'function') {
