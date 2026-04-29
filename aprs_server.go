@@ -383,7 +383,7 @@ func isAllowed(packet string) bool {
 	config.RLock()
 	dPi, dD, dDesk, geo, cLat, cLon, rad := config.DropPiStar, config.DropDStar, config.DropAPDesk, config.EnableGeofence, config.CenterLat, config.CenterLon, config.RadiusKm
 	config.RUnlock()
-	if dPi && strings.Contains(upper, "PISTAR") {
+	if dPi && (strings.Contains(upper, "PISTAR") || strings.Contains(upper, "MMDVM") || strings.Contains(upper, "APDPRS")) {
 		return false
 	}
 	if dD && (strings.Contains(upper, "D-STAR") || strings.Contains(upper, "APDSTR")) {

@@ -688,7 +688,7 @@
         <div class="bg-gray-800 p-4 rounded border border-gray-700">
           <h3 class="text-sm font-bold text-gray-300 uppercase mb-3">Drop Filters</h3>
           <div class="space-y-2 text-sm">
-            <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="admDropPi" class="w-4 h-4"><span>Drop Pi-Star strings</span></label>
+            <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="admDropPi" class="w-4 h-4"><span>Drop Pi-Star / MMDVM / APDPRS</span></label>
             <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="admDropD" class="w-4 h-4"><span>Drop D-STAR routes</span></label>
             <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="admDropDesk" class="w-4 h-4"><span>Drop APDESK status</span></label>
           </div>
@@ -1907,8 +1907,7 @@ function triggerAlert(callsign, pattern, packet) {
   if (notifGranted && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
     try {
       new Notification('APRS Watch: ' + callsign, {
-        body: 'Station heard at ' + entry.time + (packet ? '
-' + packet.substring(0,80) : ''),
+        body: "Station heard at " + entry.time + (packet ? " - " + packet.substring(0,80) : ""),
         icon: '/symbols/symbols-new.png',
         tag: 'aprs-watch-' + callsign,
         renotify: true
@@ -1999,15 +1998,17 @@ function renderWatchlist() {
       var st = stations[call] || stations[call.split('-')[0]];
       var lastSeen = st ? new Date(st.lastHeard*1000).toLocaleTimeString() : 'Not yet heard';
       var color = st && (Math.floor(Date.now()/1000)-st.lastHeard) < 3600 ? 'text-green-400' : 'text-gray-400';
-      return '<div class="flex items-center justify-between bg-gray-700 rounded p-2 text-sm">'
-        + '<div class="flex items-center space-x-3">'
+      var d = document.createElement('div');
+      d.className = 'flex items-center justify-between bg-gray-700 rounded p-2 text-sm';
+      d.innerHTML = '<div class="flex items-center space-x-3">'
         + '<span class="font-bold font-mono text-amber-300">' + call + '</span>'
-        + '<span class="text-xs ' + color + '">' + lastSeen + '</span>'
-        + '</div>'
+        + '<span class="text-xs ' + color + '">' + lastSeen + '</span></div>'
         + '<div class="flex space-x-2">'
-        + '<button onclick="centerOnStation('' + call + '')" class="text-xs text-blue-400 hover:text-blue-300">📍 Map</button>'
-        + '<button onclick="removeFromWatchlist('' + call + '')" class="text-xs text-red-400 hover:text-red-300">✕ Remove</button>'
-        + '</div></div>';
+        + '<button class="text-xs text-blue-400 hover:text-blue-300 watch-map-btn">Map</button>'
+        + '<button class="text-xs text-red-400 hover:text-red-300 watch-rm-btn">Remove</button></div>';
+      d.querySelector('.watch-map-btn').onclick = function(){ centerOnStation(call); };
+      d.querySelector('.watch-rm-btn').onclick = function(){ removeFromWatchlist(call); };
+      return d.outerHTML;
     }).join('');
   }
   renderAlertLog();
