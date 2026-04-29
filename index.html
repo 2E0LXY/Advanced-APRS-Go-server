@@ -1774,7 +1774,7 @@ async function refreshISS() {
 
   try {
     // Fetch ISS position from open-notify API
-    const issPos = await fetch('https://api.wheretheiss.at/v1/satellites/25544');
+    const issPos = await fetch('/api/iss');
     if (issPos.ok) {
       const iss = await issPos.json();
       document.getElementById('iss-pos').innerText =
@@ -1785,22 +1785,11 @@ async function refreshISS() {
   } catch(e) { document.getElementById('iss-pos').innerText = 'Position unavailable'; }
 
   try {
-    // Fetch recent ARISS packets from aprs.fi API (public, no key needed for basic queries)
-    const url = 'https://api.aprs.fi/api/get?name=RS0ISS,RS0ISS-4,NA1SS&what=loc&apikey=104710.mxTOVTFLMl6la5&format=json';
-    const r = await fetch(url);
+    // Fetch ARISS data via our own proxy to avoid CORS restrictions
+    const r = await fetch('/api/ariss');
+    if (!r.ok) throw new Error('Server returned ' + r.status);
     const d = await r.json();
-    const entries = d.entries || [];
-
-    // Also fetch recent messages VIA the ISS
-    const msgUrl = 'https://api.aprs.fi/api/get?what=msg&dst=RS0ISS*&apikey=104710.mxTOVTFLMl6la5&format=json&howmany=50';
-    let msgs = [];
-    try {
-      const mr = await fetch(msgUrl);
-      const md = await mr.json();
-      msgs = md.entries || [];
-    } catch(e) {}
-
-    const all = [...entries, ...msgs].sort((a,b) => b.time - a.time).slice(0,80);
+    const all = (d.entries || []).sort((a,b) => (b.time||b.lasttime||0) - (a.time||a.lasttime||0)).slice(0,80);
     countEl.innerText = all.length + ' entries';
     lastEl.innerText = 'Updated ' + new Date().toLocaleTimeString();
 

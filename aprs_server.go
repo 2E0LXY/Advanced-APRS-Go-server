@@ -174,8 +174,11 @@ func main() {
 	http.HandleFunc("/api/status", handleStatus)
 	http.HandleFunc("/api/password", basicAuth(handlePassword))
 	http.HandleFunc("/api/whoami", basicAuth(handleWhoami))
+	http.HandleFunc("/api/ariss", handleARISS)
 	http.HandleFunc("/api/version", handleVersion)
 	http.HandleFunc("/api/messages", handleMessages)
+	http.HandleFunc("/api/ariss", handleARISS)
+	http.HandleFunc("/api/iss", handleISSPosition)
 	http.HandleFunc("/api/update", basicAuth(handleUpdate))
 
 	log.Printf("Advanced APRS Gateway active on :8080")
@@ -998,12 +1001,116 @@ func handleVersion(w http.ResponseWriter, r *http.Request) {
 }
 
 
+
+// handleARISS proxies the aprs.fi API for ARISS packets to avoid browser CORS issues.
+func handleARISS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	url := "https://api.aprs.fi/api/get?name=RS0ISS,RS0ISS-4,NA1SS&what=loc&apikey=104710.mxTOVTFLMl6la5&format=json&howmany=50"
+	resp, err := fetchURL(url)
+	if err != nil {
+		http.Error(w, `{"error":"` + err.Error() + `"}`, http.StatusBadGateway)
+		return
+	}
+	w.Write(resp)
+}
+
+// handleISSPosition proxies wheretheiss.at for live ISS position.
+func handleISSPosition(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	resp, err := fetchURL("https://api.wheretheiss.at/v1/satellites/25544")
+	if err != nil {
+		http.Error(w, `{"error":"` + err.Error() + `"}`, http.StatusBadGateway)
+		return
+	}
+	w.Write(resp)
+}
+
+// fetchURL makes a simple GET request and returns the body bytes.
+func fetchURL(url string) ([]byte, error) {
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	buf := make([]byte, 0, 65536)
+	buf2 := make([]byte, 4096)
+	for {
+		n, err := resp.Body.Read(buf2)
+		if n > 0 { buf = append(buf, buf2[:n]...) }
+		if err != nil { break }
+	}
+	return buf, nil
+}
+
 // handleMessages returns the last hour of APRS messages.
 func handleMessages(w http.ResponseWriter, r *http.Request) {
 	msgStoreMu.RLock()
 	defer msgStoreMu.RUnlock()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(msgStore)
+}
+
+
+// handleARISS proxies ARISS packet data from aprs.fi API server-side.
+// This avoids CORS issues with direct browser requests to aprs.fi.
+func handleARISS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// Fetch recent positions of ARISS stations from aprs.fi
+	apiKey := "104710.mxTOVTFLMl6la5"
+	url := "https://api.aprs.fi/api/get?name=RS0ISS,RS0ISS-4,NA1SS&what=loc&apikey=" + apiKey + "&format=json"
+
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		http.Error(w, `{"error":"upstream fetch failed"}`, http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Also fetch recent messages via ISS
+	msgURL := "https://api.aprs.fi/api/get?what=msg&dst=RS0ISS*&apikey=" + apiKey + "&format=json&howmany=50"
+	msgResp, err2 := client.Get(msgURL)
+
+	type aprsEntry struct {
+		Name     string  `json:"name"`
+		Srccall  string  `json:"srccall"`
+		Dstcall  string  `json:"dstcall"`
+		Time     int64   `json:"time,string"`
+		Lasttime int64   `json:"lasttime,string"`
+		Lat      float64 `json:"lat,string"`
+		Lng      float64 `json:"lng,string"`
+		Path     string  `json:"path"`
+		Comment  string  `json:"comment"`
+		Message  string  `json:"message"`
+	}
+	type aprsResp struct {
+		Result  string      `json:"result"`
+		Entries []aprsEntry `json:"entries"`
+	}
+
+	var loc aprsResp
+	json.NewDecoder(resp.Body).Decode(&loc)
+
+	var msgs aprsResp
+	if err2 == nil {
+		defer msgResp.Body.Close()
+		json.NewDecoder(msgResp.Body).Decode(&msgs)
+	}
+
+	// Combine and return
+	all := append(loc.Entries, msgs.Entries...)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"entries": all,
+		"loc_count": len(loc.Entries),
+		"msg_count": len(msgs.Entries),
+	})
 }
 
 // handleWhoami returns the authenticated username — used by the frontend
