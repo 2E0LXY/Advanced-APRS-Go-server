@@ -47,9 +47,9 @@
     <button onclick="togglePanel('iss')" class="px-3 py-1.5 bg-indigo-900 hover:bg-indigo-700 rounded transition-colors">🛸 ISS</button>
     <button onclick="togglePanel('help')" class="px-3 py-1.5 bg-green-900 hover:bg-green-700 rounded transition-colors">Help</button>
     <button onclick="togglePanel('admin')" class="px-3 py-1.5 bg-red-900 hover:bg-red-700 rounded transition-colors">Admin</button>
-    <a id="update-btn" href="https://github.com/2E0LXY/Advanced-APRS-Go-server/releases" target="_blank"
+    <button id="update-btn" onclick="triggerUpdateFromHeader()"
        class="hidden px-3 py-1.5 bg-yellow-600 hover:bg-yellow-500 rounded transition-colors font-bold animate-pulse"
-       title="">⬆ Update</a>
+       title="">⬆ Update Available</button>
   </div>
 </div>
 
@@ -2052,6 +2052,23 @@ function centerOnStation(call) {
     togglePanel('map');
     if (st.marker) st.marker.openTooltip();
   }
+}
+
+
+function triggerUpdateFromHeader() {
+  // Open admin panel and trigger update directly
+  togglePanel('admin');
+  // If already authenticated, go straight to update
+  if (adminAuth) {
+    showUpdateBanner();
+    // Scroll to update section
+    setTimeout(function() {
+      var sec = document.getElementById('update-section');
+      if (sec) sec.scrollIntoView({ behavior: 'smooth' });
+    }, 300);
+  }
+  // If not authenticated, admin login gate will show first
+  // then user can scroll to update section after logging in
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
