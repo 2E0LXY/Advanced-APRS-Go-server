@@ -1590,6 +1590,11 @@ function handleIncoming(data) {
     const p = data.data;
     updateStation(p.call,p.path,p.lat,p.lon,p.phg,p.ts,p.raw,p.sym);
     checkWatchlist(p.call, p.raw);
+    // Store WX history for graphs
+    if (p.raw) {
+      var _wx = parseWXPacket(p.raw);
+      if (_wx && Object.keys(_wx).length) updateWXHistory(p.call, _wx, p.ts);
+    }
     redrawMap();
   }
 }
@@ -2740,10 +2745,12 @@ function renderWX() {
   }
   empty.classList.add('hidden');
 
-  // Event delegation for map buttons (avoids onclick quote issues)
+  // Event delegation for map and history buttons
   grid.addEventListener('click', function(e) {
-    var btn = e.target.closest('.wx-map-btn');
-    if (btn) centerOnStation(btn.dataset.call);
+    var mapBtn  = e.target.closest('.wx-map-btn');
+    var histBtn = e.target.closest('.wx-hist-btn');
+    if (mapBtn)  centerOnStation(mapBtn.dataset.call);
+    if (histBtn) openWXDetail(histBtn.dataset.call);
   }, {once: true});
 
   grid.innerHTML = wxStations.map(function(s) {
@@ -2760,6 +2767,7 @@ function renderWX() {
       + '<div>'
       + '<a href="https://qrz.com/db/' + baseCall(call) + '" target="_blank" class="font-bold text-sky-400 hover:underline font-mono">' + call + '</a>'
       + (pos ? '<button class="ml-2 text-[10px] text-gray-500 hover:text-sky-400 wx-map-btn" data-call="' + call + '">📍</button>' : '')
+      + '<button class="ml-1 text-[10px] text-sky-600 hover:text-sky-400 wx-hist-btn" data-call="' + call + '">📈</button>'
       + '</div>'
       + '<span class="text-[10px] text-gray-500">' + agoStr + ' ago</span>'
       + '</div>'
@@ -3612,6 +3620,174 @@ function useSymbolInBeacon() {
   }
 }
 
+
+// ─── WX Station Detail & Historical Graphs ───────────────────────────────────
+var _wxDetailCall = null;
+
+function openWXDetail(call) {
+  _wxDetailCall = call;
+  document.getElementById('wx-detail-modal').classList.remove('hidden');
+  renderWXDetail();
+}
+
+function closeWXDetail() {
+  document.getElementById('wx-detail-modal').classList.add('hidden');
+  _wxDetailCall = null;
+}
+
+function centreWXOnMap() {
+  var st = stations[_wxDetailCall]; if (!st || !st.positions.length) return;
+  var p  = st.positions[st.positions.length-1];
+  closeWXDetail();
+  togglePanel('map');
+  map.setView([p.lat, p.lon], 13);
+}
+
+function renderWXDetail() {
+  var call = _wxDetailCall;
+  var st   = stations[call]; if (!st) return;
+  var wx   = parseWXPacket(st.raw || '');
+  var hist = wxHistory[call] || [];
+
+  // Header
+  document.getElementById('wxd-call').innerText = call;
+  var pos = st.positions.length ? st.positions[st.positions.length-1] : null;
+  document.getElementById('wxd-pos').innerText = pos ? pos.lat.toFixed(4) + ', ' + pos.lon.toFixed(4) : '';
+  var ago = Math.floor(Date.now()/1000) - st.lastHeard;
+  var agoStr = ago < 60 ? ago+'s ago' : ago < 3600 ? Math.floor(ago/60)+'m ago' : Math.floor(ago/3600)+'h ago';
+  document.getElementById('wxd-last').innerText = 'Last: ' + new Date(st.lastHeard*1000).toLocaleTimeString() + ' (' + agoStr + ')';
+  document.getElementById('wxd-qrz').href = 'https://qrz.com/db/' + baseCall(call);
+
+  // Current conditions grid
+  var fields = [];
+  if (wx && wx.tempC     !== undefined) fields.push(['🌡 Temp',    wx.tempC + '°C',   tempColor(wx.tempC)]);
+  if (wx && wx.humidity  !== undefined) fields.push(['💧 Humidity', wx.humidity + '%',  'text-blue-400']);
+  if (wx && wx.pressure  !== undefined) fields.push(['📊 Pressure', wx.pressure + ' hPa','text-gray-300']);
+  if (wx && wx.windSpd   !== undefined) fields.push(['🌬 Wind',     wx.windSpd + ' km/h','text-green-400']);
+  if (wx && wx.windGust  !== undefined) fields.push(['💨 Gust',     wx.windGust + ' km/h','text-yellow-400']);
+  if (wx && wx.rain1h    !== undefined) fields.push(['🌧 Rain 1h',  wx.rain1h + ' mm',  'text-blue-300']);
+  if (wx && wx.rain24h   !== undefined) fields.push(['🌧 Rain 24h', wx.rain24h + ' mm', 'text-blue-200']);
+  if (wx && wx.luminosity!== undefined) fields.push(['☀️ Solar',    wx.luminosity + ' W/m²','text-yellow-300']);
+
+  document.getElementById('wxd-current').innerHTML = fields.map(function(f) {
+    return '<div class="bg-gray-700 rounded p-2 text-center">'
+      + '<div class="text-[10px] text-gray-400 mb-1">' + f[0] + '</div>'
+      + '<div class="font-bold font-mono ' + f[2] + '">' + f[1] + '</div>'
+      + '</div>';
+  }).join('');
+
+  // History note
+  document.getElementById('wxd-history-note').innerText =
+    hist.length ? hist.length + ' readings stored this session' : 'No history yet — data accumulates as packets arrive';
+
+  // Draw all charts
+  renderWXChart('wxd-temp-chart',  hist, 'tempC',    '#f97316', '°C');
+  renderWXChart('wxd-hum-chart',   hist, 'humidity', '#60a5fa', '%');
+  renderWXChart('wxd-pres-chart',  hist, 'pressure', '#a78bfa', 'hPa');
+  renderWXChart('wxd-wind-chart',  hist, 'windSpd',  '#4ade80', 'km/h');
+  renderWXChart('wxd-rain-chart',  hist, 'rain1h',   '#38bdf8', 'mm');
+}
+
+function renderWXChart(canvasId, hist, field, color, unit) {
+  var canvas = document.getElementById(canvasId); if (!canvas) return;
+  var ctx    = canvas.getContext('2d');
+  var W      = canvas.parentElement.offsetWidth - 32 || 600;
+  var H      = 70;
+  canvas.width = W; canvas.height = H;
+  ctx.clearRect(0, 0, W, H);
+
+  // Extract values with timestamps
+  var points = hist.map(function(h) {
+    return { ts: h.ts, v: h.wx[field] };
+  }).filter(function(p) { return p.v !== undefined && p.v !== null; });
+
+  if (points.length < 2) {
+    ctx.fillStyle = '#374151';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Not enough data yet', W/2, H/2 + 4);
+    return;
+  }
+
+  var vals   = points.map(function(p){ return parseFloat(p.v); });
+  var minV   = Math.min.apply(null, vals);
+  var maxV   = Math.max.apply(null, vals);
+  var rangeV = maxV - minV || 1;
+  var padV   = rangeV * 0.1;
+  minV -= padV; maxV += padV;
+
+  var stepX = W / (points.length - 1);
+
+  // Grid lines
+  ctx.strokeStyle = '#374151';
+  ctx.lineWidth = 1;
+  for (var g = 0; g <= 4; g++) {
+    var gy = H - (g/4) * (H-12) - 6;
+    ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
+    var gv = (minV + (g/4) * (maxV-minV)).toFixed(field==='pressure'?1:0);
+    ctx.fillStyle = '#4b5563';
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(gv + unit, 2, gy - 2);
+  }
+
+  // Gradient fill
+  var grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, color + '55');
+  grad.addColorStop(1, color + '00');
+
+  var toY = function(v) { return H - ((parseFloat(v)-minV)/(maxV-minV)) * (H-16) - 8; };
+
+  ctx.beginPath();
+  points.forEach(function(p, i) {
+    var x = i * stepX, y = toY(p.v);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.lineTo((points.length-1)*stepX, H);
+  ctx.lineTo(0, H);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  points.forEach(function(p, i) {
+    var x = i * stepX, y = toY(p.v);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Latest value dot
+  var lastX = (points.length-1) * stepX;
+  var lastY = toY(points[points.length-1].v);
+  ctx.beginPath();
+  ctx.arc(lastX, lastY, 4, 0, Math.PI*2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.strokeStyle = '#111827';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Latest value label
+  ctx.fillStyle = color;
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = lastX > W*0.8 ? 'right' : 'left';
+  ctx.fillText(parseFloat(vals[vals.length-1]).toFixed(field==='pressure'?1:0) + unit, lastX + (lastX > W*0.8 ? -8 : 8), lastY - 6);
+
+  // Time axis labels
+  if (points.length >= 2) {
+    ctx.fillStyle = '#4b5563';
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(new Date(points[0].ts*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}), 2, H-1);
+    ctx.textAlign = 'right';
+    ctx.fillText(new Date(points[points.length-1].ts*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}), W-2, H-1);
+  }
+}
+
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 connectWS();
 setInterval(redrawMap, 30000);
@@ -3620,5 +3796,55 @@ populateConnInfo();
 setTimeout(checkForUpdates, 2000);
 setInterval(checkForUpdates, 3600000); // re-check every hour
 </script>
+<!-- WX Station Detail Modal -->
+<div id="wx-detail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-2 bg-black/70" onclick="if(event.target===this)closeWXDetail()">
+  <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col">
+
+    <div class="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
+      <div>
+        <h2 id="wxd-call" class="text-xl font-bold font-mono text-sky-400"></h2>
+        <p id="wxd-pos" class="text-xs text-gray-400 mt-0.5"></p>
+      </div>
+      <div class="flex items-center space-x-2">
+        <span id="wxd-last" class="text-xs text-gray-500"></span>
+        <button onclick="closeWXDetail()" class="text-gray-400 hover:text-white text-xl ml-2">✕</button>
+      </div>
+    </div>
+
+    <!-- Current conditions -->
+    <div id="wxd-current" class="grid grid-cols-4 gap-2 p-4 border-b border-gray-700 flex-shrink-0"></div>
+
+    <!-- Graphs -->
+    <div class="flex-1 overflow-y-auto p-4 space-y-4">
+      <div class="bg-gray-800 rounded p-3">
+        <p class="text-xs text-gray-400 font-bold uppercase mb-2">🌡 Temperature °C</p>
+        <canvas id="wxd-temp-chart" height="70"></canvas>
+      </div>
+      <div class="bg-gray-800 rounded p-3">
+        <p class="text-xs text-gray-400 font-bold uppercase mb-2">💧 Humidity %</p>
+        <canvas id="wxd-hum-chart" height="70"></canvas>
+      </div>
+      <div class="bg-gray-800 rounded p-3">
+        <p class="text-xs text-gray-400 font-bold uppercase mb-2">📊 Pressure hPa</p>
+        <canvas id="wxd-pres-chart" height="70"></canvas>
+      </div>
+      <div class="bg-gray-800 rounded p-3">
+        <p class="text-xs text-gray-400 font-bold uppercase mb-2">🌬 Wind Speed km/h</p>
+        <canvas id="wxd-wind-chart" height="70"></canvas>
+      </div>
+      <div class="bg-gray-800 rounded p-3">
+        <p class="text-xs text-gray-400 font-bold uppercase mb-2">🌧 Rain 1h mm</p>
+        <canvas id="wxd-rain-chart" height="70"></canvas>
+      </div>
+      <p id="wxd-history-note" class="text-xs text-gray-600 text-center"></p>
+    </div>
+
+    <div class="p-3 border-t border-gray-700 flex items-center justify-between flex-shrink-0">
+      <button onclick="centreWXOnMap()" class="text-xs bg-sky-800 hover:bg-sky-700 px-3 py-1.5 rounded text-white">📍 Show on Map</button>
+      <a id="wxd-qrz" href="#" target="_blank" class="text-xs bg-blue-900 hover:bg-blue-800 px-3 py-1.5 rounded text-blue-300">QRZ ↗</a>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
