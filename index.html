@@ -43,6 +43,7 @@
     <button onclick="togglePanel('search')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Stations</button>
     <button onclick="togglePanel('messages')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Messages</button>
     <button onclick="togglePanel('status')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Status</button>
+    <button onclick="togglePanel('wx')" class="px-3 py-1.5 bg-sky-900 hover:bg-sky-700 rounded transition-colors">🌦 Weather</button>
     <button onclick="togglePanel('watch')" class="px-3 py-1.5 bg-amber-900 hover:bg-amber-700 rounded transition-colors">👁 Watch</button>
     <button onclick="togglePanel('iss')" class="px-3 py-1.5 bg-indigo-900 hover:bg-indigo-700 rounded transition-colors">🛸 ISS</button>
     <button onclick="togglePanel('help')" class="px-3 py-1.5 bg-green-900 hover:bg-green-700 rounded transition-colors">Help</button>
@@ -298,6 +299,50 @@
           <code class="text-white">M0ABC-10</code> etc. Wildcards supported:
           <code class="text-white">G*</code> matches all G-prefix callsigns.</p>
         </div>
+      </div>
+    </div>
+
+    <!-- WEATHER DASHBOARD -->
+    <div id="wx-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
+      <div class="max-w-5xl mx-auto space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-bold text-sky-400">🌦 Weather Dashboard</h2>
+          <div class="flex items-center space-x-3">
+            <input type="text" id="wx-filter" placeholder="Filter station..."
+              class="bg-gray-700 px-2 py-1 rounded border border-gray-600 text-white text-xs outline-none focus:border-sky-500 uppercase"
+              oninput="renderWX()">
+            <span id="wx-count" class="text-xs text-gray-500"></span>
+            <button onclick="renderWX()" class="text-xs bg-sky-800 hover:bg-sky-700 px-3 py-1 rounded">↻ Refresh</button>
+          </div>
+        </div>
+
+        <!-- Summary cards -->
+        <div class="grid grid-cols-4 gap-3" id="wx-summary">
+          <div class="bg-gray-800 rounded border border-gray-700 p-3 text-center">
+            <div class="text-2xl mb-1">🌡</div>
+            <div class="text-xs text-gray-400 uppercase font-bold mb-1">Avg Temp</div>
+            <div id="wx-avg-temp" class="text-xl font-bold text-orange-400">--</div>
+          </div>
+          <div class="bg-gray-800 rounded border border-gray-700 p-3 text-center">
+            <div class="text-2xl mb-1">💧</div>
+            <div class="text-xs text-gray-400 uppercase font-bold mb-1">Avg Humidity</div>
+            <div id="wx-avg-hum" class="text-xl font-bold text-blue-400">--</div>
+          </div>
+          <div class="bg-gray-800 rounded border border-gray-700 p-3 text-center">
+            <div class="text-2xl mb-1">🌬</div>
+            <div class="text-xs text-gray-400 uppercase font-bold mb-1">Max Wind</div>
+            <div id="wx-max-wind" class="text-xl font-bold text-green-400">--</div>
+          </div>
+          <div class="bg-gray-800 rounded border border-gray-700 p-3 text-center">
+            <div class="text-2xl mb-1">📡</div>
+            <div class="text-xs text-gray-400 uppercase font-bold mb-1">WX Stations</div>
+            <div id="wx-station-count" class="text-xl font-bold text-sky-400">--</div>
+          </div>
+        </div>
+
+        <!-- Station cards grid -->
+        <div id="wx-grid" class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3"></div>
+        <p id="wx-empty" class="text-center text-gray-500 py-8 hidden">No weather stations heard yet. Waiting for CWOP/WX packets...</p>
       </div>
     </div>
 
@@ -1047,7 +1092,7 @@ function toggleOverlay(type) {
 }
 
 function togglePanel(panel) {
-  ['map','search','messages','status','help','admin','iss','watch'].forEach(p =>
+  ['map','search','messages','status','help','admin','iss','watch','wx'].forEach(p =>
     document.getElementById(p+'-panel').classList.add('hidden'));
   document.getElementById(panel+'-panel').classList.remove('hidden');
   clearInterval(statusInterval);
@@ -1057,6 +1102,7 @@ function togglePanel(panel) {
   if (panel==='status') { loadStatus(); statusInterval = setInterval(loadStatus, 5000); }
   if (panel==='iss') { refreshISS(); renderISSLocal(); }
   if (panel==='watch') { renderWatchlist(); }
+  if (panel==='wx') { renderWX(); }
 }
 
 function getAuthHeaders() {
@@ -2272,6 +2318,234 @@ function lockDemoAdminFields() {
   notice.innerHTML = '<span class="text-lg">👁</span><span><strong>Demo view</strong> — All settings shown with sensitive data redacted. No changes can be saved.</span>';
   content.insertBefore(notice, content.firstChild);
 }
+
+
+// ─── Weather Dashboard ────────────────────────────────────────────────────────
+
+function parseWXPacket(raw) {
+  if (!raw) return null;
+  var ci = raw.indexOf(':'); if (ci<0) return null;
+  var pay = raw.slice(ci+1);
+  var wx = {};
+
+  // Temperature F->C
+  var tm = pay.match(/t([-+]?\d{3})/);
+  if (tm && tm[1] !== '...') wx.tempC = Math.round((parseInt(tm[1])-32)*5/9);
+
+  // Humidity
+  var hm = pay.match(/h(\d{2})/);
+  if (hm) wx.humidity = parseInt(hm[1]) === 0 ? 100 : parseInt(hm[1]);
+
+  // Barometric pressure (tenths of hPa)
+  var bm = pay.match(/b(\d{5})/);
+  if (bm) wx.pressure = (parseInt(bm[1])/10).toFixed(1);
+
+  // Wind direction (degrees)
+  var wdm = pay.match(/c(\d{3})/);
+  if (wdm && wdm[1] !== '...') wx.windDir = parseInt(wdm[1]);
+
+  // Wind speed mph->km/h
+  var wsm = pay.match(/s(\d{3})/);
+  if (wsm && wsm[1] !== '...') wx.windSpd = Math.round(parseInt(wsm[1])*1.60934);
+
+  // Wind gust mph->km/h
+  var wgm = pay.match(/g(\d{3})/);
+  if (wgm && wgm[1] !== '...') wx.windGust = Math.round(parseInt(wgm[1])*1.60934);
+
+  // Rain last hour (0.01 inches -> mm)
+  var rm = pay.match(/r(\d{3})/);
+  if (rm) wx.rain1h = (parseInt(rm[1])*0.254).toFixed(1);
+
+  // Rain last 24h
+  var pm = pay.match(/p(\d{3})/);
+  if (pm) wx.rain24h = (parseInt(pm[1])*0.254).toFixed(1);
+
+  // Luminosity
+  var lm = pay.match(/[Ll](\d{3,4})/);
+  if (lm) wx.luminosity = parseInt(lm[1]);
+
+  // Snow (inches -> cm)
+  var sm = pay.match(/s(\d{3})/);
+  // (already captured as windspd above - snow is separate in some formats)
+
+  if (!Object.keys(wx).length) return null;
+  return wx;
+}
+
+function windDirLabel(deg) {
+  if (deg === undefined) return '';
+  var dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return dirs[Math.round(deg/22.5) % 16];
+}
+
+function tempColor(c) {
+  if (c === undefined) return 'text-gray-400';
+  if (c < 0)  return 'text-blue-400';
+  if (c < 10) return 'text-cyan-400';
+  if (c < 20) return 'text-green-400';
+  if (c < 30) return 'text-yellow-400';
+  return 'text-red-400';
+}
+
+function windIcon(spd) {
+  if (!spd || spd < 5)  return '🌾';
+  if (spd < 20) return '🍃';
+  if (spd < 40) return '🌬';
+  if (spd < 60) return '💨';
+  return '🌪';
+}
+
+function makeGauge(val, min, max, unit, color) {
+  if (val === undefined) return '<div class="text-gray-600 text-xs">n/a</div>';
+  var pct = Math.min(100, Math.max(0, ((val-min)/(max-min))*100));
+  return '<div class="flex items-center space-x-2">'
+    + '<div class="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">'
+    + '<div class="h-2 rounded-full ' + color + '" style="width:' + pct.toFixed(0) + '%"></div></div>'
+    + '<span class="text-xs font-mono w-16 text-right">' + val + unit + '</span></div>';
+}
+
+var wxHistory = {}; // callsign -> array of {ts, wx}
+
+function updateWXHistory(call, wx, ts) {
+  if (!wxHistory[call]) wxHistory[call] = [];
+  wxHistory[call].push({ts: ts, wx: wx});
+  // Keep last 48 readings
+  if (wxHistory[call].length > 48) wxHistory[call].shift();
+}
+
+function renderWX() {
+  if (document.getElementById('wx-panel').classList.contains('hidden')) return;
+
+  var filter = (document.getElementById('wx-filter').value || '').toUpperCase();
+  var wxStations = [];
+
+  Object.keys(stations).forEach(function(call) {
+    var st = stations[call];
+    if (!st.raw) return;
+    var wx = parseWXPacket(st.raw);
+    if (!wx || !Object.keys(wx).length) return;
+    if (filter && !call.toUpperCase().includes(filter)) return;
+    wxStations.push({call: call, st: st, wx: wx, ts: st.lastHeard});
+  });
+
+  // Sort by last heard
+  wxStations.sort(function(a,b){ return b.ts - a.ts; });
+
+  // Update summary cards
+  var temps = wxStations.filter(function(s){ return s.wx.tempC !== undefined; }).map(function(s){ return s.wx.tempC; });
+  var hums  = wxStations.filter(function(s){ return s.wx.humidity !== undefined; }).map(function(s){ return s.wx.humidity; });
+  var winds = wxStations.filter(function(s){ return s.wx.windSpd !== undefined; }).map(function(s){ return s.wx.windSpd; });
+
+  var avgTemp = temps.length ? (temps.reduce(function(a,b){return a+b;},0)/temps.length).toFixed(1) : '--';
+  var avgHum  = hums.length  ? Math.round(hums.reduce(function(a,b){return a+b;},0)/hums.length) : '--';
+  var maxWind = winds.length  ? Math.max.apply(null,winds) : '--';
+
+  document.getElementById('wx-avg-temp').innerText    = avgTemp !== '--' ? avgTemp + '°C' : '--';
+  document.getElementById('wx-avg-hum').innerText     = avgHum  !== '--' ? avgHum  + '%'  : '--';
+  document.getElementById('wx-max-wind').innerText    = maxWind !== '--' ? maxWind + ' km/h' : '--';
+  document.getElementById('wx-station-count').innerText = wxStations.length;
+  document.getElementById('wx-count').innerText = wxStations.length + ' stations';
+
+  var grid  = document.getElementById('wx-grid');
+  var empty = document.getElementById('wx-empty');
+
+  if (!wxStations.length) {
+    grid.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+
+  // Event delegation for map buttons (avoids onclick quote issues)
+  grid.addEventListener('click', function(e) {
+    var btn = e.target.closest('.wx-map-btn');
+    if (btn) centerOnStation(btn.dataset.call);
+  }, {once: true});
+
+  grid.innerHTML = wxStations.map(function(s) {
+    var wx = s.wx;
+    var call = s.call;
+    var ago = Math.floor(Date.now()/1000) - s.ts;
+    var agoStr = ago < 60 ? ago+'s' : ago < 3600 ? Math.floor(ago/60)+'m' : Math.floor(ago/3600)+'h';
+    var pos = s.st.positions.length ? s.st.positions[s.st.positions.length-1] : null;
+
+    return '<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 hover:border-sky-800 transition-colors">'
+
+      // Header
+      + '<div class="flex items-center justify-between mb-3">'
+      + '<div>'
+      + '<a href="https://qrz.com/db/' + baseCall(call) + '" target="_blank" class="font-bold text-sky-400 hover:underline font-mono">' + call + '</a>'
+      + (pos ? '<button class="ml-2 text-[10px] text-gray-500 hover:text-sky-400 wx-map-btn" data-call="' + call + '">📍</button>' : '')
+      + '</div>'
+      + '<span class="text-[10px] text-gray-500">' + agoStr + ' ago</span>'
+      + '</div>'
+
+      // Temperature - big display
+      + (wx.tempC !== undefined
+        ? '<div class="text-center mb-3 py-2 bg-gray-900 rounded">'
+          + '<div class="text-3xl font-bold ' + tempColor(wx.tempC) + '">' + wx.tempC + '°C</div>'
+          + '<div class="text-xs text-gray-500 mt-1">Temperature</div>'
+          + '</div>'
+        : '')
+
+      // Data rows
+      + '<div class="space-y-2 text-xs">'
+
+      + (wx.humidity !== undefined
+        ? '<div><div class="flex justify-between text-gray-400 mb-1"><span>💧 Humidity</span><span class="font-mono">' + wx.humidity + '%</span></div>'
+          + makeGauge(wx.humidity, 0, 100, '%', 'bg-blue-500') + '</div>' : '')
+
+      + (wx.pressure !== undefined
+        ? '<div class="flex justify-between text-gray-400"><span>📊 Pressure</span><span class="font-mono text-white">' + wx.pressure + ' hPa</span></div>' : '')
+
+      + (wx.windSpd !== undefined
+        ? '<div><div class="flex justify-between text-gray-400 mb-1"><span>'
+          + windIcon(wx.windSpd) + ' Wind '
+          + (wx.windDir !== undefined ? windDirLabel(wx.windDir) + ' ' + wx.windDir + '°' : '')
+          + '</span><span class="font-mono">' + wx.windSpd + ' km/h</span></div>'
+          + makeGauge(wx.windSpd, 0, 100, 'km/h', 'bg-green-500') + '</div>' : '')
+
+      + (wx.windGust !== undefined && wx.windGust > 0
+        ? '<div class="flex justify-between text-gray-400"><span>💨 Gust</span><span class="font-mono text-yellow-400">' + wx.windGust + ' km/h</span></div>' : '')
+
+      + (wx.rain1h !== undefined && parseFloat(wx.rain1h) > 0
+        ? '<div class="flex justify-between text-gray-400"><span>🌧 Rain 1h</span><span class="font-mono text-blue-400">' + wx.rain1h + ' mm</span></div>' : '')
+
+      + (wx.rain24h !== undefined && parseFloat(wx.rain24h) > 0
+        ? '<div class="flex justify-between text-gray-400"><span>🌧 Rain 24h</span><span class="font-mono text-blue-300">' + wx.rain24h + ' mm</span></div>' : '')
+
+      + (wx.luminosity !== undefined
+        ? '<div class="flex justify-between text-gray-400"><span>☀️ Luminosity</span><span class="font-mono text-yellow-300">' + wx.luminosity + ' W/m²</span></div>' : '')
+
+      + '</div>'
+
+      // Position
+      + (pos ? '<div class="mt-2 pt-2 border-t border-gray-700 text-[10px] text-gray-600 font-mono">'
+        + pos.lat.toFixed(4) + ', ' + pos.lon.toFixed(4) + '</div>' : '')
+
+      + '</div>';
+
+  }).join('');
+}
+
+// Hook WX render into incoming packets
+var _origHandleIncoming = handleIncoming;
+handleIncoming = function(data) {
+  _origHandleIncoming(data);
+  if (data.data && data.packet) {
+    var wx = parseWXPacket(data.packet);
+    if (wx && Object.keys(wx).length) {
+      if (!document.getElementById('wx-panel').classList.contains('hidden')) {
+        renderWX();
+      }
+      // Update WX badge on button
+      var btn = document.querySelector("[onclick=\"togglePanel('wx')\"]");
+      if (btn && !btn.classList.contains('active-wx')) {
+        btn.classList.add('active-wx');
+      }
+    }
+  }
+};
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 connectWS();
