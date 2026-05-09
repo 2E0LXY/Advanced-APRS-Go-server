@@ -10,6 +10,7 @@ import (
 	"log"
 	"math"
 	"net"
+	"crypto/rand"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -105,6 +106,12 @@ var (
 	objectStore   map[string]*ObjectEntry
 	objectStoreMu sync.RWMutex
 
+	// Webhooks and API keys
+	webhooks   []WebhookConfig
+	webhooksMu sync.RWMutex
+	apiKeys    map[string]APIKey
+	apiKeysMu  sync.RWMutex
+
 	// Metrics counters
 	totalPackets    int64
 	dupePackets     int64
@@ -132,6 +139,33 @@ type HistoryPacket struct {
 	Symbol    string  `json:"sym"`
 	PHG       string  `json:"phg,omitempty"`
 	Raw       string  `json:"raw"`
+}
+
+type WebhookConfig struct {
+	ID        string `json:"id"`
+	URL       string `json:"url"`
+	Callsign  string `json:"callsign"`
+	Events    []string `json:"events"`
+	Secret    string `json:"secret,omitempty"`
+	Enabled   bool   `json:"enabled"`
+	LastFired int64  `json:"last_fired,omitempty"`
+	LastStatus int   `json:"last_status,omitempty"`
+}
+
+type APIKey struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Key       string `json:"key"`
+	Created   int64  `json:"created"`
+	LastUsed  int64  `json:"last_used,omitempty"`
+	ReadOnly  bool   `json:"read_only"`
+}
+
+type WebhookEvent struct {
+	Event     string      `json:"event"`
+	Timestamp int64       `json:"timestamp"`
+	Callsign  string      `json:"callsign,omitempty"`
+	Data      interface{} `json:"data"`
 }
 
 type ObjectEntry struct {
@@ -185,6 +219,8 @@ func main() {
 	loadOrInitCreds()
 	loadSavedConfig()
 	objectStore = make(map[string]*ObjectEntry)
+	apiKeys    = make(map[string]APIKey)
+	loadWebhooksAndKeys()
 
 	go cleanDuplicateCache()
 	go maintainUpstream()
@@ -200,12 +236,16 @@ func main() {
 	http.HandleFunc("/ws", handleWS)
 	http.HandleFunc("/api/config", basicAuth(handleConfig))
 	http.HandleFunc("/api/config/demo", handleConfigDemo)
-	http.HandleFunc("/api/history", handleHistory)
+	http.HandleFunc("/api/history", apiKeyAuth(handleHistory))
 	http.HandleFunc("/api/status", handleStatus)
 	http.HandleFunc("/api/password", basicAuth(handlePassword))
 	http.HandleFunc("/api/whoami", basicAuth(handleWhoami))
 	http.HandleFunc("/api/objects", handleObjects)
 	http.HandleFunc("/metrics", basicAuth(handleMetrics))
+	http.HandleFunc("/api/webhooks", basicAuth(handleWebhooks))
+	http.HandleFunc("/api/webhooks/", basicAuth(handleWebhookDelete))
+	http.HandleFunc("/api/keys", basicAuth(handleAPIKeys))
+	http.HandleFunc("/api/keys/", basicAuth(handleAPIKeyDelete))
 	http.HandleFunc("/api/export/geojson", handleGeoJSON)
 	http.HandleFunc("/api/export/kml", handleKML)
 	http.HandleFunc("/api/ariss", handleARISS)
@@ -623,6 +663,11 @@ func handleBroadcasts() {
 		atomic.AddInt64(&totalPackets, 1)
 		atomic.AddInt64(&upstreamBytes, int64(len(packet)))
 
+		// Fire webhooks for position packets
+		if hasCoords {
+			go fireWebhooks("position", parsed.Callsign, parsed)
+		}
+
 		// Store in raw ring buffer (trim entries older than 1 hour)
 		now := time.Now().Unix()
 		rawRingMu.Lock()
@@ -645,6 +690,7 @@ func handleBroadcasts() {
 
 		// Parse and store APRS messages
 		if msg := parseAPRSMessage(packet); msg != nil {
+			go fireWebhooks("message", msg.From, msg)
 			msgStoreMu.Lock()
 			msgStore = append(msgStore, *msg)
 			for len(msgStore) > 0 && now-msgStore[0].Timestamp > 3600 {
@@ -1743,4 +1789,249 @@ func handleKML(w http.ResponseWriter, r *http.Request) {
 	objectStoreMu.RUnlock()
 
 	fmt.Fprintf(w, "</Document>\n</kml>\n")
+}
+
+// ─── Webhooks & API Keys ──────────────────────────────────────────────────────
+
+const webhooksFile = "webhooks.json"
+const apiKeysFile  = "apikeys.json"
+
+func loadWebhooksAndKeys() {
+	// Load webhooks
+	if data, err := os.ReadFile(webhooksFile); err == nil {
+		webhooksMu.Lock()
+		json.Unmarshal(data, &webhooks)
+		webhooksMu.Unlock()
+		log.Printf("Loaded %d webhooks", len(webhooks))
+	}
+	// Load API keys
+	if data, err := os.ReadFile(apiKeysFile); err == nil {
+		apiKeysMu.Lock()
+		json.Unmarshal(data, &apiKeys)
+		apiKeysMu.Unlock()
+		log.Printf("Loaded %d API keys", len(apiKeys))
+	}
+}
+
+func saveWebhooks() {
+	webhooksMu.RLock()
+	data, _ := json.MarshalIndent(webhooks, "", "  ")
+	webhooksMu.RUnlock()
+	os.WriteFile(webhooksFile, data, 0600)
+}
+
+func saveAPIKeys() {
+	apiKeysMu.RLock()
+	data, _ := json.MarshalIndent(apiKeys, "", "  ")
+	apiKeysMu.RUnlock()
+	os.WriteFile(apiKeysFile, data, 0600)
+}
+
+func generateID() string {
+	b := make([]byte, 8)
+	rand.Read(b)
+	return fmt.Sprintf("%x", b)
+}
+
+func generateAPIKey() string {
+	b := make([]byte, 24)
+	rand.Read(b)
+	return "aprs_" + fmt.Sprintf("%x", b)
+}
+
+// handleWebhooks - GET returns all webhooks, POST creates one
+func handleWebhooks(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	switch r.Method {
+	case http.MethodGet:
+		webhooksMu.RLock()
+		json.NewEncoder(w).Encode(webhooks)
+		webhooksMu.RUnlock()
+
+	case http.MethodPost:
+		var wh WebhookConfig
+		if err := json.NewDecoder(r.Body).Decode(&wh); err != nil {
+			http.Error(w, `{"error":"invalid json"}`, 400); return
+		}
+		if wh.URL == "" {
+			http.Error(w, `{"error":"url required"}`, 400); return
+		}
+		wh.ID      = generateID()
+		wh.Enabled = true
+		webhooksMu.Lock()
+		webhooks = append(webhooks, wh)
+		webhooksMu.Unlock()
+		saveWebhooks()
+		json.NewEncoder(w).Encode(wh)
+
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
+
+// handleWebhookDelete - DELETE /api/webhooks/{id}
+func handleWebhookDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", 405); return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/webhooks/")
+	webhooksMu.Lock()
+	newWH := webhooks[:0]
+	for _, wh := range webhooks {
+		if wh.ID != id { newWH = append(newWH, wh) }
+	}
+	webhooks = newWH
+	webhooksMu.Unlock()
+	saveWebhooks()
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"ok":true}`))
+}
+
+// handleAPIKeys - GET returns all keys (with key masked), POST creates one
+func handleAPIKeys(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	switch r.Method {
+	case http.MethodGet:
+		apiKeysMu.RLock()
+		result := make([]map[string]interface{}, 0)
+		for _, k := range apiKeys {
+			// Mask key - only show prefix
+			masked := k.Key[:12] + "..."
+			result = append(result, map[string]interface{}{
+				"id": k.ID, "name": k.Name, "key": masked,
+				"created": k.Created, "last_used": k.LastUsed, "read_only": k.ReadOnly,
+			})
+		}
+		apiKeysMu.RUnlock()
+		json.NewEncoder(w).Encode(result)
+
+	case http.MethodPost:
+		var req struct {
+			Name     string `json:"name"`
+			ReadOnly bool   `json:"read_only"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, `{"error":"invalid json"}`, 400); return
+		}
+		if req.Name == "" { req.Name = "API Key" }
+		k := APIKey{
+			ID: generateID(), Name: req.Name,
+			Key: generateAPIKey(), Created: time.Now().Unix(),
+			ReadOnly: req.ReadOnly,
+		}
+		apiKeysMu.Lock()
+		apiKeys[k.Key] = k
+		apiKeysMu.Unlock()
+		saveAPIKeys()
+		// Return full key ONCE on creation
+		json.NewEncoder(w).Encode(k)
+
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
+
+// handleAPIKeyDelete - DELETE /api/keys/{id}
+func handleAPIKeyDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", 405); return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/keys/")
+	apiKeysMu.Lock()
+	for key, k := range apiKeys {
+		if k.ID == id { delete(apiKeys, key); break }
+	}
+	apiKeysMu.Unlock()
+	saveAPIKeys()
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"ok":true}`))
+}
+
+// apiKeyAuth middleware - accepts either Basic Auth OR X-API-Key header
+func apiKeyAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Try X-API-Key header
+		key := r.Header.Get("X-API-Key")
+		if key == "" { key = r.URL.Query().Get("api_key") }
+		if key != "" {
+			apiKeysMu.Lock()
+			k, ok := apiKeys[key]
+			if ok {
+				k.LastUsed = time.Now().Unix()
+				apiKeys[key] = k
+				apiKeysMu.Unlock()
+				next(w, r)
+				return
+			}
+			apiKeysMu.Unlock()
+		}
+		// Fall through to basic auth
+		user, pass, ok := r.BasicAuth()
+		adminCreds.RLock()
+		wantUser, wantPass := adminCreds.Username, adminCreds.Password
+		adminCreds.RUnlock()
+		if !ok || user != wantUser || pass != wantPass {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"unauthorized"}`))
+			return
+		}
+		next(w, r)
+	}
+}
+
+// fireWebhooks sends an event to all matching enabled webhooks
+func fireWebhooks(event string, callsign string, data interface{}) {
+	webhooksMu.RLock()
+	whs := make([]WebhookConfig, len(webhooks))
+	copy(whs, webhooks)
+	webhooksMu.RUnlock()
+
+	payload := WebhookEvent{
+		Event:     event,
+		Timestamp: time.Now().Unix(),
+		Callsign:  callsign,
+		Data:      data,
+	}
+	body, _ := json.Marshal(payload)
+
+	for i, wh := range whs {
+		if !wh.Enabled { continue }
+		// Check callsign filter (empty = all)
+		if wh.Callsign != "" && !strings.EqualFold(wh.Callsign, callsign) &&
+			!strings.HasSuffix(callsign, wh.Callsign) { continue }
+		// Check event filter
+		if len(wh.Events) > 0 {
+			matched := false
+			for _, e := range wh.Events {
+				if e == event || e == "*" { matched = true; break }
+			}
+			if !matched { continue }
+		}
+
+		go func(wh WebhookConfig, idx int) {
+			client := &http.Client{Timeout: 8 * time.Second}
+			req, err := http.NewRequest("POST", wh.URL, strings.NewReader(string(body)))
+			if err != nil { return }
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-APRS-Event", event)
+			req.Header.Set("X-APRS-Callsign", callsign)
+			if wh.Secret != "" {
+				req.Header.Set("X-APRS-Secret", wh.Secret)
+			}
+			resp, err := client.Do(req)
+			status := 0
+			if err == nil { status = resp.StatusCode; resp.Body.Close() }
+			webhooksMu.Lock()
+			for j := range webhooks {
+				if webhooks[j].ID == wh.ID {
+					webhooks[j].LastFired  = time.Now().Unix()
+					webhooks[j].LastStatus = status
+					break
+				}
+			}
+			webhooksMu.Unlock()
+			saveWebhooks()
+		}(wh, i)
+	}
 }
