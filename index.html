@@ -46,6 +46,7 @@
     <button onclick="togglePanel('wx')" class="px-3 py-1.5 bg-sky-900 hover:bg-sky-700 rounded transition-colors">🌦 Weather</button>
     <button onclick="togglePanel('watch')" class="px-3 py-1.5 bg-amber-900 hover:bg-amber-700 rounded transition-colors">👁 Watch</button>
     <button onclick="togglePanel('iss')" class="px-3 py-1.5 bg-indigo-900 hover:bg-indigo-700 rounded transition-colors">🛸 ISS</button>
+    <button onclick="togglePanel('utils')" class="px-3 py-1.5 bg-teal-900 hover:bg-teal-700 rounded transition-colors">🔧 Utils</button>
     <button onclick="togglePanel('help')" class="px-3 py-1.5 bg-green-900 hover:bg-green-700 rounded transition-colors">Help</button>
     <button onclick="togglePanel('admin')" class="px-3 py-1.5 bg-red-900 hover:bg-red-700 rounded transition-colors">Admin</button>
     <button id="update-btn" onclick="triggerUpdateFromHeader()"
@@ -365,6 +366,146 @@
         <!-- Station cards grid -->
         <div id="wx-grid" class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3"></div>
         <p id="wx-empty" class="text-center text-gray-500 py-8 hidden">No weather stations heard yet. Waiting for CWOP/WX packets...</p>
+      </div>
+    </div>
+
+    <!-- UTILITIES -->
+    <div id="utils-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
+      <div class="max-w-4xl mx-auto space-y-6">
+        <h2 class="text-xl font-bold text-teal-400">🔧 APRS Utilities</h2>
+
+        <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+
+          <!-- APRS Passcode Calculator -->
+          <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+            <h3 class="font-bold text-teal-300 mb-3 flex items-center space-x-2">
+              <span>🔑</span><span>APRS-IS Passcode</span>
+            </h3>
+            <p class="text-xs text-gray-400 mb-3">Calculate the APRS-IS passcode for any amateur callsign.</p>
+            <div class="flex space-x-2 mb-3">
+              <input type="text" id="pc-call" placeholder="Enter callsign (e.g. M0ABC)"
+                class="flex-1 bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm uppercase"
+                oninput="calcPasscode()" maxlength="12">
+            </div>
+            <div class="bg-gray-900 rounded p-3 text-center">
+              <div id="pc-result" class="text-3xl font-bold font-mono text-teal-400">--</div>
+              <div id="pc-callnorm" class="text-xs text-gray-500 mt-1"></div>
+            </div>
+            <p class="text-[10px] text-gray-600 mt-2">Based on the standard APRS-IS passcode algorithm (XOR hash of callsign, SSID stripped).</p>
+          </div>
+
+          <!-- Maidenhead Locator -->
+          <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+            <h3 class="font-bold text-teal-300 mb-3 flex items-center space-x-2">
+              <span>📐</span><span>Maidenhead / QTH Locator</span>
+            </h3>
+            <p class="text-xs text-gray-400 mb-3">Convert between lat/lon and Maidenhead grid square.</p>
+            <div class="space-y-2 mb-3">
+              <div class="flex space-x-2">
+                <input type="text" id="mh-lat" placeholder="Latitude (e.g. 53.7392)"
+                  class="flex-1 bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm"
+                  oninput="latLonToMH()">
+                <input type="text" id="mh-lon" placeholder="Longitude (e.g. -1.5992)"
+                  class="flex-1 bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm"
+                  oninput="latLonToMH()">
+              </div>
+              <div id="mh-result" class="bg-gray-900 rounded p-3 text-center">
+                <div class="text-2xl font-bold font-mono text-yellow-400">--</div>
+                <div class="text-xs text-gray-500 mt-1">Maidenhead grid square</div>
+              </div>
+              <div class="border-t border-gray-700 pt-2">
+                <input type="text" id="mh-grid" placeholder="Grid square (e.g. IO93)"
+                  class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm uppercase"
+                  oninput="mhToLatLon()" maxlength="8">
+                <div id="mh-latlon-result" class="text-xs text-gray-400 mt-2 font-mono text-center"></div>
+              </div>
+            </div>
+            <button onclick="useMHMyLocation()" class="text-xs bg-teal-800 hover:bg-teal-700 px-3 py-1 rounded w-full">📍 Use My Location</button>
+          </div>
+
+          <!-- Beacon Generator -->
+          <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+            <h3 class="font-bold text-teal-300 mb-3 flex items-center space-x-2">
+              <span>📡</span><span>APRS Beacon Generator</span>
+            </h3>
+            <p class="text-xs text-gray-400 mb-3">Build a valid APRS position packet string.</p>
+            <div class="space-y-2 text-sm">
+              <div class="flex space-x-2">
+                <div class="flex-1">
+                  <label class="text-xs text-gray-400">Callsign-SSID</label>
+                  <input type="text" id="bg-call" placeholder="M0ABC-9"
+                    class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm uppercase mt-1"
+                    oninput="genBeacon()">
+                </div>
+                <div class="flex-1">
+                  <label class="text-xs text-gray-400">Symbol</label>
+                  <input type="text" id="bg-sym" value=">-" maxlength="2"
+                    class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm font-mono mt-1"
+                    oninput="genBeacon()">
+                </div>
+              </div>
+              <div class="flex space-x-2">
+                <div class="flex-1">
+                  <label class="text-xs text-gray-400">Latitude</label>
+                  <input type="text" id="bg-lat" placeholder="53.7392"
+                    class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm mt-1"
+                    oninput="genBeacon()">
+                </div>
+                <div class="flex-1">
+                  <label class="text-xs text-gray-400">Longitude</label>
+                  <input type="text" id="bg-lon" placeholder="-1.5992"
+                    class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm mt-1"
+                    oninput="genBeacon()">
+                </div>
+              </div>
+              <div>
+                <label class="text-xs text-gray-400">Comment</label>
+                <input type="text" id="bg-comment" placeholder="My APRS station" maxlength="43"
+                  class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm mt-1"
+                  oninput="genBeacon()">
+              </div>
+              <div>
+                <label class="text-xs text-gray-400">Path</label>
+                <select id="bg-path" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none text-sm mt-1" onchange="genBeacon()">
+                  <option value="APRS,WIDE1-1,WIDE2-1">WIDE1-1,WIDE2-1 (standard mobile)</option>
+                  <option value="APRS,WIDE2-1">WIDE2-1 (fixed station)</option>
+                  <option value="APRS,WIDE1-1">WIDE1-1 (local only)</option>
+                  <option value="APRS">No path (direct only)</option>
+                  <option value="APRS,TCPIP*">TCPIP* (internet inject)</option>
+                </select>
+              </div>
+            </div>
+            <div class="mt-3 bg-gray-900 rounded p-3">
+              <p class="text-[10px] text-gray-500 mb-1">Generated packet:</p>
+              <code id="bg-result" class="block text-green-400 font-mono text-xs break-all">Fill in fields above...</code>
+            </div>
+            <button onclick="copyBeacon()" class="mt-2 text-xs bg-teal-800 hover:bg-teal-700 px-3 py-1.5 rounded w-full font-bold">📋 Copy to Clipboard</button>
+          </div>
+
+          <!-- Symbol Picker -->
+          <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+            <h3 class="font-bold text-teal-300 mb-3 flex items-center space-x-2">
+              <span>🎯</span><span>Symbol Picker</span>
+            </h3>
+            <p class="text-xs text-gray-400 mb-2">Click a symbol to see its code. Use in beacon generator or TNC config.</p>
+            <div class="flex space-x-2 mb-2">
+              <button onclick="showSymTable('/')" id="sym-tab-pri" class="text-xs px-3 py-1 rounded bg-teal-700 text-white font-bold">Primary /</button>
+              <button onclick="showSymTable('\\')" id="sym-tab-alt" class="text-xs px-3 py-1 rounded bg-gray-700 text-gray-300 hover:bg-gray-600">Alternate \</button>
+            </div>
+            <div id="sym-picker-grid" class="grid gap-1 overflow-y-auto max-h-64" style="grid-template-columns: repeat(16, 1fr)"></div>
+            <div id="sym-selected" class="mt-2 bg-gray-900 rounded p-2 text-xs hidden">
+              <div class="flex items-center space-x-3">
+                <div id="sym-sel-icon" class="flex-shrink-0"></div>
+                <div>
+                  <p class="text-white font-bold" id="sym-sel-name"></p>
+                  <p class="text-gray-400 font-mono" id="sym-sel-code"></p>
+                </div>
+                <button onclick="useSymbolInBeacon()" class="ml-auto text-xs bg-teal-800 hover:bg-teal-700 px-2 py-1 rounded">Use in Beacon</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
       </div>
     </div>
 
@@ -1216,7 +1357,7 @@ function toggleOverlay(type) {
 }
 
 function togglePanel(panel) {
-  ['map','search','messages','status','help','admin','iss','watch','wx'].forEach(p =>
+  ['map','search','messages','status','help','admin','iss','watch','wx','utils'].forEach(p =>
     document.getElementById(p+'-panel').classList.add('hidden'));
   document.getElementById(panel+'-panel').classList.remove('hidden');
   clearInterval(statusInterval);
@@ -1227,6 +1368,7 @@ function togglePanel(panel) {
   if (panel==='iss') { refreshISS(); renderISSLocal(); }
   if (panel==='watch') { renderWatchlist(); }
   if (panel==='wx') { renderWX(); }
+  if (panel==='utils') { initUtils(); }
 }
 
 function getAuthHeaders() {
@@ -3266,6 +3408,208 @@ function toggleObjects() {
       map.removeLayer(objectMarkers[name]);
     }
   });
+}
+
+
+// ─── Utilities Panel ──────────────────────────────────────────────────────────
+
+function initUtils() {
+  calcPasscode();
+  genBeacon();
+  showSymTable('/');
+}
+
+// ── APRS Passcode Calculator ──────────────────────────────────────────────────
+function calcPasscode() {
+  var call = (document.getElementById('pc-call').value || '').toUpperCase().trim();
+  // Strip SSID
+  var base = call.split('-')[0];
+  if (!base || base.length < 3) {
+    document.getElementById('pc-result').innerText = '--';
+    document.getElementById('pc-callnorm').innerText = '';
+    return;
+  }
+  // Standard APRS-IS passcode algorithm
+  var hash = 0x73e2;
+  for (var i = 0; i < base.length; i += 2) {
+    hash ^= base.charCodeAt(i) << 8;
+    if (i+1 < base.length) hash ^= base.charCodeAt(i+1);
+  }
+  var code = hash & 0x7fff;
+  document.getElementById('pc-result').innerText = code;
+  document.getElementById('pc-callnorm').innerText = 'Base callsign: ' + base;
+}
+
+// ── Maidenhead Locator ────────────────────────────────────────────────────────
+function latLonToMH() {
+  var lat = parseFloat(document.getElementById('mh-lat').value);
+  var lon = parseFloat(document.getElementById('mh-lon').value);
+  var el  = document.getElementById('mh-result');
+  if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    el.innerHTML = '<div class="text-2xl font-bold font-mono text-gray-600">--</div><div class="text-xs text-gray-500 mt-1">Enter valid lat/lon</div>';
+    return;
+  }
+  var grid = coordsToMaidenhead(lat, lon, 8);
+  el.innerHTML = '<div class="text-2xl font-bold font-mono text-yellow-400">' + grid + '</div>'
+    + '<div class="text-xs text-gray-500 mt-1">Maidenhead grid square</div>';
+}
+
+function coordsToMaidenhead(lat, lon, precision) {
+  precision = precision || 6;
+  var A = 'ABCDEFGHIJKLMNOPQRSTUVWX';
+  lon += 180; lat += 90;
+  var grid = '';
+  grid += A[Math.floor(lon / 20)];
+  grid += A[Math.floor(lat / 10)];
+  lon %= 20; lat %= 10;
+  grid += Math.floor(lon / 2);
+  grid += Math.floor(lat);
+  if (precision >= 6) {
+    lon %= 2; lat %= 1;
+    grid += A[Math.floor(lon * 12)].toLowerCase();
+    grid += A[Math.floor(lat * 24)].toLowerCase();
+  }
+  if (precision >= 8) {
+    lon = (lon * 12) % 1; lat = (lat * 24) % 1;
+    grid += Math.floor(lon * 10);
+    grid += Math.floor(lat * 10);
+  }
+  return grid;
+}
+
+function mhToLatLon() {
+  var grid = (document.getElementById('mh-grid').value || '').toUpperCase().trim();
+  var el   = document.getElementById('mh-latlon-result');
+  if (grid.length < 4) { el.innerText = ''; return; }
+  var A = 'ABCDEFGHIJKLMNOPQRSTUVWX';
+  var lon = A.indexOf(grid[0]) * 20 - 180;
+  var lat = A.indexOf(grid[1]) * 10 - 90;
+  if (grid.length >= 4) { lon += parseInt(grid[2]) * 2; lat += parseInt(grid[3]); }
+  if (grid.length >= 6) {
+    lon += A.indexOf(grid[4].toUpperCase()) * 2/24;
+    lat += A.indexOf(grid[5].toUpperCase()) / 24;
+  }
+  // Centre of square
+  lon += grid.length >= 6 ? 1/24 : 1;
+  lat += grid.length >= 6 ? 0.5/24 : 0.5;
+  el.innerText = lat.toFixed(5) + ', ' + lon.toFixed(5);
+}
+
+function useMHMyLocation() {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(function(pos) {
+    document.getElementById('mh-lat').value = pos.coords.latitude.toFixed(6);
+    document.getElementById('mh-lon').value = pos.coords.longitude.toFixed(6);
+    latLonToMH();
+  });
+}
+
+// ── Beacon Generator ──────────────────────────────────────────────────────────
+function decDegToAPRS(deg, isLat) {
+  var hemi, absDeg;
+  if (isLat) { hemi = deg >= 0 ? 'N' : 'S'; absDeg = Math.abs(deg); }
+  else        { hemi = deg >= 0 ? 'E' : 'W'; absDeg = Math.abs(deg); }
+  var d = Math.floor(absDeg);
+  var m = (absDeg - d) * 60;
+  if (isLat)  return (d < 10 ? '0' : '') + d + (m < 10 ? '0' : '') + m.toFixed(2) + hemi;
+  else        return (d < 100 ? '0' : '') + (d < 10 ? '0' : '') + d + (m < 10 ? '0' : '') + m.toFixed(2) + hemi;
+}
+
+function genBeacon() {
+  var call    = (document.getElementById('bg-call').value || '').toUpperCase().trim();
+  var sym     = document.getElementById('bg-sym').value || '/-';
+  var latStr  = document.getElementById('bg-lat').value;
+  var lonStr  = document.getElementById('bg-lon').value;
+  var comment = document.getElementById('bg-comment').value || '';
+  var path    = document.getElementById('bg-path').value || 'APRS,WIDE1-1,WIDE2-1';
+  var el      = document.getElementById('bg-result');
+
+  if (!call || !latStr || !lonStr) { el.innerText = 'Fill in callsign, latitude and longitude...'; return; }
+
+  var lat = parseFloat(latStr), lon = parseFloat(lonStr);
+  if (isNaN(lat) || isNaN(lon)) { el.innerText = 'Invalid latitude or longitude'; return; }
+
+  var symTable = sym.length >= 2 ? sym[0] : '/';
+  var symCode  = sym.length >= 2 ? sym[1] : '-';
+
+  // Build packet: CALL>PATH:!DDMM.MMN/DDDMM.MMEsymbol comment
+  var latAPRS = decDegToAPRS(lat, true);
+  var lonAPRS = decDegToAPRS(lon, false);
+  var packet  = call + '>' + path + ':!' + latAPRS + symTable + lonAPRS + symCode + comment;
+
+  el.innerText = packet;
+}
+
+function copyBeacon() {
+  var text = document.getElementById('bg-result').innerText;
+  if (!text || text.includes('Fill in') || text.includes('Invalid')) return;
+  navigator.clipboard.writeText(text).then(function() {
+    var btn = document.querySelector('[onclick="copyBeacon()"]');
+    if (btn) { var orig=btn.innerText; btn.innerText='✓ Copied!'; btn.classList.add('bg-green-800');
+      setTimeout(function(){ btn.innerText=orig; btn.classList.remove('bg-green-800'); }, 2000); }
+  });
+}
+
+// ── Symbol Picker ─────────────────────────────────────────────────────────────
+var _symTable = '/';
+
+function showSymTable(table) {
+  _symTable = table;
+  var grid = document.getElementById('sym-picker-grid');
+  var priBtn = document.getElementById('sym-tab-pri');
+  var altBtn = document.getElementById('sym-tab-alt');
+  if (table === '/') {
+    priBtn.classList.replace('bg-gray-700','bg-teal-700'); priBtn.classList.add('text-white');
+    altBtn.classList.replace('bg-teal-700','bg-gray-700'); altBtn.classList.remove('text-white');
+  } else {
+    altBtn.classList.replace('bg-gray-700','bg-teal-700'); altBtn.classList.add('text-white');
+    priBtn.classList.replace('bg-teal-700','bg-gray-700'); priBtn.classList.remove('text-white');
+  }
+
+  var cells = [];
+  for (var i = 33; i <= 126; i++) {
+    var code = String.fromCharCode(i);
+    var sp   = getSymbolSprite(table, code);
+    var label= SYMBOL_LABELS[code] || code;
+    if (sp) {
+      var cell = document.createElement('div');
+      cell.className = 'sym-cell cursor-pointer rounded hover:bg-gray-600 p-0.5';
+      cell.title = label + ' (' + table + code + ')';
+      cell.innerHTML = '<div style="width:22px;height:22px;overflow:hidden;image-rendering:pixelated">'
+        + '<div style="width:22px;height:22px;background:url(' + sp.sheet + ') -'
+        + Math.round(sp.px*22/24) + 'px -' + Math.round(sp.py*22/24) + 'px;'
+        + 'background-size:' + Math.round(sp.sheetW*22/24) + 'px ' + Math.round(sp.sheetH*22/24) + 'px;'
+        + 'background-repeat:no-repeat"></div></div>';
+      (function(t,c){ cell.onclick = function(){ selectSymbol(t,c); }; })(table, code);
+      cells.push(cell);
+    }
+  }
+  grid.innerHTML = '';
+  cells.forEach(function(c){ grid.appendChild(c); });
+}
+
+function selectSymbol(table, code) {
+  var sp    = getSymbolSprite(table, code);
+  var label = SYMBOL_LABELS[code] || code;
+  var el    = document.getElementById('sym-selected');
+  el.classList.remove('hidden');
+  document.getElementById('sym-sel-name').innerText = label;
+  document.getElementById('sym-sel-code').innerText = 'Code: ' + table + code + '  (table=' + table + ' symbol=' + code + ')';
+  var iconEl = document.getElementById('sym-sel-icon');
+  if (sp) {
+    iconEl.innerHTML = '<div style="width:32px;height:32px;overflow:hidden;image-rendering:pixelated;border-radius:3px;box-shadow:0 1px 4px rgba(0,0,0,0.5)">'
+      + '<div style="width:32px;height:32px;background:url(' + sp.sheet + ') -' + Math.round(sp.px*32/24) + 'px -' + Math.round(sp.py*32/24) + 'px;'
+      + 'background-size:' + Math.round(sp.sheetW*32/24) + 'px ' + Math.round(sp.sheetH*32/24) + 'px;background-repeat:no-repeat"></div></div>';
+  }
+}
+
+function useSymbolInBeacon() {
+  var code = document.getElementById('sym-sel-code').innerText;
+  var m = code.match(/Code: (.)(.)  /);
+  if (m) {
+    document.getElementById('bg-sym').value = m[1] + m[2];
+    genBeacon();
+  }
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
