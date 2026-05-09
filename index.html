@@ -1066,26 +1066,7 @@ function getAuthHeaders() {
 
 async function doAdminLogin() {
   if (DEMO_MODE) {
-    // Demo mode: bypass real auth, show config with sensitive fields blanked
-    adminAuth = "Basic ZGVtbzpkZW1v"; // demo:demo - will 401 on writes
-    document.getElementById("admin-login-gate").classList.add("hidden");
-    document.getElementById("admin-content").classList.remove("hidden");
-    // Fetch config but blank sensitive fields before showing
-    fetch("/api/config").then(function(r){ return r.json(); }).then(function(d){
-      d.passcode = "••••••";
-      populateAdmin(d);
-      document.getElementById("admPass").value = "••••••";
-      document.getElementById("admPass").disabled = true;
-      document.getElementById("newPass1").disabled = true;
-      document.getElementById("newPass2").disabled = true;
-      var saveBtn = document.querySelector("[onclick=\"saveAdmin()\"]");
-      if (saveBtn) { saveBtn.disabled=true; saveBtn.classList.add("opacity-50","cursor-not-allowed"); saveBtn.title="Disabled in demo mode"; }
-    }).catch(function(){
-      populateAdmin({server_name:"T2DEMO",software_vers:"AdvancedGoAPRS 12.0",
-        callsign:"DEMO",passcode:"••••••",upstream_addr:"euro.aprs2.net:14580",
-        server_filter:"auto",drop_pistar:true,drop_dstar:true,drop_apdesk:true,
-        enable_geofence:false,center_lat:53.7,center_lon:-1.5,radius_km:400});
-    });
+    showDemoAdmin();
     return;
   }
 
@@ -1545,6 +1526,7 @@ function centerOnUser() {
 }
 
 function loadAdmin() {
+  if (DEMO_MODE) { showDemoAdmin(); return; }
   // If already authenticated, go straight to content; otherwise show login gate
   if (adminAuth) {
     document.getElementById('admin-login-gate').classList.add('hidden');
@@ -2227,6 +2209,68 @@ function populateConnInfo() {
   if (el) el.innerText = wsProto + '//' + host + '/ws';
   el = document.getElementById('conn-udp');
   if (el) el.innerText = host + ':14580';
+}
+
+
+// ─── Demo admin panel ─────────────────────────────────────────────────────────
+function showDemoAdmin() {
+  // Show admin content directly without credentials
+  document.getElementById('admin-login-gate').classList.add('hidden');
+  document.getElementById('admin-content').classList.remove('hidden');
+
+  // Fetch redacted config from public endpoint
+  fetch('/api/config/demo')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      populateAdmin(d);
+      lockDemoAdminFields();
+    })
+    .catch(function() {
+      // Fallback if endpoint not yet deployed
+      populateAdmin({
+        server_name:'T2YORKS', software_vers:'AdvancedGoAPRS 12.0',
+        callsign:'2E0LXY', passcode:'••••••',
+        upstream_addr:'euro.aprs2.net:14580', server_filter:'auto',
+        drop_pistar:true, drop_dstar:true, drop_apdesk:true,
+        enable_geofence:true, center_lat:53.74, center_lon:-1.59, radius_km:400
+      });
+      lockDemoAdminFields();
+    });
+}
+
+function lockDemoAdminFields() {
+  // Disable all inputs in admin panel
+  var content = document.getElementById('admin-content');
+  if (!content) return;
+
+  // Disable all form inputs
+  content.querySelectorAll('input, select, textarea').forEach(function(el) {
+    el.disabled = true;
+    el.style.opacity = '0.6';
+    el.style.cursor = 'not-allowed';
+  });
+
+  // Blank password fields
+  ['admPass','newPass1','newPass2'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) { el.value = '••••••'; el.placeholder = '••••••'; }
+  });
+
+  // Disable all buttons except logout
+  content.querySelectorAll('button').forEach(function(btn) {
+    if (btn.innerText && btn.innerText.trim() === 'Logout') return;
+    btn.disabled = true;
+    btn.style.opacity = '0.45';
+    btn.style.cursor = 'not-allowed';
+    btn.title = 'Disabled in demo mode';
+    btn.onclick = function(e) { e.preventDefault(); demoBlock('changes are disabled'); return false; };
+  });
+
+  // Add demo overlay notice inside admin panel
+  var notice = document.createElement('div');
+  notice.className = 'bg-amber-900/30 border border-amber-700 rounded p-3 text-xs text-amber-300 flex items-center space-x-2';
+  notice.innerHTML = '<span class="text-lg">👁</span><span><strong>Demo view</strong> — All settings shown with sensitive data redacted. No changes can be saved.</span>';
+  content.insertBefore(notice, content.firstChild);
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────

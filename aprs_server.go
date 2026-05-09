@@ -171,6 +171,7 @@ func main() {
 	http.HandleFunc("/setup", handleSetup)
 	http.HandleFunc("/ws", handleWS)
 	http.HandleFunc("/api/config", basicAuth(handleConfig))
+	http.HandleFunc("/api/config/demo", handleConfigDemo)
 	http.HandleFunc("/api/history", handleHistory)
 	http.HandleFunc("/api/status", handleStatus)
 	http.HandleFunc("/api/password", basicAuth(handlePassword))
@@ -1075,6 +1076,31 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 
 // handleARISS proxies ARISS packet data from aprs.fi API server-side.
 // This avoids CORS issues with direct browser requests to aprs.fi.
+
+
+// handleConfigDemo returns server config with sensitive fields redacted.
+// No authentication required — safe to expose publicly for demo mode.
+func handleConfigDemo(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	config.RLock()
+	redacted := map[string]interface{}{
+		"server_name":     config.ServerName,
+		"software_vers":   config.SoftwareVers,
+		"callsign":        config.Callsign,
+		"passcode":        "••••••",
+		"upstream_addr":   config.UpstreamAddr,
+		"server_filter":   config.ServerFilter,
+		"drop_pistar":     config.DropPiStar,
+		"drop_dstar":      config.DropDStar,
+		"drop_apdesk":     config.DropAPDesk,
+		"enable_geofence": config.EnableGeofence,
+		"center_lat":      config.CenterLat,
+		"center_lon":      config.CenterLon,
+		"radius_km":       config.RadiusKm,
+	}
+	config.RUnlock()
+	json.NewEncoder(w).Encode(redacted)
+}
 
 // handleWhoami returns the authenticated username — used by the frontend
 // to verify credentials are correct before showing the admin panel.
