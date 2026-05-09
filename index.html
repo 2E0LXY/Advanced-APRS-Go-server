@@ -927,6 +927,104 @@
   </div>
 </div>
 
+<!-- Station Detail Modal -->
+<div id="detail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-2 bg-black/70" onclick="if(event.target===this)closeDetail()">
+  <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
+      <div class="flex items-center space-x-3">
+        <div id="detail-icon" class="w-10 h-10 flex-shrink-0"></div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h2 id="detail-call" class="text-xl font-bold font-mono text-white"></h2>
+            <span id="detail-status" class="text-xs px-2 py-0.5 rounded-full"></span>
+          </div>
+          <p id="detail-symbol-label" class="text-xs text-gray-400"></p>
+        </div>
+      </div>
+      <div class="flex items-center space-x-2">
+        <a id="detail-qrz" href="#" target="_blank" class="text-xs bg-blue-900 hover:bg-blue-800 px-2 py-1 rounded text-blue-300">QRZ ↗</a>
+        <a id="detail-aprsfi" href="#" target="_blank" class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-gray-300">aprs.fi ↗</a>
+        <button id="detail-watch-btn" onclick="toggleWatchFromDetail()" class="text-xs bg-amber-800 hover:bg-amber-700 px-2 py-1 rounded text-amber-300">👁 Watch</button>
+        <button onclick="closeDetail()" class="text-gray-400 hover:text-white text-xl ml-2 leading-none">✕</button>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex border-b border-gray-700 flex-shrink-0">
+      <button onclick="detailTab('overview')" id="tab-overview" class="detail-tab px-4 py-2 text-sm font-medium text-white border-b-2 border-blue-500">Overview</button>
+      <button onclick="detailTab('history')" id="tab-history" class="detail-tab px-4 py-2 text-sm font-medium text-gray-400 hover:text-white border-b-2 border-transparent">History</button>
+      <button onclick="detailTab('packets')" id="tab-packets" class="detail-tab px-4 py-2 text-sm font-medium text-gray-400 hover:text-white border-b-2 border-transparent">Packets</button>
+      <button onclick="detailTab('path')" id="tab-path" class="detail-tab px-4 py-2 text-sm font-medium text-gray-400 hover:text-white border-b-2 border-transparent">Path</button>
+    </div>
+
+    <!-- Content -->
+    <div class="flex-1 overflow-y-auto p-4">
+
+      <!-- Overview tab -->
+      <div id="detail-overview" class="space-y-4">
+        <div class="grid grid-cols-2 gap-3 text-sm">
+          <div class="bg-gray-800 rounded p-3"><p class="text-gray-400 text-xs mb-1">Last Position</p><p id="d-pos" class="font-mono text-xs text-white"></p></div>
+          <div class="bg-gray-800 rounded p-3"><p class="text-gray-400 text-xs mb-1">Last Heard</p><p id="d-time" class="text-xs text-white"></p></div>
+          <div class="bg-gray-800 rounded p-3"><p class="text-gray-400 text-xs mb-1">Path</p><p id="d-path" class="font-mono text-xs text-white break-all"></p></div>
+          <div class="bg-gray-800 rounded p-3"><p class="text-gray-400 text-xs mb-1">PHG Range</p><p id="d-phg" class="font-mono text-xs text-white"></p></div>
+          <div class="bg-gray-800 rounded p-3"><p class="text-gray-400 text-xs mb-1">Speed / Course</p><p id="d-speed" class="font-mono text-xs text-white"></p></div>
+          <div class="bg-gray-800 rounded p-3"><p class="text-gray-400 text-xs mb-1">Packets heard</p><p id="d-pkt-count" class="font-mono text-xs text-white"></p></div>
+        </div>
+        <div id="d-wx-block" class="hidden bg-blue-900/20 border border-blue-800 rounded p-3">
+          <p class="text-blue-300 text-xs font-bold uppercase mb-2">Weather Data</p>
+          <div id="d-wx-data" class="grid grid-cols-3 gap-2 text-xs"></div>
+        </div>
+        <div class="bg-gray-800 rounded p-3">
+          <p class="text-gray-400 text-xs mb-1">Comment / Status</p>
+          <p id="d-comment" class="text-xs text-white"></p>
+        </div>
+        <div class="bg-gray-800 rounded p-3">
+          <p class="text-gray-400 text-xs mb-2">Latest Raw Packet</p>
+          <code id="d-raw" class="block text-green-400 font-mono text-xs break-all whitespace-pre-wrap"></code>
+        </div>
+      </div>
+
+      <!-- History tab -->
+      <div id="detail-history" class="hidden space-y-3">
+        <div class="bg-gray-800 rounded p-3">
+          <p class="text-gray-400 text-xs font-bold uppercase mb-2">Speed Over Time (km/h)</p>
+          <canvas id="d-speed-chart" height="80"></canvas>
+        </div>
+        <div class="bg-gray-800 rounded p-3">
+          <p class="text-gray-400 text-xs font-bold uppercase mb-2">Position History (<span id="d-hist-count"></span> points)</p>
+          <div id="d-hist-list" class="max-h-48 overflow-y-auto space-y-0.5 font-mono text-xs text-gray-400"></div>
+        </div>
+      </div>
+
+      <!-- Packets tab -->
+      <div id="detail-packets" class="hidden">
+        <p class="text-gray-400 text-xs mb-2">All packets heard this session for <span id="d-pkt-call" class="text-white font-bold"></span></p>
+        <div id="d-pkt-list" class="space-y-1 max-h-96 overflow-y-auto font-mono text-xs"></div>
+        <p id="d-pkt-empty" class="text-gray-600 text-xs text-center py-4">Only the most recent packet stored per station. Connect longer to see more.</p>
+      </div>
+
+      <!-- Path tab -->
+      <div id="detail-path" class="hidden space-y-3">
+        <p class="text-gray-400 text-xs mb-2">Decoded path from latest packet:</p>
+        <div id="d-path-viz" class="space-y-2"></div>
+        <div class="bg-gray-800 rounded p-3">
+          <p class="text-gray-400 text-xs font-bold uppercase mb-2">Path Explanation</p>
+          <div id="d-path-explain" class="text-xs text-gray-300 space-y-1"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Footer actions -->
+    <div class="flex items-center justify-between p-3 border-t border-gray-700 flex-shrink-0 bg-gray-900 rounded-b-xl">
+      <button onclick="centreOnDetailStation()" class="text-xs bg-blue-800 hover:bg-blue-700 px-3 py-1.5 rounded text-white">📍 Show on Map</button>
+      <button onclick="openMsgToStation()" class="text-xs bg-green-800 hover:bg-green-700 px-3 py-1.5 rounded text-white">✉ Send Message</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ─── Demo Mode ───────────────────────────────────────────────────────────────
 // When accessed via /demo, a cookie is set and the UI becomes read-only.
@@ -1399,13 +1497,13 @@ function redrawMap() {
       st.marker = L.marker([latest.lat,latest.lon],{icon})
         .bindTooltip(tip,{direction:'top',offset:[0,-12],permanent:false});
       addMarkerToMap(st.marker);
-      st.marker.on('click',()=>showStationPopup(call, st, latest));
+      st.marker.on('click',function(){openDetail(call);});
     } else {
       st.marker.setLatLng([latest.lat,latest.lon]);
       st.marker.setIcon(icon);
       st.marker.setTooltipContent(tip);
       st.marker.off('click');
-      st.marker.on('click',()=>showStationPopup(call, st, latest));
+      st.marker.on('click',function(){openDetail(call);});
     }
     const trailColor = st.type==='cwop'?'#10b981':st.type==='ogn'?'#f59e0b':'#3b82f6';
     if (!st.polyline) st.polyline=L.polyline(lls,{color:trailColor,weight:2,opacity:0.5}).addTo(map);
@@ -1448,7 +1546,7 @@ function renderList() {
       tr.innerHTML=`
         <td class="p-2 text-center">${(function(){var t=st.sym&&st.sym.length>=2?st.sym[0]:"/",c=st.sym&&st.sym.length>=2?st.sym[1]:"-",sp=getSymbolSprite(t,c);if(sp)return '<div style="width:24px;height:24px;overflow:hidden;image-rendering:pixelated;border-radius:2px;display:inline-block"><div style="width:24px;height:24px;background:url('+sp.sheet+') -'+sp.px+'px -'+sp.py+'px;background-size:'+sp.sheetW+'px '+sp.sheetH+'px;background-repeat:no-repeat"></div></div>';return '<div style="width:24px;height:24px;background:#374151;border-radius:2px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:#fff">'+c+'</div>';})()} </td>
         <td class="p-2 font-bold">
-          <a href="https://qrz.com/db/${baseCall(call)}" target="_blank" class="hover:underline text-blue-400">${call}</a>
+          <a href="#" onclick="openDetail('${call}');return false;" class="hover:underline text-blue-400 cursor-pointer">${call}</a>
         </td>
         <td class="p-2 font-mono text-gray-500 truncate max-w-[100px]">${st.path||''}</td>
         <td class="p-2 text-gray-300">${d.toLocaleTimeString()}</td>
@@ -2546,6 +2644,297 @@ handleIncoming = function(data) {
     }
   }
 };
+
+
+// ─── Station Detail ───────────────────────────────────────────────────────────
+var _detailCall = null;
+var _detailTab  = 'overview';
+var _packetLog  = {}; // callsign -> array of raw packets (last 50)
+
+// Store packets as they arrive
+var _origUpdateStation = updateStation;
+updateStation = function(call, path, lat, lon, phg, ts, raw, sym) {
+  _origUpdateStation(call, path, lat, lon, phg, ts, raw, sym);
+  if (raw) {
+    if (!_packetLog[call]) _packetLog[call] = [];
+    _packetLog[call].push({ ts: ts, raw: raw });
+    if (_packetLog[call].length > 50) _packetLog[call].shift();
+    // Refresh detail if open for this station
+    if (_detailCall === call && !document.getElementById('detail-modal').classList.contains('hidden')) {
+      refreshDetailData();
+    }
+  }
+};
+
+function openDetail(call) {
+  _detailCall = call;
+  document.getElementById('detail-modal').classList.remove('hidden');
+  detailTab('overview');
+  refreshDetailData();
+}
+
+function closeDetail() {
+  document.getElementById('detail-modal').classList.add('hidden');
+  _detailCall = null;
+}
+
+function detailTab(tab) {
+  _detailTab = tab;
+  ['overview','history','packets','path'].forEach(function(t) {
+    document.getElementById('detail-' + t).classList.add('hidden');
+    var btn = document.getElementById('tab-' + t);
+    if (btn) { btn.classList.remove('text-white','border-blue-500'); btn.classList.add('text-gray-400','border-transparent'); }
+  });
+  document.getElementById('detail-' + tab).classList.remove('hidden');
+  var activeBtn = document.getElementById('tab-' + tab);
+  if (activeBtn) { activeBtn.classList.add('text-white','border-blue-500'); activeBtn.classList.remove('text-gray-400','border-transparent'); }
+
+  if (tab === 'history')  renderDetailHistory();
+  if (tab === 'packets')  renderDetailPackets();
+  if (tab === 'path')     renderDetailPath();
+}
+
+function refreshDetailData() {
+  var call = _detailCall;
+  var st   = stations[call];
+  if (!st) return;
+
+  var si = getSymbolInfo(st.sym);
+  var t  = st.sym && st.sym.length>=2 ? st.sym[0] : '/';
+  var c  = st.sym && st.sym.length>=2 ? st.sym[1] : '-';
+  var sp = getSymbolSprite(t, c);
+
+  // Icon
+  var iconEl = document.getElementById('detail-icon');
+  if (sp) {
+    iconEl.innerHTML = '<div style="width:40px;height:40px;overflow:hidden;image-rendering:pixelated;border-radius:4px;box-shadow:0 2px 6px rgba(0,0,0,0.5)">'
+      + '<div style="width:40px;height:40px;background:url(' + sp.sheet + ') -' + (sp.px*40/24|0) + 'px -' + (sp.py*40/24|0) + 'px;'
+      + 'background-size:' + (sp.sheetW*40/24|0) + 'px ' + (sp.sheetH*40/24|0) + 'px;background-repeat:no-repeat"></div></div>';
+  }
+
+  // Header
+  document.getElementById('detail-call').innerText = call;
+  document.getElementById('detail-symbol-label').innerText = si.label || call;
+  document.getElementById('detail-qrz').href   = 'https://qrz.com/db/' + baseCall(call);
+  document.getElementById('detail-aprsfi').href = 'https://aprs.fi/#!call=' + call;
+
+  // Status badge
+  var ago = Math.floor(Date.now()/1000) - st.lastHeard;
+  var statusEl = document.getElementById('detail-status');
+  if (ago < 300)  { statusEl.innerText = '● Live';    statusEl.className = 'text-xs px-2 py-0.5 rounded-full bg-green-900 text-green-400'; }
+  else if (ago < 3600) { statusEl.innerText = '● Recent'; statusEl.className = 'text-xs px-2 py-0.5 rounded-full bg-yellow-900 text-yellow-400'; }
+  else            { statusEl.innerText = '○ Stale';   statusEl.className = 'text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-400'; }
+
+  // Watch button state
+  var inWatch = watchlist.some(function(w){ return callsignMatches(call, w); });
+  var wbtn = document.getElementById('detail-watch-btn');
+  if (inWatch) { wbtn.innerText = '👁 Watching'; wbtn.classList.replace('bg-amber-800','bg-green-800'); }
+  else         { wbtn.innerText = '👁 Watch';    wbtn.classList.replace('bg-green-800','bg-amber-800'); }
+
+  // Position
+  var latest = st.positions.length ? st.positions[st.positions.length-1] : null;
+  document.getElementById('d-pos').innerText = latest ? latest.lat.toFixed(5) + ', ' + latest.lon.toFixed(5) : 'No position';
+
+  // Time
+  var agoStr = ago < 60 ? ago+'s ago' : ago < 3600 ? Math.floor(ago/60)+'m ago' : Math.floor(ago/3600)+'h '+Math.floor((ago%3600)/60)+'m ago';
+  document.getElementById('d-time').innerText = new Date(st.lastHeard*1000).toLocaleString() + ' (' + agoStr + ')';
+
+  // Path
+  document.getElementById('d-path').innerText = st.path || 'n/a';
+
+  // PHG
+  var phgEl = document.getElementById('d-phg');
+  phgEl.innerText = st.phg ? st.phg + ' ≈ ' + (calcPHG(st.phg)/1000).toFixed(1) + ' km' : 'n/a';
+
+  // Speed/course
+  var mv = st.movement;
+  document.getElementById('d-speed').innerText = mv
+    ? (mv.spd*1.852).toFixed(0) + ' km/h @ ' + mv.cse + '° (' + windDirLabel(mv.cse) + ')'
+    : 'n/a';
+
+  // Packet count
+  var pkts = _packetLog[call] || [];
+  document.getElementById('d-pkt-count').innerText = pkts.length + ' this session';
+
+  // Comment
+  var comment = parseComment ? parseComment(st.raw) : '';
+  document.getElementById('d-comment').innerText = comment || 'n/a';
+
+  // Raw
+  document.getElementById('d-raw').innerText = st.raw || 'n/a';
+
+  // WX data
+  var wx = parseWXPacket ? parseWXPacket(st.raw) : null;
+  var wxBlock = document.getElementById('d-wx-block');
+  if (wx && Object.keys(wx).length) {
+    wxBlock.classList.remove('hidden');
+    var fields = [];
+    if (wx.tempC     !== undefined) fields.push(['🌡 Temp',     wx.tempC + '°C']);
+    if (wx.humidity  !== undefined) fields.push(['💧 Humidity',  wx.humidity + '%']);
+    if (wx.pressure  !== undefined) fields.push(['📊 Pressure',  wx.pressure + ' hPa']);
+    if (wx.windSpd   !== undefined) fields.push(['🌬 Wind',      wx.windSpd + ' km/h']);
+    if (wx.windGust  !== undefined) fields.push(['💨 Gust',      wx.windGust + ' km/h']);
+    if (wx.rain1h    !== undefined) fields.push(['🌧 Rain 1h',   wx.rain1h + ' mm']);
+    document.getElementById('d-wx-data').innerHTML = fields.map(function(f){
+      return '<div class="bg-blue-900/30 rounded p-2"><div class="text-gray-400 text-[10px]">' + f[0] + '</div><div class="font-bold text-white">' + f[1] + '</div></div>';
+    }).join('');
+  } else {
+    wxBlock.classList.add('hidden');
+  }
+}
+
+function renderDetailHistory() {
+  var st = stations[_detailCall]; if (!st) return;
+
+  // Position history list
+  document.getElementById('d-hist-count').innerText = st.positions.length;
+  document.getElementById('d-hist-list').innerHTML = st.positions.slice().reverse().map(function(p) {
+    return '<div class="flex justify-between py-0.5 border-b border-gray-800">'
+      + '<span class="text-gray-500">' + new Date(p.ts*1000).toLocaleTimeString() + '</span>'
+      + '<span>' + p.lat.toFixed(5) + ', ' + p.lon.toFixed(5) + '</span>'
+      + '</div>';
+  }).join('');
+
+  // Speed chart using canvas (simple line chart, no lib needed)
+  renderSpeedChart();
+}
+
+function renderSpeedChart() {
+  var pkts = _packetLog[_detailCall];
+  var canvas = document.getElementById('d-speed-chart');
+  if (!canvas || !pkts || pkts.length < 2) {
+    canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);
+    return;
+  }
+
+  var speeds = pkts.map(function(p) {
+    var m = p.raw ? p.raw.match(/([0-9]{3})\/([0-9]{3})/) : null;
+    return m ? Math.round(parseInt(m[2])*1.852) : 0;
+  }).filter(function(s){ return s >= 0; });
+
+  if (!speeds.length) return;
+
+  var ctx = canvas.getContext('2d');
+  var W = canvas.offsetWidth || 600, H = 80;
+  canvas.width = W; canvas.height = H;
+  ctx.clearRect(0,0,W,H);
+
+  var maxSpd = Math.max.apply(null, speeds) || 10;
+  var step = W / (speeds.length - 1);
+
+  ctx.strokeStyle = '#38bdf8';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  speeds.forEach(function(s, i) {
+    var x = i * step;
+    var y = H - (s / maxSpd) * (H - 8) - 4;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Fill
+  ctx.lineTo((speeds.length-1)*step, H);
+  ctx.lineTo(0, H);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(56,189,248,0.15)';
+  ctx.fill();
+
+  // Labels
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '10px monospace';
+  ctx.fillText('0', 2, H-2);
+  ctx.fillText(maxSpd + ' km/h', 2, 12);
+}
+
+function renderDetailPackets() {
+  var pkts = _packetLog[_detailCall] || [];
+  document.getElementById('d-pkt-call').innerText = _detailCall;
+  var list = document.getElementById('d-pkt-list');
+  var empty = document.getElementById('d-pkt-empty');
+  if (!pkts.length) {
+    list.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  list.innerHTML = pkts.slice().reverse().map(function(p) {
+    return '<div class="py-1 border-b border-gray-800">'
+      + '<span class="text-gray-500 text-[10px]">' + new Date(p.ts*1000).toLocaleTimeString() + '</span>'
+      + '<div class="text-green-400 text-[10px] break-all mt-0.5">' + p.raw + '</div></div>';
+  }).join('');
+}
+
+function renderDetailPath() {
+  var st = stations[_detailCall]; if (!st) return;
+  var raw = st.raw || '';
+  var gtIdx = raw.indexOf('>'); var colIdx = raw.indexOf(':');
+  if (gtIdx < 0 || colIdx < 0) return;
+
+  var src  = raw.slice(0, gtIdx);
+  var path = raw.slice(gtIdx+1, colIdx).split(',');
+  var dest = path[0] || '';
+  var hops = path.slice(1);
+
+  // Visualise as chain
+  var viz = document.getElementById('d-path-viz');
+  var chain = [src].concat(hops);
+  viz.innerHTML = '<div class="flex flex-wrap items-center gap-1">'
+    + chain.map(function(hop, i) {
+      var isUsed = hop.endsWith('*');
+      var clean  = hop.replace('*','');
+      var color  = isUsed ? 'bg-green-800 text-green-300' : i===0 ? 'bg-blue-800 text-blue-300' : 'bg-gray-700 text-gray-300';
+      return (i>0 ? '<span class="text-gray-500">→</span>' : '')
+        + '<span class="px-2 py-1 rounded text-xs font-mono ' + color + '">' + hop + '</span>';
+    }).join('') + '</div>';
+
+  // Explain each hop
+  var explains = document.getElementById('d-path-explain');
+  var lines = [];
+  lines.push('<span class="text-blue-400 font-bold">' + src + '</span> — originating station');
+  lines.push('<span class="text-gray-400">' + dest + '</span> — destination/TOCALL (software identifier)');
+  hops.forEach(function(hop) {
+    var clean = hop.replace('*','');
+    var used  = hop.endsWith('*');
+    if (clean === 'TCPIP' || clean === 'TCPIP*') lines.push('<span class="text-yellow-400">' + hop + '</span> — packet entered via internet (iGate)');
+    else if (clean === 'WIDE1-1' || clean === 'WIDE2-1' || clean.startsWith('WIDE')) lines.push('<span class="text-purple-400">' + hop + '</span> — WIDEn-N flood fill path' + (used ? ' <span class="text-green-400">(used)</span>' : ' (unused)'));
+    else if (clean.startsWith('qA')) {
+      var types = {qAC:'iGate connection',qAR:'via RF iGate',qAU:'UDP inject',qAo:'heard via RF',qAI:'identified by iGate'};
+      lines.push('<span class="text-orange-400">' + hop + '</span> — Q-construct: ' + (types[clean]||'routing flag'));
+    }
+    else if (used) lines.push('<span class="text-green-400">' + hop + '</span> — digipeated via this station');
+    else lines.push('<span class="text-gray-400">' + hop + '</span> — path element (unused)');
+  });
+  explains.innerHTML = lines.map(function(l){ return '<div>' + l + '</div>'; }).join('');
+}
+
+function centreOnDetailStation() {
+  var st = stations[_detailCall]; if (!st || !st.positions.length) return;
+  var p = st.positions[st.positions.length-1];
+  closeDetail();
+  map.setView([p.lat, p.lon], 13);
+  togglePanel('map');
+  if (st.marker) setTimeout(function(){ st.marker.openTooltip(); }, 300);
+}
+
+function toggleWatchFromDetail() {
+  var call = _detailCall; if (!call) return;
+  var idx = watchlist.indexOf(call);
+  if (idx !== -1) {
+    watchlist.splice(idx, 1);
+  } else {
+    watchlist.push(call);
+  }
+  saveWatchlist();
+  refreshDetailData();
+}
+
+function openMsgToStation() {
+  if (demoBlock('messaging is disabled in demo mode')) return;
+  _modalTarget = _detailCall;
+  document.getElementById('msg-target-display').innerText = _detailCall;
+  if (myCallsign) document.getElementById('msg-auth-call').value = myCallsign;
+  document.getElementById('msg-auth-modal').classList.remove('hidden');
+}
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 connectWS();
