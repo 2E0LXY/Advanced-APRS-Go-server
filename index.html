@@ -90,6 +90,10 @@
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-ogn" checked onchange="redrawMap()"><span class="text-yellow-500">●</span><span>OGN Gliders</span></label>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="hide-static" onchange="redrawMap()"><span>Hide Static (&gt;5min)</span></label>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-phg" onchange="redrawMap()"><span>PHG Circles</span></label>
+        <div class="flex items-center justify-between cursor-pointer">
+          <span class="text-xs text-purple-400" id="path-viz-label">No path shown</span>
+          <button onclick="clearPathViz();document.getElementById('path-viz-label').innerText='No path shown'" class="text-[10px] text-gray-500 hover:text-red-400 hidden" id="clear-path-btn">✕ Clear</button>
+        </div>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="cluster-enable" checked onchange="toggleClustering()"><span>Cluster Markers</span></label>
       </div>
     </div>
@@ -1007,7 +1011,10 @@
 
       <!-- Path tab -->
       <div id="detail-path" class="hidden space-y-3">
-        <p class="text-gray-400 text-xs mb-2">Decoded path from latest packet:</p>
+        <div class="flex items-center justify-between mb-3">
+          <p class="text-gray-400 text-xs">Decoded path from latest packet:</p>
+          <button onclick="showPathOnMapFromDetail()" class="text-xs bg-purple-800 hover:bg-purple-700 px-3 py-1.5 rounded text-white font-bold">🗺 Draw on Map</button>
+        </div>
         <div id="d-path-viz" class="space-y-2"></div>
         <div class="bg-gray-800 rounded p-3">
           <p class="text-gray-400 text-xs font-bold uppercase mb-2">Path Explanation</p>
@@ -1020,6 +1027,7 @@
     <!-- Footer actions -->
     <div class="flex items-center justify-between p-3 border-t border-gray-700 flex-shrink-0 bg-gray-900 rounded-b-xl">
       <button onclick="centreOnDetailStation()" class="text-xs bg-blue-800 hover:bg-blue-700 px-3 py-1.5 rounded text-white">📍 Show on Map</button>
+      <button onclick="showPathOnMapFromDetail()" class="text-xs bg-purple-800 hover:bg-purple-700 px-3 py-1.5 rounded text-white">🔗 Show Path</button>
       <button onclick="openMsgToStation()" class="text-xs bg-green-800 hover:bg-green-700 px-3 py-1.5 rounded text-white">✉ Send Message</button>
     </div>
   </div>
@@ -2907,6 +2915,13 @@ function renderDetailPath() {
   explains.innerHTML = lines.map(function(l){ return '<div>' + l + '</div>'; }).join('');
 }
 
+function showPathOnMapFromDetail() {
+  var call = _detailCall; if (!call) return;
+  closeDetail();
+  togglePanel('map');
+  setTimeout(function(){ showPathOnMap(call); }, 200);
+}
+
 function centreOnDetailStation() {
   var st = stations[_detailCall]; if (!st || !st.positions.length) return;
   var p = st.positions[st.positions.length-1];
@@ -2934,6 +2949,123 @@ function openMsgToStation() {
   document.getElementById('msg-target-display').innerText = _detailCall;
   if (myCallsign) document.getElementById('msg-auth-call').value = myCallsign;
   document.getElementById('msg-auth-modal').classList.remove('hidden');
+}
+
+
+// ─── Packet Path Visualiser ───────────────────────────────────────────────────
+// Draws lines on the map showing the digipeater hops a packet took.
+// Activated when a station detail is open and user clicks "Show Path on Map".
+
+var _pathLayers = []; // Leaflet layers for the current path visualisation
+
+function clearPathViz() {
+  _pathLayers.forEach(function(l) { map.removeLayer(l); });
+  _pathLayers = [];
+  var lbl = document.getElementById('path-viz-label');
+  if (lbl) lbl.innerText = 'No path shown';
+  var clrBtn = document.getElementById('clear-path-btn');
+  if (clrBtn) clrBtn.classList.add('hidden');
+}
+
+function showPathOnMap(call) {
+  clearPathViz();
+  var st = stations[call]; if (!st || !st.positions.length) return;
+
+  var raw  = st.raw || '';
+  var gtIdx = raw.indexOf('>'); var colIdx = raw.indexOf(':');
+  if (gtIdx < 0 || colIdx < 0) return;
+
+  var src  = raw.slice(0, gtIdx);
+  var path = raw.slice(gtIdx+1, colIdx).split(',');
+  var hops = path.slice(1);
+
+  var srcPos = st.positions[st.positions.length-1];
+  var points = [{ call: src, pos: [srcPos.lat, srcPos.lon], type: 'source' }];
+
+  // Find positions of digi hops in our station store
+  hops.forEach(function(hop) {
+    var clean = hop.replace('*','');
+    var used  = hop.endsWith('*');
+    // Skip non-callsign path elements
+    if (clean.startsWith('qA') || clean === 'TCPIP' || clean === 'WIDE1-1' ||
+        clean.startsWith('WIDE') || clean === 'RELAY' || clean === 'TRACE') {
+      points.push({ call: clean, pos: null, type: used ? 'q-used' : 'q-unused' });
+      return;
+    }
+    // Look up digi position
+    var digiSt = stations[clean] || stations[clean.split('-')[0]];
+    if (digiSt && digiSt.positions.length) {
+      var dp = digiSt.positions[digiSt.positions.length-1];
+      points.push({ call: clean, pos: [dp.lat, dp.lon], type: used ? 'digi-used' : 'digi-unused' });
+    } else {
+      points.push({ call: clean, pos: null, type: 'unknown' });
+    }
+  });
+
+  // Draw lines between known positions
+  var knownPoints = points.filter(function(p){ return p.pos; });
+  if (knownPoints.length < 2) {
+    // Can't draw path - show toast
+    demoBlock && demoBlock('');
+    var toast = document.getElementById('demo-toast') || document.createElement('div');
+    if (!toast.id) { toast.id='path-toast'; document.body.appendChild(toast);
+      toast.style.cssText='position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:#1e3a5f;color:#93c5fd;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:bold;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.5);border:1px solid #2563eb;pointer-events:none'; }
+    toast.innerText = 'Path: ' + src + ' → ' + (hops.length ? hops.join(' → ') : 'direct');
+    toast.style.opacity='1';
+    setTimeout(function(){ toast.style.opacity='0'; }, 4000);
+    return;
+  }
+
+  // Draw animated dashed line along path
+  for (var i = 0; i < knownPoints.length - 1; i++) {
+    var from = knownPoints[i];
+    var to   = knownPoints[i+1];
+    var color = from.type === 'source' ? '#facc15' : to.type === 'digi-used' ? '#4ade80' : '#60a5fa';
+
+    // Main line
+    var line = L.polyline([from.pos, to.pos], {
+      color: color,
+      weight: 2.5,
+      opacity: 0.9,
+      dashArray: '8 5'
+    }).addTo(map);
+    _pathLayers.push(line);
+
+    // Arrow at midpoint
+    var midLat = (from.pos[0] + to.pos[0]) / 2;
+    var midLon = (from.pos[1] + to.pos[1]) / 2;
+    var arrow = L.circleMarker([midLat, midLon], {
+      radius: 4, color: color, fillColor: color, fillOpacity: 1, weight: 0
+    }).bindTooltip(from.call + ' → ' + to.call, { direction: 'top' }).addTo(map);
+    _pathLayers.push(arrow);
+  }
+
+  // Marker for each known hop
+  knownPoints.forEach(function(pt, i) {
+    var colors = { source: '#facc15', 'digi-used': '#4ade80', 'digi-unused': '#60a5fa', unknown: '#6b7280' };
+    var col = colors[pt.type] || '#6b7280';
+    var label = i === 0 ? 'Source: ' + pt.call : 'Hop ' + i + ': ' + pt.call;
+
+    var marker = L.circleMarker(pt.pos, {
+      radius: i === 0 ? 10 : 7,
+      color: '#1f2937',
+      weight: 2,
+      fillColor: col,
+      fillOpacity: 0.95
+    }).bindTooltip(label, { permanent: false, direction: 'top' }).addTo(map);
+    _pathLayers.push(marker);
+  });
+
+  // Fit map to path
+  var bounds = L.latLngBounds(knownPoints.map(function(p){ return p.pos; }));
+  map.fitBounds(bounds, { padding: [40, 40], maxZoom: 12 });
+  var lbl = document.getElementById('path-viz-label');
+  if (lbl) lbl.innerText = src + ' path (' + knownPoints.length + ' hops)';
+  var clrBtn = document.getElementById('clear-path-btn');
+  if (clrBtn) clrBtn.classList.remove('hidden');
+
+  // Auto-clear after 30 seconds
+  setTimeout(clearPathViz, 30000);
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
