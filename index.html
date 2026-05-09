@@ -134,9 +134,11 @@
         <div class="w-80 flex flex-col space-y-3">
           <div id="auth-section" class="bg-gray-800 p-4 rounded border border-gray-700">
             <h2 class="font-bold mb-2 text-blue-400 uppercase text-xs tracking-wider">APRS-IS Auth</h2>
-            <input type="text" id="myCall" placeholder="Callsign" class="w-full bg-gray-700 p-2 rounded mb-2 uppercase text-sm outline-none border border-gray-600">
-            <input type="password" id="myPass" placeholder="Passcode" class="w-full bg-gray-700 p-2 rounded mb-2 text-sm outline-none border border-gray-600">
-            <button onclick="sendAuth()" class="w-full bg-blue-600 hover:bg-blue-500 p-2 rounded text-sm font-bold">Login</button>
+            <form onsubmit="sendAuth();return false;">
+            <input type="text" id="myCall" placeholder="Callsign" class="w-full bg-gray-700 p-2 rounded mb-2 uppercase text-sm outline-none border border-gray-600" autocomplete="username">
+            <input type="password" id="myPass" placeholder="Passcode" class="w-full bg-gray-700 p-2 rounded mb-2 text-sm outline-none border border-gray-600" autocomplete="current-password">
+            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 p-2 rounded text-sm font-bold">Login</button>
+            </form>
           </div>
           <div id="logged-in-section" class="bg-gray-800 p-4 rounded border border-green-700 hidden">
             <h2 class="font-bold mb-2 text-green-400 uppercase text-xs tracking-wider">Authenticated</h2>
@@ -456,16 +458,17 @@
             <p class="text-gray-400 text-xs mt-1">Enter your admin credentials</p>
           </div>
           <div id="admin-login-err" class="hidden text-red-400 text-xs bg-red-900/30 border border-red-800 rounded p-2 mb-4 text-center"></div>
+          <form onsubmit="doAdminLogin();return false;" autocomplete="on">
           <div class="space-y-3">
             <input type="text" id="adminLoginUser" placeholder="Username" autocomplete="username"
               class="w-full bg-gray-700 p-2.5 rounded border border-gray-600 text-white outline-none focus:border-red-500 text-sm">
             <input type="password" id="adminLoginPass" placeholder="Password" autocomplete="current-password"
-              class="w-full bg-gray-700 p-2.5 rounded border border-gray-600 text-white outline-none focus:border-red-500 text-sm"
-              onkeydown="if(event.key==='Enter')doAdminLogin()">
-            <button onclick="doAdminLogin()" class="w-full bg-red-700 hover:bg-red-600 text-white p-2.5 rounded font-bold text-sm uppercase tracking-wider transition-colors">
+              class="w-full bg-gray-700 p-2.5 rounded border border-gray-600 text-white outline-none focus:border-red-500 text-sm">
+            <button type="submit" class="w-full bg-red-700 hover:bg-red-600 text-white p-2.5 rounded font-bold text-sm uppercase tracking-wider transition-colors">
               Login
             </button>
           </div>
+          </form>
         </div>
       </div>
 
@@ -712,11 +715,13 @@
         <!-- Change Password -->
         <div class="bg-gray-800 p-4 rounded border border-yellow-900">
           <h3 class="text-sm font-bold text-yellow-400 uppercase mb-3">Change Admin Password</h3>
+          <form onsubmit="changePassword();return false;">
           <div class="flex space-x-3">
-            <input type="password" id="newPass1" placeholder="New password" class="flex-1 bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-yellow-500 text-sm">
-            <input type="password" id="newPass2" placeholder="Confirm password" class="flex-1 bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-yellow-500 text-sm">
-            <button onclick="changePassword()" class="px-4 bg-yellow-700 hover:bg-yellow-600 rounded text-sm font-bold">Update</button>
+            <input type="password" id="newPass1" placeholder="New password" class="flex-1 bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-yellow-500 text-sm" autocomplete="new-password">
+            <input type="password" id="newPass2" placeholder="Confirm password" class="flex-1 bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-yellow-500 text-sm" autocomplete="new-password">
+            <button type="submit" class="px-4 bg-yellow-700 hover:bg-yellow-600 rounded text-sm font-bold">Update</button>
           </div>
+          </form>
           <p id="pass-msg" class="text-xs mt-2 hidden"></p>
         </div>
 
@@ -801,15 +806,17 @@
     <div class="flex justify-between mb-4"><h2 class="font-bold text-green-400">✉ Send APRS Message</h2><button onclick="closeMsgAuthModal()" class="text-gray-400 hover:text-white text-xl">✕</button></div>
     <p class="text-xs text-gray-400 mb-4">Enter your callsign and APRS-IS passcode to send a message to <strong id="msg-target-display" class="text-white"></strong></p>
     <div id="msg-auth-err" class="hidden text-red-400 text-xs bg-red-900/30 border border-red-800 rounded p-2 mb-3"></div>
+    <form onsubmit="sendMsgFromModal();return false;">
     <div class="space-y-2 mb-4">
-      <input type="text" id="msg-auth-call" placeholder="Your callsign (e.g. M0ABC)" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none text-sm uppercase">
-      <input type="password" id="msg-auth-pass" placeholder="APRS-IS passcode" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none text-sm">
+      <input type="text" id="msg-auth-call" placeholder="Your callsign (e.g. M0ABC)" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none text-sm uppercase" autocomplete="username">
+      <input type="password" id="msg-auth-pass" placeholder="APRS-IS passcode" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none text-sm" autocomplete="current-password">
       <textarea id="msg-auth-text" placeholder="Message text..." rows="3" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none text-sm resize-none"></textarea>
     </div>
     <div class="flex space-x-2">
-      <button onclick="sendMsgFromModal()" class="flex-1 bg-green-700 hover:bg-green-600 text-white py-2 rounded font-bold text-sm">Send Message</button>
-      <button onclick="closeMsgAuthModal()" class="px-4 bg-gray-600 hover:bg-gray-500 rounded text-sm">Cancel</button>
+      <button type="submit" class="flex-1 bg-green-700 hover:bg-green-600 text-white py-2 rounded font-bold text-sm">Send Message</button>
+      <button type="button" onclick="closeMsgAuthModal()" class="px-4 bg-gray-600 hover:bg-gray-500 rounded text-sm">Cancel</button>
     </div>
+    </form>
   </div>
 </div>
 
