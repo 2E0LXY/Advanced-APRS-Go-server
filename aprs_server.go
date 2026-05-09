@@ -166,6 +166,7 @@ func main() {
 	go keepaliveLoop()
 
 	http.HandleFunc("/symbols/", http.StripPrefix("/symbols/", http.FileServer(http.Dir("symbols"))).ServeHTTP)
+	http.HandleFunc("/demo", serveDemo)
 	http.HandleFunc("/", serveIndex)
 	http.HandleFunc("/setup", handleSetup)
 	http.HandleFunc("/ws", handleWS)
@@ -190,6 +191,20 @@ func serveIndex(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/setup", http.StatusFound)
 		return
 	}
+	http.ServeFile(w, r, "index.html")
+}
+
+// serveDemo serves the dashboard in read-only demo mode.
+// Sets a cookie so the frontend knows to hide all write controls.
+func serveDemo(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "aprs_demo",
+		Value:    "1",
+		Path:     "/",
+		MaxAge:   86400,
+		HttpOnly: false,
+		SameSite: http.SameSiteLaxMode,
+	})
 	http.ServeFile(w, r, "index.html")
 }
 

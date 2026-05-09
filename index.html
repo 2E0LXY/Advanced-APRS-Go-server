@@ -515,6 +515,7 @@
             <div class="text-3xl mb-2">🔐</div>
             <h2 class="text-lg font-bold text-red-400">Admin Login</h2>
             <p class="text-gray-400 text-xs mt-1">Enter your admin credentials</p>
+          <p class="text-amber-500 text-xs mt-1">Want to explore? <a href="/demo" class="underline hover:text-amber-300">Enter demo mode</a></p>
           </div>
           <div id="admin-login-err" class="hidden text-red-400 text-xs bg-red-900/30 border border-red-800 rounded p-2 mb-4 text-center"></div>
           <form onsubmit="doAdminLogin();return false;" autocomplete="on">
@@ -819,6 +820,8 @@
     <span class="text-gray-500">Daren Loxley, 2E0LXY</span>
     <span class="text-gray-700">·</span>
     <a href="https://github.com/2E0LXY/Advanced-APRS-Go-server" target="_blank" class="hover:text-gray-400 transition-colors">GitHub ↗</a>
+    &nbsp;·&nbsp;
+    <a href="/demo" class="hover:text-gray-400 transition-colors">Demo Mode ↗</a>
     <span class="text-gray-700">·</span>
     <a href="https://github.com/2E0LXY/Advanced-APRS-Go-server/blob/main/LICENCE" target="_blank" class="hover:text-gray-400 transition-colors">GPL v3 ↗</a>
   </span>
@@ -880,6 +883,51 @@
 </div>
 
 <script>
+// ─── Demo Mode ───────────────────────────────────────────────────────────────
+// When accessed via /demo, a cookie is set and the UI becomes read-only.
+// All write operations are blocked and credentials are hidden.
+
+var DEMO_MODE = document.cookie.split(';').some(function(c) {
+  return c.trim().startsWith('aprs_demo=1');
+});
+
+if (DEMO_MODE) {
+  // Inject demo banner after DOM loads
+  document.addEventListener('DOMContentLoaded', function() {
+    var banner = document.createElement('div');
+    banner.id = 'demo-banner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#92400e;'
+      + 'color:#fef3c7;text-align:center;padding:6px 12px;font-size:12px;font-weight:bold;'
+      + 'letter-spacing:0.05em;box-shadow:0 2px 8px rgba(0,0,0,0.4)';
+    banner.innerHTML = '👁 DEMO MODE — View only. No changes can be made and no credentials are shown. '
+      + '<a href="/" style="color:#fcd34d;text-decoration:underline;margin-left:8px">Exit demo</a>';
+    document.body.insertBefore(banner, document.body.firstChild);
+    // Push content down
+    var main = document.querySelector('body > div');
+    if (main) main.style.marginTop = '32px';
+  });
+}
+
+function demoBlock(action) {
+  if (!DEMO_MODE) return false;
+  // Show a brief toast
+  var toast = document.getElementById('demo-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'demo-toast';
+    toast.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);'
+      + 'background:#7c2d12;color:#fed7aa;padding:10px 20px;border-radius:8px;font-size:13px;'
+      + 'font-weight:bold;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.5);'
+      + 'border:1px solid #c2410c;pointer-events:none';
+    document.body.appendChild(toast);
+  }
+  toast.innerText = '🚫 Demo mode — ' + (action || 'changes are disabled');
+  toast.style.opacity = '1';
+  setTimeout(function(){ toast.style.opacity = '0'; }, 2500);
+  return true;
+}
+
+
 // ─── APRS Symbol Rendering ───────────────────────────────────────────────────
 // Uses the official aprs.fi symbols sprite sheet (same as aprs.fi map)
 // Primary table: symbol char is offset into a 16-col sprite grid
@@ -1017,6 +1065,30 @@ function getAuthHeaders() {
 }
 
 async function doAdminLogin() {
+  if (DEMO_MODE) {
+    // Demo mode: bypass real auth, show config with sensitive fields blanked
+    adminAuth = "Basic ZGVtbzpkZW1v"; // demo:demo - will 401 on writes
+    document.getElementById("admin-login-gate").classList.add("hidden");
+    document.getElementById("admin-content").classList.remove("hidden");
+    // Fetch config but blank sensitive fields before showing
+    fetch("/api/config").then(function(r){ return r.json(); }).then(function(d){
+      d.passcode = "••••••";
+      populateAdmin(d);
+      document.getElementById("admPass").value = "••••••";
+      document.getElementById("admPass").disabled = true;
+      document.getElementById("newPass1").disabled = true;
+      document.getElementById("newPass2").disabled = true;
+      var saveBtn = document.querySelector("[onclick=\"saveAdmin()\"]");
+      if (saveBtn) { saveBtn.disabled=true; saveBtn.classList.add("opacity-50","cursor-not-allowed"); saveBtn.title="Disabled in demo mode"; }
+    }).catch(function(){
+      populateAdmin({server_name:"T2DEMO",software_vers:"AdvancedGoAPRS 12.0",
+        callsign:"DEMO",passcode:"••••••",upstream_addr:"euro.aprs2.net:14580",
+        server_filter:"auto",drop_pistar:true,drop_dstar:true,drop_apdesk:true,
+        enable_geofence:false,center_lat:53.7,center_lon:-1.5,radius_km:400});
+    });
+    return;
+  }
+
   const user = document.getElementById('adminLoginUser').value.trim();
   const pass = document.getElementById('adminLoginPass').value;
   const err  = document.getElementById('admin-login-err');
@@ -1362,6 +1434,7 @@ function renderList() {
 
 // ─── Messaging ────────────────────────────────────────────────────────────────
 function sendAuth() {
+  if (demoBlock("APRS-IS login is disabled")) return;
   myCallsign = document.getElementById('myCall').value.toUpperCase();
   const pass = document.getElementById('myPass').value;
   if (!myCallsign||!pass) return;
@@ -1377,6 +1450,7 @@ function doLogout() {
   c.querySelector('button').disabled=true;
 }
 function sendMsg() {
+  if (demoBlock("messaging is disabled")) return;
   if (!myCallsign) return;
   const to=document.getElementById('destCall').value.toUpperCase().padEnd(9,' ');
   const text=document.getElementById('msgText').value.trim(); if (!text) return;
@@ -1511,6 +1585,7 @@ function populateAdmin(d) {
 }
 
 async function saveAdmin() {
+  if (demoBlock("config changes are disabled")) return;
   const h = getAuthHeaders(); if (!h) { doAdminLogout(); return; }
   const payload = {
     server_name: document.getElementById('admName').value,
@@ -1538,6 +1613,7 @@ async function saveAdmin() {
 }
 
 async function changePassword() {
+  if (demoBlock("password changes are disabled")) return;
   const p1=document.getElementById('newPass1').value, p2=document.getElementById('newPass2').value;
   const msg=document.getElementById('pass-msg');
   if (!p1) { msg.innerText='Enter a new password'; msg.className='text-xs mt-2 text-red-400'; msg.classList.remove('hidden'); return; }
@@ -1653,6 +1729,7 @@ function showUpdateBanner() {
 }
 
 async function doUpdate() {
+  if (demoBlock("updates are disabled")) return;
   const btn = document.getElementById('update-btn-admin');
   const log = document.getElementById('update-log');
   btn.disabled = true;
@@ -1784,6 +1861,7 @@ function openMsgFromModal() {
 }
 function closeMsgAuthModal() { document.getElementById('msg-auth-modal').classList.add('hidden'); }
 async function sendMsgFromModal() {
+  if (demoBlock("messaging is disabled")) return;
   const call=document.getElementById('msg-auth-call').value.trim().toUpperCase();
   const pass=document.getElementById('msg-auth-pass').value.trim();
   const text=document.getElementById('msg-auth-text').value.trim();
