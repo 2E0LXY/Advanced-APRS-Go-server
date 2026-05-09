@@ -200,8 +200,11 @@ func basicAuth(next http.HandlerFunc) http.HandlerFunc {
 		wantUser, wantPass := adminCreds.Username, adminCreds.Password
 		adminCreds.RUnlock()
 		if !ok || user != wantUser || pass != wantPass {
-			w.Header().Set("WWW-Authenticate", `Basic realm="APRS Admin"`)
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			// Do NOT send WWW-Authenticate — that triggers the browser native dialog.
+			// Our frontend handles auth with a custom login gate.
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"unauthorized"}`))
 			return
 		}
 		next(w, r)
