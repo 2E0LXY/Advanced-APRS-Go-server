@@ -250,6 +250,23 @@
           <table class="w-full text-left text-xs"><thead class="bg-gray-800 text-gray-400 uppercase"><tr><th class="p-2">Callsign</th><th class="p-2">Type</th><th class="p-2">Software</th><th class="p-2">Address</th><th class="p-2">Status</th></tr></thead>
           <tbody id="client-list" class="divide-y divide-gray-700"></tbody></table>
         </div>
+
+        <!-- Export + Metrics -->
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-xs text-gray-400 font-bold uppercase tracking-wider">Data Export &amp; Monitoring</p>
+            <span id="status-dupe-rate" class="text-xs text-gray-500 font-mono"></span>
+          </div>
+          <div class="flex flex-wrap gap-2 mb-3">
+            <a href="/api/export/geojson" download="aprs-stations.geojson"
+               class="text-xs bg-green-900 hover:bg-green-800 px-3 py-2 rounded text-green-300 font-bold">⬇ GeoJSON</a>
+            <a href="/api/export/kml" download="aprs-stations.kml"
+               class="text-xs bg-blue-900 hover:bg-blue-800 px-3 py-2 rounded text-blue-300 font-bold">⬇ KML</a>
+            <a href="/metrics" target="_blank"
+               class="text-xs bg-purple-900 hover:bg-purple-800 px-3 py-2 rounded text-purple-300 font-bold">📊 /metrics</a>
+          </div>
+          <p class="text-[10px] text-gray-600">GeoJSON/KML: all stations + objects in memory. Prometheus /metrics: compatible with Grafana. Add <code class="text-gray-500">http://your-server/metrics</code> as a Prometheus datasource.</p>
+        </div>
       </div>
     </div>
 
@@ -1262,6 +1279,22 @@ function doAdminLogout() {
 
 // ─── Status ───────────────────────────────────────────────────────────────────
 async function loadStatus() {
+  // Also fetch metrics for packet rate display
+  try {
+    var mr = await fetch('/metrics');
+    var mt = await mr.text();
+    var rateM = mt.match(/aprs_packets_per_second ([\d.]+)/);
+    var pktsM = mt.match(/aprs_packets_total\S* (\d+)/);
+    var dupeM = mt.match(/aprs_dupe_packets_total\S* (\d+)/);
+    if (rateM) document.getElementById('rx-count').title = 'Rate: '+parseFloat(rateM[1]).toFixed(2)+'/s';
+    if (pktsM && dupeM) {
+      var total = parseInt(pktsM[1]), dupes = parseInt(dupeM[1]);
+      var pct = total > 0 ? ((dupes/total)*100).toFixed(1) : '0';
+      var dupeEl = document.getElementById('status-dupe-rate');
+      if (dupeEl) dupeEl.innerText = 'Dupes: '+dupes+' ('+pct+'%)';
+    }
+  } catch(e) {}
+
   try {
     const r = await fetch('/api/status'), d = await r.json();
     document.getElementById('stat-uptime').innerText = d.uptime||'0s';

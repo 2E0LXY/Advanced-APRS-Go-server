@@ -104,6 +104,13 @@ var (
 	// objectStore holds active APRS objects and items
 	objectStore   map[string]*ObjectEntry
 	objectStoreMu sync.RWMutex
+
+	// Metrics counters
+	totalPackets    int64
+	dupePackets     int64
+	upstreamBytes   int64
+	packetsLastMin  int64
+	metricsStart    = time.Now()
 )
 
 var (
@@ -198,6 +205,9 @@ func main() {
 	http.HandleFunc("/api/password", basicAuth(handlePassword))
 	http.HandleFunc("/api/whoami", basicAuth(handleWhoami))
 	http.HandleFunc("/api/objects", handleObjects)
+	http.HandleFunc("/metrics", handleMetrics)
+	http.HandleFunc("/api/export/geojson", handleGeoJSON)
+	http.HandleFunc("/api/export/kml", handleKML)
 	http.HandleFunc("/api/ariss", handleARISS)
 	http.HandleFunc("/api/version", handleVersion)
 	http.HandleFunc("/api/messages", handleMessages)
@@ -608,6 +618,10 @@ func handleBroadcasts() {
 			}
 			historyMu.Unlock()
 		}
+
+		// Increment metrics
+		atomic.AddInt64(&totalPackets, 1)
+		atomic.AddInt64(&upstreamBytes, int64(len(packet)))
 
 		// Store in raw ring buffer (trim entries older than 1 hour)
 		now := time.Now().Unix()
@@ -1528,4 +1542,205 @@ button:hover{background:#1d4ed8}
 </html>`
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(page))
+}
+
+// ─── Prometheus Metrics ───────────────────────────────────────────────────────
+
+func handleMetrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+
+	clientsMu.Lock()
+	wsClients := len(clients)
+	clientsMu.Unlock()
+
+	historyMu.RLock()
+	histLen := len(history)
+	historyMu.RUnlock()
+
+	rawRingMu.RLock()
+	ringLen := len(rawRing)
+	rawRingMu.RUnlock()
+
+	objectStoreMu.RLock()
+	objCount := len(objectStore)
+	objectStoreMu.RUnlock()
+
+	upSecs := time.Since(metricsStart).Seconds()
+	pkts := atomic.LoadInt64(&totalPackets)
+	dupes := atomic.LoadInt64(&dupePackets)
+	bytes := atomic.LoadInt64(&upstreamBytes)
+	upConn := atomic.LoadInt32(&upstreamConnected)
+
+	config.RLock()
+	call := config.Callsign
+	filter := config.ServerFilter
+	config.RUnlock()
+
+	fmt.Fprintf(w, "# HELP aprs_packets_total Total APRS packets received from upstream\n")
+	fmt.Fprintf(w, "# TYPE aprs_packets_total counter\n")
+	fmt.Fprintf(w, "aprs_packets_total{callsign=%q} %d\n\n", call, pkts)
+
+	fmt.Fprintf(w, "# HELP aprs_dupe_packets_total Duplicate packets dropped\n")
+	fmt.Fprintf(w, "# TYPE aprs_dupe_packets_total counter\n")
+	fmt.Fprintf(w, "aprs_dupe_packets_total{callsign=%q} %d\n\n", call, dupes)
+
+	fmt.Fprintf(w, "# HELP aprs_upstream_bytes_total Bytes received from APRS-IS upstream\n")
+	fmt.Fprintf(w, "# TYPE aprs_upstream_bytes_total counter\n")
+	fmt.Fprintf(w, "aprs_upstream_bytes_total{callsign=%q} %d\n\n", call, bytes)
+
+	fmt.Fprintf(w, "# HELP aprs_upstream_connected 1 if connected to APRS-IS upstream, 0 otherwise\n")
+	fmt.Fprintf(w, "# TYPE aprs_upstream_connected gauge\n")
+	fmt.Fprintf(w, "aprs_upstream_connected{callsign=%q,filter=%q} %d\n\n", call, filter, upConn)
+
+	fmt.Fprintf(w, "# HELP aprs_websocket_clients Current WebSocket client connections\n")
+	fmt.Fprintf(w, "# TYPE aprs_websocket_clients gauge\n")
+	fmt.Fprintf(w, "aprs_websocket_clients %d\n\n", wsClients)
+
+	fmt.Fprintf(w, "# HELP aprs_history_packets Packets in position history store\n")
+	fmt.Fprintf(w, "# TYPE aprs_history_packets gauge\n")
+	fmt.Fprintf(w, "aprs_history_packets %d\n\n", histLen)
+
+	fmt.Fprintf(w, "# HELP aprs_raw_ring_packets Packets in 1-hour raw ring buffer\n")
+	fmt.Fprintf(w, "# TYPE aprs_raw_ring_packets gauge\n")
+	fmt.Fprintf(w, "aprs_raw_ring_packets %d\n\n", ringLen)
+
+	fmt.Fprintf(w, "# HELP aprs_objects_active Active APRS objects/items on map\n")
+	fmt.Fprintf(w, "# TYPE aprs_objects_active gauge\n")
+	fmt.Fprintf(w, "aprs_objects_active %d\n\n", objCount)
+
+	fmt.Fprintf(w, "# HELP aprs_uptime_seconds Seconds since server start\n")
+	fmt.Fprintf(w, "# TYPE aprs_uptime_seconds counter\n")
+	fmt.Fprintf(w, "aprs_uptime_seconds %.0f\n\n", upSecs)
+
+	pktRate := 0.0
+	if upSecs > 0 { pktRate = float64(pkts) / upSecs }
+	fmt.Fprintf(w, "# HELP aprs_packets_per_second Average packets per second since start\n")
+	fmt.Fprintf(w, "# TYPE aprs_packets_per_second gauge\n")
+	fmt.Fprintf(w, "aprs_packets_per_second %.3f\n\n", pktRate)
+}
+
+// ─── GeoJSON Export ───────────────────────────────────────────────────────────
+
+func handleGeoJSON(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/geo+json")
+	w.Header().Set("Content-Disposition", `attachment; filename="aprs-stations.geojson"`)
+
+	historyMu.RLock()
+	snap := make([]HistoryPacket, len(history))
+	copy(snap, history)
+	historyMu.RUnlock()
+
+	// Deduplicate - latest position per callsign
+	latest := make(map[string]HistoryPacket)
+	for _, p := range snap {
+		if _, ok := latest[p.Callsign]; !ok {
+			latest[p.Callsign] = p
+		}
+		if p.Timestamp > latest[p.Callsign].Timestamp {
+			latest[p.Callsign] = p
+		}
+	}
+
+	type GeoFeature struct {
+		Type       string                 `json:"type"`
+		Geometry   map[string]interface{} `json:"geometry"`
+		Properties map[string]interface{} `json:"properties"`
+	}
+	type GeoCollection struct {
+		Type     string       `json:"type"`
+		Features []GeoFeature `json:"features"`
+	}
+
+	fc := GeoCollection{Type: "FeatureCollection"}
+	for _, p := range latest {
+		fc.Features = append(fc.Features, GeoFeature{
+			Type: "Feature",
+			Geometry: map[string]interface{}{
+				"type":        "Point",
+				"coordinates": []float64{p.Lon, p.Lat},
+			},
+			Properties: map[string]interface{}{
+				"callsign":  p.Callsign,
+				"symbol":    p.Symbol,
+				"path":      p.Path,
+				"timestamp": p.Timestamp,
+				"raw":       p.Raw,
+			},
+		})
+	}
+
+	// Add objects
+	objectStoreMu.RLock()
+	for _, o := range objectStore {
+		if !o.Killed {
+			fc.Features = append(fc.Features, GeoFeature{
+				Type: "Feature",
+				Geometry: map[string]interface{}{
+					"type":        "Point",
+					"coordinates": []float64{o.Lon, o.Lat},
+				},
+				Properties: map[string]interface{}{
+					"callsign":  o.Name,
+					"name":      o.Name,
+					"owner":     o.Owner,
+					"symbol":    o.Symbol,
+					"comment":   o.Comment,
+					"timestamp": o.Timestamp,
+					"type":      "object",
+				},
+			})
+		}
+	}
+	objectStoreMu.RUnlock()
+
+	json.NewEncoder(w).Encode(fc)
+}
+
+// ─── KML Export ───────────────────────────────────────────────────────────────
+
+func handleKML(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/vnd.google-earth.kml+xml")
+	w.Header().Set("Content-Disposition", `attachment; filename="aprs-stations.kml"`)
+
+	historyMu.RLock()
+	snap := make([]HistoryPacket, len(history))
+	copy(snap, history)
+	historyMu.RUnlock()
+
+	latest := make(map[string]HistoryPacket)
+	for _, p := range snap {
+		if ex, ok := latest[p.Callsign]; !ok || p.Timestamp > ex.Timestamp {
+			latest[p.Callsign] = p
+		}
+	}
+
+	fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+<name>APRS Stations</name>
+<description>Exported from Advanced APRS Go Server</description>
+`)
+	for _, p := range latest {
+		fmt.Fprintf(w, `<Placemark>
+  <name>%s</name>
+  <description>%s&#10;Path: %s</description>
+  <Point><coordinates>%f,%f,0</coordinates></Point>
+</Placemark>
+`, p.Callsign, p.Raw, p.Path, p.Lon, p.Lat)
+	}
+
+	objectStoreMu.RLock()
+	for _, o := range objectStore {
+		if !o.Killed {
+			fmt.Fprintf(w, `<Placemark>
+  <name>%s (Object)</name>
+  <description>Owner: %s&#10;%s</description>
+  <Point><coordinates>%f,%f,0</coordinates></Point>
+</Placemark>
+`, o.Name, o.Owner, o.Comment, o.Lon, o.Lat)
+		}
+	}
+	objectStoreMu.RUnlock()
+
+	fmt.Fprintf(w, "</Document>\n</kml>\n")
 }
