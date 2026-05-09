@@ -88,6 +88,7 @@
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-aprs" checked onchange="redrawMap()"><span class="text-blue-400">●</span><span>Ham APRS</span></label>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-cwop" checked onchange="redrawMap()"><span class="text-green-400">●</span><span>CWOP Weather</span></label>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-ogn" checked onchange="redrawMap()"><span class="text-yellow-500">●</span><span>OGN Gliders</span></label>
+        <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-objects" checked onchange="toggleObjects()"><span class="text-amber-500">●</span><span>Objects/Items</span></label>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="hide-static" onchange="redrawMap()"><span>Hide Static (&gt;5min)</span></label>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-phg" onchange="redrawMap()"><span>PHG Circles</span></label>
         <div class="flex items-center justify-between cursor-pointer">
@@ -1342,7 +1343,7 @@ function connectWS() {
     const dot = document.getElementById('conn-status');
     dot.classList.replace('bg-red-500','bg-yellow-500');
     dot.title = 'WebSocket connected — checking upstream...';
-    loadHistory(); pollUpstreamStatus(); setInterval(pollUpstreamStatus, 5000);
+    loadHistory(); loadObjects(); pollUpstreamStatus(); setInterval(pollUpstreamStatus, 5000);
   };
   ws.onclose = () => {
     const dot = document.getElementById('conn-status');
@@ -1364,6 +1365,8 @@ function connectWS() {
         c.querySelector('button').disabled=false;
         logChat('CLIENT','Authenticated as '+d.callsign,'text-green-500');
       } else { alert('Authentication failed.'); myCallsign=''; }
+    } else if (d.type==='obj') {
+      handleObjectPacket(d);
     } else if (d.type==='rx') {
       packetCount++;
       document.getElementById('rx-count').innerText='RX: '+packetCount;
@@ -3066,6 +3069,170 @@ function showPathOnMap(call) {
 
   // Auto-clear after 30 seconds
   setTimeout(clearPathViz, 30000);
+}
+
+
+// ─── Object / Item Support ────────────────────────────────────────────────────
+var aprsObjects = {};        // name -> object entry
+var objectMarkers = {};      // name -> leaflet marker
+
+function handleObjectPacket(data) {
+  var raw = data.packet || '';
+  var ci  = raw.indexOf(':'); if (ci < 0) return;
+  var payload = raw.slice(ci+1);
+  var gtIdx   = raw.indexOf('>');
+  var owner   = gtIdx >= 0 ? raw.slice(0, gtIdx) : '';
+
+  var name, lat, lon, sym, comment, killed;
+
+  // Object format: ;NAME_____*timestamp DDmm.mmN/DDDmm.mmW symbol comment
+  var om = payload.match(/^;([^\*]{9})[\*_]/);
+  if (om) {
+    name   = om[1].trim();
+    killed = payload[10] === '_';
+    var pm = payload.match(/[\*_](\d{6}[z\/])(\d{2})(\d{2}\.\d{2})([NS])(.)(\d{3})(\d{2}\.\d{2})([EW])(.)/);
+    if (pm) {
+      lat = parseFloat(pm[2]) + parseFloat(pm[3])/60; if (pm[4]==='S') lat=-lat;
+      lon = parseFloat(pm[6]) + parseFloat(pm[7])/60; if (pm[8]==='W') lon=-lon;
+      sym = pm[5] + pm[9];
+      comment = payload.slice(payload.indexOf(pm[0])+pm[0].length).trim();
+    }
+  }
+
+  // Item format: )NAME!
+  var im = (!om) && payload.match(/^\)([^!_]{3,9})[!_]/);
+  if (im) {
+    name   = im[1].trim();
+    killed = payload[im[1].length+1] === '_';
+    var pm2 = payload.match(/[!_](\d{2})(\d{2}\.\d{2})([NS])(.)(\d{3})(\d{2}\.\d{2})([EW])(.)/);
+    if (pm2) {
+      lat = parseFloat(pm2[1]) + parseFloat(pm2[2])/60; if (pm2[3]==='S') lat=-lat;
+      lon = parseFloat(pm2[5]) + parseFloat(pm2[6])/60; if (pm2[7]==='W') lon=-lon;
+      sym = pm2[4] + pm2[8];
+      comment = payload.slice(payload.indexOf(pm2[0])+pm2[0].length).trim();
+    }
+  }
+
+  if (!name || lat === undefined) return;
+
+  if (killed) {
+    removeObjectMarker(name);
+    delete aprsObjects[name];
+    return;
+  }
+
+  aprsObjects[name] = { name:name, owner:owner, lat:lat, lon:lon,
+    sym:sym||'\\a', comment:comment||'', raw:raw,
+    ts: Math.floor(Date.now()/1000) };
+
+  updateObjectMarker(name);
+}
+
+function updateObjectMarker(name) {
+  var obj = aprsObjects[name]; if (!obj) return;
+
+  var t  = obj.sym && obj.sym.length>=2 ? obj.sym[0] : '/';
+  var c  = obj.sym && obj.sym.length>=2 ? obj.sym[1] : 'a';
+  var sp = getSymbolSprite(t, c);
+  var si = getSymbolInfo(obj.sym);
+
+  var iconHtml;
+  if (sp) {
+    iconHtml = '<div style="width:24px;height:24px;overflow:hidden;image-rendering:pixelated;'
+      + 'border-radius:2px;box-shadow:0 1px 4px rgba(0,0,0,0.6);outline:2px solid #f59e0b;outline-offset:1px">'
+      + '<div style="width:24px;height:24px;background:url(' + sp.sheet + ') -' + sp.px + 'px -' + sp.py + 'px;'
+      + 'background-size:' + sp.sheetW + 'px ' + sp.sheetH + 'px;background-repeat:no-repeat"></div></div>';
+  } else {
+    iconHtml = '<div style="width:24px;height:24px;background:#92400e;border-radius:3px;outline:2px solid #f59e0b;'
+      + 'display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff">' + c + '</div>';
+  }
+  var icon = L.divIcon({ html: iconHtml, className:'', iconSize:[24,24], iconAnchor:[12,12], tooltipAnchor:[12,-12] });
+
+  var tip = '<b style="color:#fbbf24">' + name + '</b>'
+    + (obj.owner ? '<br><span style="color:#94a3b8;font-size:10px">via ' + obj.owner + '</span>' : '')
+    + (obj.comment ? '<br><span style="font-size:10px">' + obj.comment + '</span>' : '');
+
+  if (objectMarkers[name]) {
+    objectMarkers[name].setLatLng([obj.lat, obj.lon]);
+    objectMarkers[name].setIcon(icon);
+    objectMarkers[name].setTooltipContent(tip);
+  } else {
+    var marker = L.marker([obj.lat, obj.lon], { icon: icon })
+      .bindTooltip(tip, { direction:'top', offset:[0,-12] });
+    marker.on('click', function(){ showObjectDetail(name); });
+    addMarkerToMap(marker);
+    objectMarkers[name] = marker;
+  }
+}
+
+function removeObjectMarker(name) {
+  if (objectMarkers[name]) {
+    clusterGroup.removeLayer(objectMarkers[name]);
+    map.removeLayer(objectMarkers[name]);
+    delete objectMarkers[name];
+  }
+}
+
+function showObjectDetail(name) {
+  var obj = aprsObjects[name]; if (!obj) return;
+  // Reuse station detail modal adapted for objects
+  var si = getSymbolInfo(obj.sym);
+  var t  = obj.sym && obj.sym.length>=2 ? obj.sym[0] : '/';
+  var c  = obj.sym && obj.sym.length>=2 ? obj.sym[1] : 'a';
+  var sp = getSymbolSprite(t, c);
+
+  var iconEl = document.getElementById('modal-icon');
+  if (iconEl && sp) {
+    iconEl.innerHTML = '<div style="width:48px;height:48px;overflow:hidden;image-rendering:pixelated;'
+      + 'border-radius:4px;outline:3px solid #f59e0b;box-shadow:0 2px 6px rgba(0,0,0,0.5)">'
+      + '<div style="width:48px;height:48px;background:url(' + sp.sheet + ') -' + (sp.px*2) + 'px -' + (sp.py*2) + 'px;'
+      + 'background-size:' + (sp.sheetW*2) + 'px ' + (sp.sheetH*2) + 'px;background-repeat:no-repeat"></div></div>';
+  }
+
+  document.getElementById('modal-call').innerText = name;
+  document.getElementById('modal-symbol-label').innerText = (si.label||'Object') + ' · Owned by ' + (obj.owner||'unknown');
+  document.getElementById('modal-qrz').href    = 'https://qrz.com/db/' + baseCall(obj.owner||'');
+  document.getElementById('modal-aprsfi').href = 'https://aprs.fi/#!call=' + encodeURIComponent(name);
+  document.getElementById('modal-pos').innerText = obj.lat.toFixed(5) + ', ' + obj.lon.toFixed(5);
+
+  var ago = Math.floor(Date.now()/1000) - obj.ts;
+  document.getElementById('modal-time').innerText = new Date(obj.ts*1000).toLocaleString()
+    + ' (' + (ago < 60 ? ago+'s' : ago < 3600 ? Math.floor(ago/60)+'m' : Math.floor(ago/3600)+'h') + ' ago)';
+  document.getElementById('modal-path').innerText  = 'Object via ' + (obj.owner||'unknown');
+  document.getElementById('modal-phg').innerText   = 'n/a';
+  document.getElementById('modal-comment').innerText = obj.comment || '(no comment)';
+  document.getElementById('modal-raw').innerText   = obj.raw || '';
+
+  document.getElementById('modal-comment-row').classList.remove('hidden');
+  document.getElementById('modal-weather-row').classList.add('hidden');
+  document.getElementById('modal-history').classList.add('hidden');
+  document.getElementById('station-modal').classList.remove('hidden');
+}
+
+// Load existing objects from API on connect
+async function loadObjects() {
+  try {
+    var r = await fetch('/api/objects');
+    var objs = await r.json();
+    (objs || []).forEach(function(o) {
+      aprsObjects[o.name] = o;
+      updateObjectMarker(o.name);
+    });
+    console.log('Loaded ' + (objs||[]).length + ' objects');
+  } catch(e) { console.warn('Object load failed:', e); }
+}
+
+
+function toggleObjects() {
+  var show = document.getElementById('show-objects').checked;
+  Object.keys(objectMarkers).forEach(function(name) {
+    if (show) {
+      addMarkerToMap(objectMarkers[name]);
+    } else {
+      clusterGroup.removeLayer(objectMarkers[name]);
+      map.removeLayer(objectMarkers[name]);
+    }
+  });
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────

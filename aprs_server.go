@@ -100,10 +100,18 @@ var (
 	// msgStore stores the last hour of APRS messages for replay
 	msgStore   []MsgEntry
 	msgStoreMu sync.RWMutex
+
+	// objectStore holds active APRS objects and items
+	objectStore   map[string]*ObjectEntry
+	objectStoreMu sync.RWMutex
 )
 
 var (
 	posRegex = regexp.MustCompile(`[!\/=@\*](\d{2})(\d{2}\.\d{2})([NS])(.)(\d{3})(\d{2}\.\d{2})([EW])(.)`)
+	// Object format: ;NAME_____*DDHHMMzDDMM.MMN/DDDMM.MMW symbol comment
+	objRegex = regexp.MustCompile(`;([^\*]{9})[\*_](\d{6}[z\/])(\d{2})(\d{2}\.\d{2})([NS])(.)(\d{3})(\d{2}\.\d{2})([EW])(.)`)
+	// Item format: )NAME!DDMM.MMN/DDDMM.MMW symbol comment
+	itemRegex = regexp.MustCompile(`\)([^!]{3,9})[!_](\d{2})(\d{2}\.\d{2})([NS])(.)(\d{3})(\d{2}\.\d{2})([EW])(.)`)
 	phgRegex = regexp.MustCompile(`PHG(\d)(\d)(\d)(\d)`)
 )
 
@@ -116,6 +124,18 @@ type HistoryPacket struct {
 	Lon       float64 `json:"lon"`
 	Symbol    string  `json:"sym"`
 	PHG       string  `json:"phg,omitempty"`
+	Raw       string  `json:"raw"`
+}
+
+type ObjectEntry struct {
+	Timestamp int64   `json:"ts"`
+	Name      string  `json:"name"`
+	Owner     string  `json:"owner"`
+	Lat       float64 `json:"lat"`
+	Lon       float64 `json:"lon"`
+	Symbol    string  `json:"sym"`
+	Comment   string  `json:"comment"`
+	Killed    bool    `json:"killed"`
 	Raw       string  `json:"raw"`
 }
 
@@ -157,6 +177,7 @@ type wsMessage struct {
 func main() {
 	loadOrInitCreds()
 	loadSavedConfig()
+	objectStore = make(map[string]*ObjectEntry)
 
 	go cleanDuplicateCache()
 	go maintainUpstream()
@@ -176,6 +197,7 @@ func main() {
 	http.HandleFunc("/api/status", handleStatus)
 	http.HandleFunc("/api/password", basicAuth(handlePassword))
 	http.HandleFunc("/api/whoami", basicAuth(handleWhoami))
+	http.HandleFunc("/api/objects", handleObjects)
 	http.HandleFunc("/api/ariss", handleARISS)
 	http.HandleFunc("/api/version", handleVersion)
 	http.HandleFunc("/api/messages", handleMessages)
@@ -500,6 +522,81 @@ func parseAPRSMessage(packet string) *MsgEntry {
 	}
 }
 
+
+// ─── Object / Item parsing ────────────────────────────────────────────────────
+
+func parseObject(packet string) (*ObjectEntry, bool) {
+	gtIdx := strings.Index(packet, ">")
+	colIdx := strings.Index(packet, ":")
+	if gtIdx == -1 || colIdx == -1 || gtIdx > colIdx {
+		return nil, false
+	}
+	owner := packet[:gtIdx]
+	payload := packet[colIdx+1:]
+
+	// Try object format
+	if m := objRegex.FindStringSubmatch(payload); m != nil {
+		name := strings.TrimRight(m[1], " ")
+		killed := strings.Contains(packet, "_") && !strings.Contains(packet, "*")
+		lDeg, _ := strconv.ParseFloat(m[3], 64)
+		lMin, _ := strconv.ParseFloat(m[4], 64)
+		lat := lDeg + lMin/60
+		if m[5] == "S" { lat = -lat }
+		lnDeg, _ := strconv.ParseFloat(m[7], 64)
+		lnMin, _ := strconv.ParseFloat(m[8], 64)
+		lon := lnDeg + lnMin/60
+		if m[9] == "W" { lon = -lon }
+		sym := m[6] + m[10]
+		comment := ""
+		if len(payload) > len(m[0]) {
+			comment = strings.TrimSpace(payload[strings.Index(payload, m[0])+len(m[0]):])
+		}
+		return &ObjectEntry{
+			Timestamp: time.Now().Unix(),
+			Name: name, Owner: owner,
+			Lat: lat, Lon: lon,
+			Symbol: sym, Comment: comment,
+			Killed: killed, Raw: packet,
+		}, true
+	}
+
+	// Try item format
+	if m := itemRegex.FindStringSubmatch(payload); m != nil {
+		name := strings.TrimRight(m[1], " ")
+		killed := payload[len(name)+1] == '_'
+		lDeg, _ := strconv.ParseFloat(m[2], 64)
+		lMin, _ := strconv.ParseFloat(m[3], 64)
+		lat := lDeg + lMin/60
+		if m[4] == "S" { lat = -lat }
+		lnDeg, _ := strconv.ParseFloat(m[6], 64)
+		lnMin, _ := strconv.ParseFloat(m[7], 64)
+		lon := lnDeg + lnMin/60
+		if m[8] == "W" { lon = -lon }
+		sym := m[5] + m[9]
+		return &ObjectEntry{
+			Timestamp: time.Now().Unix(),
+			Name: name, Owner: owner,
+			Lat: lat, Lon: lon,
+			Symbol: sym, Killed: killed, Raw: packet,
+		}, true
+	}
+	return nil, false
+}
+
+// handleObjects returns all active (non-killed) objects and items.
+func handleObjects(w http.ResponseWriter, r *http.Request) {
+	objectStoreMu.RLock()
+	defer objectStoreMu.RUnlock()
+	result := make([]*ObjectEntry, 0, len(objectStore))
+	for _, o := range objectStore {
+		if !o.Killed {
+			result = append(result, o)
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 func handleBroadcasts() {
 	for packet := range broadcast {
 		parsed, hasCoords := parsePacket(packet)
@@ -521,6 +618,17 @@ func handleBroadcasts() {
 		}
 		rawRingMu.Unlock()
 
+		// Parse and store APRS objects/items
+		if obj, ok := parseObject(packet); ok {
+			objectStoreMu.Lock()
+			if obj.Killed {
+				delete(objectStore, obj.Name)
+			} else {
+				objectStore[obj.Name] = obj
+			}
+			objectStoreMu.Unlock()
+		}
+
 		// Parse and store APRS messages
 		if msg := parseAPRSMessage(packet); msg != nil {
 			msgStoreMu.Lock()
@@ -533,6 +641,12 @@ func handleBroadcasts() {
 		msg := wsMessage{Type: "rx", Packet: packet}
 		if hasCoords {
 			msg.Data = parsed
+		}
+		// Check if this is an object/item and tag it
+		payload := ""
+		if ci := strings.Index(packet, ":"); ci >= 0 { payload = packet[ci+1:] }
+		if len(payload) > 0 && (payload[0] == ';' || payload[0] == ')') {
+			msg.Type = "obj"
 		}
 		data, _ := json.Marshal(msg)
 		clientsMu.Lock()
