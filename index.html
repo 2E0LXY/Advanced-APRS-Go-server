@@ -263,9 +263,9 @@
             <a href="/api/export/kml" download="aprs-stations.kml"
                class="text-xs bg-blue-900 hover:bg-blue-800 px-3 py-2 rounded text-blue-300 font-bold">⬇ KML</a>
             <a href="/metrics" target="_blank"
-               class="text-xs bg-purple-900 hover:bg-purple-800 px-3 py-2 rounded text-purple-300 font-bold">📊 /metrics</a>
+               class="text-xs bg-purple-900 hover:bg-purple-800 px-3 py-2 rounded text-purple-300 font-bold" title="Requires admin login">📊 /metrics 🔒</a>
           </div>
-          <p class="text-[10px] text-gray-600">GeoJSON/KML: all stations + objects in memory. Prometheus /metrics: compatible with Grafana. Add <code class="text-gray-500">http://your-server/metrics</code> as a Prometheus datasource.</p>
+          <p class="text-[10px] text-gray-600">GeoJSON/KML: all stations + objects in memory. Prometheus /metrics: requires admin credentials (HTTP Basic Auth). For Grafana: add credentials in the datasource config.</p>
         </div>
       </div>
     </div>
