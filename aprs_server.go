@@ -1547,6 +1547,19 @@ button:hover{background:#1d4ed8}
 // ─── Prometheus Metrics ───────────────────────────────────────────────────────
 
 func handleMetrics(w http.ResponseWriter, r *http.Request) {
+	// Restrict to localhost and private networks only
+	ip := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(ip); err == nil { ip = host }
+	if ip != "127.0.0.1" && ip != "::1" && !strings.HasPrefix(ip, "10.") &&
+		!strings.HasPrefix(ip, "192.168.") && !strings.HasPrefix(ip, "172.") {
+		// Allow if behind reverse proxy - check X-Forwarded-For
+		forwarded := r.Header.Get("X-Forwarded-For")
+		if forwarded == "" {
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte("# metrics restricted to localhost\n"))
+			return
+		}
+	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 
 	clientsMu.Lock()
