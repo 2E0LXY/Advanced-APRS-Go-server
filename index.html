@@ -160,6 +160,47 @@
           </div>
         </div>
         <p class="text-gray-600 text-[10px] mt-1">No login · raw APRS packets</p>
+
+      <!-- REST API -->
+      <div>
+        <p class="text-gray-500 text-[10px] uppercase font-bold mb-1">REST API</p>
+        <div class="bg-gray-900 rounded p-2 space-y-1 font-mono text-[10px]">
+          <div class="flex justify-between">
+            <span class="text-gray-500">History</span>
+            <span id="conn-api-hist" class="text-green-400 select-all cursor-text"></span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-500">Auth</span>
+            <span class="text-green-400">X-API-Key header</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-500">Export</span>
+            <span id="conn-api-geo" class="text-green-400 select-all cursor-text"></span>
+          </div>
+        </div>
+        <p class="text-gray-600 text-[10px] mt-1">Generate keys in Admin → API Keys</p>
+      </div>
+
+      <!-- Webhooks -->
+      <div>
+        <p class="text-gray-500 text-[10px] uppercase font-bold mb-1">Webhooks</p>
+        <div class="bg-gray-900 rounded p-2 space-y-1 font-mono text-[10px]">
+          <div class="flex justify-between">
+            <span class="text-gray-500">Events</span>
+            <span class="text-amber-400">position · message</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-500">Method</span>
+            <span class="text-amber-400">POST JSON</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-500">Config</span>
+            <span class="text-amber-400">Admin → Webhooks</span>
+          </div>
+        </div>
+        <p class="text-gray-600 text-[10px] mt-1">Node-RED · Home Assistant · n8n · IFTTT</p>
+      </div>
+
       </div>
     </div>
   </div>
@@ -2582,7 +2623,8 @@ function triggerUpdateFromHeader() {
 
 // ─── Connection info sidebar ──────────────────────────────────────────────────
 function populateConnInfo() {
-  var host = window.location.hostname;
+  var host  = window.location.hostname;
+  var base  = window.location.protocol + '//' + host;
   var wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   var el;
   el = document.getElementById('conn-host');
@@ -2591,6 +2633,10 @@ function populateConnInfo() {
   if (el) el.innerText = wsProto + '//' + host + '/ws';
   el = document.getElementById('conn-udp');
   if (el) el.innerText = host + ':14580';
+  el = document.getElementById('conn-api-hist');
+  if (el) el.innerText = base + '/api/history';
+  el = document.getElementById('conn-api-geo');
+  if (el) el.innerText = base + '/api/export/geojson';
 }
 
 
