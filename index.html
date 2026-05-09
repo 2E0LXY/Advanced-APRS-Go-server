@@ -1288,7 +1288,7 @@ function renderList() {
       if (st.positions.length) { const p=st.positions[st.positions.length-1]; loc=`${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}`; }
       const tr=document.createElement('tr');
       tr.innerHTML=`
-        <td class="p-2 text-base text-center" title="${si.label}">${si.glyph}</td>
+        <td class="p-2 text-center">${(function(){var t=st.sym&&st.sym.length>=2?st.sym[0]:"/",c=st.sym&&st.sym.length>=2?st.sym[1]:"-",sp=getSymbolSprite(t,c);if(sp)return '<div style="width:24px;height:24px;overflow:hidden;image-rendering:pixelated;border-radius:2px;display:inline-block"><div style="width:24px;height:24px;background:url('+sp.sheet+') -'+sp.px+'px -'+sp.py+'px;background-size:'+sp.sheetW+'px '+sp.sheetH+'px;background-repeat:no-repeat"></div></div>';return '<div style="width:24px;height:24px;background:#374151;border-radius:2px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:#fff">'+c+'</div>';})()} </td>
         <td class="p-2 font-bold">
           <a href="https://qrz.com/db/${baseCall(call)}" target="_blank" class="hover:underline text-blue-400">${call}</a>
         </td>
