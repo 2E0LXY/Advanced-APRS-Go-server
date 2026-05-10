@@ -5449,6 +5449,23 @@ function detectNets(msgStore) {
     .sort(function(a,b){ return b[1]-a[1]; }).slice(0, 8);
 }
 
+function makeRows(arr, cols, tbodyId) {
+  var tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  arr.forEach(function(row, i) {
+    var medal = i===0 ? '🥇' : i===1 ? '🥈' : i===2 ? '🥉' : String(i+1);
+    var tr = document.createElement('tr');
+    tr.className = 'hover:bg-gray-800 cursor-pointer';
+    tr.dataset.call = row.call;
+    var h = '<td class="p-2 text-center text-gray-400">' + medal + '</td>';
+    cols.forEach(function(c) { h += '<td class="p-2 ' + (c.cls||'') + '">' + c.val(row) + '</td>'; });
+    tr.innerHTML = h;
+    tr.onclick = function(){ openDetail(row.call); };
+    tbody.appendChild(tr);
+  });
+}
+
 function renderLeaderboard() {
   if (document.getElementById('leaderboard-panel').classList.contains('hidden')) return;
 
