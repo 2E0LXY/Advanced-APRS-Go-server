@@ -77,7 +77,7 @@
   </div>
 
   <!-- SIDEBAR -->
-  <div id="controls-sidebar" class="w-64 bg-gray-800 border-r border-gray-700 p-3 flex flex-col space-y-4 overflow-y-auto z-20 text-sm">
+  <div id="controls-sidebar" class="w-64 bg-gray-800 border-r border-gray-700 p-3 flex flex-col space-y-4 overflow-y-auto z-20 text-sm" style="position:relative">
     <div>
       <h3 class="text-xs uppercase text-gray-400 font-bold mb-2">Map Style</h3>
       <select id="map-style" class="w-full bg-gray-700 p-1.5 rounded outline-none mb-2" onchange="changeMapStyle()">
@@ -222,17 +222,17 @@
 
       </div>
     </div>
-  </div>
-
-  <!-- Sidebar toggle -->
-  <button onclick="toggleSidebar()" id="sidebar-tab"
-    style="position:absolute;left:0;top:50%;transform:translateY(-50%);
-           width:14px;height:44px;z-index:25;display:flex;align-items:center;
-           justify-content:center;background:#374151;border:1px solid #4b5563;
-           border-left:none;border-radius:0 4px 4px 0;cursor:pointer;
-           color:#9ca3af;box-shadow:2px 0 4px rgba(0,0,0,0.3)">
-    <span id="sidebar-arrow" style="font-size:9px;line-height:1;user-select:none">◀</span>
-  </button>
+  
+    <!-- Sidebar collapse tab - sits on right edge of sidebar -->
+    <button onclick="toggleSidebar()" id="sidebar-tab"
+      style="position:absolute;top:50%;right:-14px;transform:translateY(-50%);
+             width:14px;height:44px;z-index:25;display:flex;align-items:center;
+             justify-content:center;background:#374151;border:1px solid #4b5563;
+             border-left:none;border-radius:0 4px 4px 0;cursor:pointer;
+             color:#9ca3af;box-shadow:2px 0 4px rgba(0,0,0,0.3)">
+      <span id="sidebar-arrow" style="font-size:9px;line-height:1;user-select:none">◀</span>
+    </button>
+</div>
 
   <!-- PANELS -->
   <div class="flex-1 relative">
