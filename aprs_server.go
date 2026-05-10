@@ -11,6 +11,7 @@ import (
 	"math"
 	"net"
 	"crypto/rand"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -248,6 +249,7 @@ func main() {
 	http.HandleFunc("/api/keys/", basicAuth(handleAPIKeyDelete))
 	http.HandleFunc("/api/export/geojson", handleGeoJSON)
 	http.HandleFunc("/api/export/kml", handleKML)
+	http.HandleFunc("/api/tle", handleTLE)
 	http.HandleFunc("/api/ariss", handleARISS)
 	http.HandleFunc("/api/version", handleVersion)
 	http.HandleFunc("/api/messages", handleMessages)
@@ -1277,6 +1279,62 @@ func handleConfigDemo(w http.ResponseWriter, r *http.Request) {
 	}
 	config.RUnlock()
 	json.NewEncoder(w).Encode(redacted)
+}
+
+
+// handleTLE proxies TLE data from Celestrak for ISS and ARISS satellites.
+// Caches for 6 hours since TLEs change slowly.
+var (
+	tleCache    string
+	tleCacheAt  time.Time
+	tleCacheMu  sync.Mutex
+)
+
+func handleTLE(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Cache-Control", "max-age=3600")
+
+	tleCacheMu.Lock()
+	defer tleCacheMu.Unlock()
+
+	// Return cache if fresh (< 6 hours)
+	if tleCache != "" && time.Since(tleCacheAt) < 6*time.Hour {
+		w.Write([]byte(tleCache))
+		return
+	}
+
+	// Fetch fresh TLEs from Celestrak
+	client := &http.Client{Timeout: 10 * time.Second}
+	urls := []string{
+		"https://celestrak.org/SATCAT/tle.php?CATNR=25544",
+		"https://celestrak.org/SATCAT/tle.php?CATNR=25544&FORMAT=TLE",
+		"https://live.ariss.org/iss.txt",
+	}
+
+	for _, url := range urls {
+		resp, err := client.Get(url)
+		if err != nil { continue }
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil || len(body) < 50 { continue }
+		tleCache = string(body)
+		tleCacheAt = time.Now()
+		w.Write(body)
+		return
+	}
+
+	// Final fallback - Celestrak GPS-based endpoint
+	resp, err := client.Get("https://celestrak.org/SATCAT/tle.php?GROUP=stations&FORMAT=TLE")
+	if err != nil {
+		http.Error(w, "TLE fetch failed", 502)
+		return
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	tleCache = string(body)
+	tleCacheAt = time.Now()
+	w.Write(body)
 }
 
 // handleWhoami returns the authenticated username — used by the frontend

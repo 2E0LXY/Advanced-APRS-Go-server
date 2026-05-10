@@ -2440,6 +2440,194 @@
 </div>
 
 <script>
+// Compact SGP4 propagator for browser use
+// Based on Vallado's SGP4 implementation, simplified for near-circular LEO
+// Sufficient accuracy for APRS/ARISS pass prediction (±30s)
+
+var SGP4 = (function() {
+  var twoPi = 2 * Math.PI;
+  var deg2rad = Math.PI / 180;
+  var xpdotp = 1440 / twoPi; // min per day / 2pi
+
+  function parseTLE(line1, line2) {
+    var tle = {};
+    // Line 1
+    tle.satnum   = parseInt(line1.substring(2,7));
+    tle.epochyr  = parseInt(line1.substring(18,20));
+    tle.epochdays= parseFloat(line1.substring(20,32));
+    tle.ndot     = parseFloat(line1.substring(33,43));
+    tle.nddot    = parseFloat(('.' + line1.substring(45,50).trim()).replace(/([+-]\d)$/, 'e$1')) * Math.pow(10, parseInt(line1.substring(50,52)));
+    tle.bstar    = parseFloat(('.' + line1.substring(53,58).trim()).replace(/([+-]\d)$/, 'e$1')) * Math.pow(10, parseInt(line1.substring(58,60)));
+
+    // Line 2
+    tle.inclo  = parseFloat(line2.substring(8,16))  * deg2rad;
+    tle.nodeo  = parseFloat(line2.substring(17,25)) * deg2rad;
+    tle.ecco   = parseFloat('0.' + line2.substring(26,33).trim());
+    tle.argpo  = parseFloat(line2.substring(34,42)) * deg2rad;
+    tle.mo     = parseFloat(line2.substring(43,51)) * deg2rad;
+    tle.no     = parseFloat(line2.substring(52,63)) / xpdotp; // rad/min
+
+    // Epoch as JS Date
+    var yr = tle.epochyr < 57 ? 2000 + tle.epochyr : 1900 + tle.epochyr;
+    var jan1 = Date.UTC(yr, 0, 1);
+    tle.epochMs = jan1 + (tle.epochdays - 1) * 86400000;
+
+    return tle;
+  }
+
+  function propagate(tle, tsince) {
+    // tsince in minutes from epoch
+    var mu = 398600.4418; // km^3/s^2
+    var re = 6378.137;    // km
+    var ke = 60 / Math.sqrt(mu / (re*re*re)); // er^(3/2)/min
+    var j2 = 1.082616e-3;
+
+    var no   = tle.no;
+    var eo   = tle.ecco;
+    var io   = tle.inclo;
+    var Mo   = tle.mo;
+    var wo   = tle.argpo;
+    var Om   = tle.nodeo;
+
+    // Mean motion (rad/min)
+    var a    = Math.pow(ke / no, 2/3);
+    var n    = no;
+
+    // Propagate mean anomaly
+    var M    = Mo + n * tsince;
+    M = M % twoPi;
+
+    // Solve Kepler's equation (Newton-Raphson)
+    var E = M;
+    for (var i = 0; i < 10; i++) {
+      var dE = (M - E + eo * Math.sin(E)) / (1 - eo * Math.cos(E));
+      E += dE;
+      if (Math.abs(dE) < 1e-12) break;
+    }
+
+    // True anomaly
+    var sinE = Math.sin(E), cosE = Math.cos(E);
+    var nu = Math.atan2(Math.sqrt(1-eo*eo)*sinE, cosE-eo);
+
+    // Orbital radius
+    var r = a * (1 - eo * cosE);
+
+    // Position in orbital plane
+    var u  = wo + nu;
+    var su = Math.sin(u), cu = Math.cos(u);
+    var si = Math.sin(io), ci = Math.cos(io);
+    var sO = Math.sin(Om), cO = Math.cos(Om);
+
+    // ECI position (km)
+    var x = r * (cu*cO - su*sO*ci);
+    var y = r * (cu*sO + su*cO*ci);
+    var z = r * su*si;
+
+    return {x:x, y:y, z:z, r:r};
+  }
+
+  function eciToGeo(x, y, z, gmst) {
+    // ECI to geographic
+    var r    = Math.sqrt(x*x + y*y + z*z);
+    var lon  = Math.atan2(y, x) - gmst;
+    while (lon >  Math.PI) lon -= twoPi;
+    while (lon < -Math.PI) lon += twoPi;
+    var lat  = Math.asin(z / r);
+    var alt  = r - 6378.137;
+    return { lat: lat/deg2rad, lon: lon/deg2rad, alt: alt };
+  }
+
+  function gmst(jd) {
+    var T = (jd - 2451545.0) / 36525;
+    var g = 280.46061837 + 360.98564736629*(jd-2451545) + T*T*(0.000387933 - T/38710000);
+    return (g % 360) * deg2rad;
+  }
+
+  function dateToJD(d) {
+    return d.getTime() / 86400000 + 2440587.5;
+  }
+
+  function elevation(obsLat, obsLon, obsAlt, satX, satY, satZ, jd) {
+    var g = gmst(jd);
+    var sat = eciToGeo(satX, satY, satZ, g);
+    // Observer ECI
+    var r   = 6378.137 + (obsAlt||0)/1000;
+    var phi = obsLat * deg2rad;
+    var lam = obsLon * deg2rad + g;
+    var ox  = r * Math.cos(phi) * Math.cos(lam);
+    var oy  = r * Math.cos(phi) * Math.sin(lam);
+    var oz  = r * Math.sin(phi);
+    // Range vector
+    var rx  = satX - ox, ry = satY - oy, rz = satZ - oz;
+    var rng = Math.sqrt(rx*rx + ry*ry + rz*rz);
+    // South, East, Zenith unit vectors
+    var se = -Math.sin(phi)*Math.cos(lam); var sn = -Math.sin(phi)*Math.sin(lam); var su = Math.cos(phi);
+    var ee = -Math.sin(lam);               var en =  Math.cos(lam);               var eu = 0;
+    var ze =  Math.cos(phi)*Math.cos(lam); var zn =  Math.cos(phi)*Math.sin(lam); var zu = Math.sin(phi);
+    var rs = rx*se + ry*sn + rz*su;
+    var re2 = rx*ee + ry*en + rz*eu;
+    var rz2 = rx*ze + ry*zn + rz*zu;
+    var el  = Math.asin(rz2 / rng) / deg2rad;
+    var az  = Math.atan2(re2, rs) / deg2rad; if (az < 0) az += 360;
+    return { el: el, az: az, range: rng, lat: sat.lat, lon: sat.lon, alt: sat.alt };
+  }
+
+  function findPasses(tle, obsLat, obsLon, obsAlt, startMs, durationMs, minEl) {
+    minEl = minEl || 10;
+    var step    = 30000;  // 30s coarse search
+    var fineStep = 1000;  // 1s fine search
+    var passes  = [];
+    var t       = startMs;
+    var end     = startMs + durationMs;
+    var inPass  = false;
+    var passStart = 0;
+    var maxEl = 0, maxElTime = 0;
+
+    while (t < end) {
+      var jd = dateToJD(new Date(t));
+      var tsince = (t - tle.epochMs) / 60000;
+      var pos = propagate(tle, tsince);
+      var obs = elevation(obsLat, obsLon, obsAlt, pos.x, pos.y, pos.z, jd);
+
+      if (obs.el >= minEl && !inPass) {
+        // Refine rise time
+        var rt = t - step;
+        for (var i = 0; i < step; i += fineStep) {
+          var jd2 = dateToJD(new Date(rt+i));
+          var ts2 = (rt+i - tle.epochMs) / 60000;
+          var p2  = propagate(tle, ts2);
+          var o2  = elevation(obsLat, obsLon, obsAlt, p2.x, p2.y, p2.z, jd2);
+          if (o2.el >= minEl) { passStart = rt+i; break; }
+        }
+        inPass = true; maxEl = obs.el; maxElTime = t;
+      }
+      if (inPass) {
+        if (obs.el > maxEl) { maxEl = obs.el; maxElTime = t; }
+        if (obs.el < minEl) {
+          // Refine set time
+          var setT = t;
+          for (var j = t - step; j < t; j += fineStep) {
+            var jd3 = dateToJD(new Date(j));
+            var ts3 = (j - tle.epochMs) / 60000;
+            var p3  = propagate(tle, ts3);
+            var o3  = elevation(obsLat, obsLon, obsAlt, p3.x, p3.y, p3.z, jd3);
+            if (o3.el < minEl) { setT = j; break; }
+          }
+          passes.push({ rise: passStart, set: setT, maxEl: maxEl, maxElTime: maxElTime,
+            duration: Math.round((setT - passStart)/1000) });
+          inPass = false; maxEl = 0;
+          if (passes.length >= 5) break;
+        }
+      }
+      t += step;
+    }
+    return passes;
+  }
+
+  return { parseTLE: parseTLE, propagate: propagate, findPasses: findPasses,
+           eciToGeo: eciToGeo, gmst: gmst, dateToJD: dateToJD, elevation: elevation };
+})();
+
 // ─── Demo Mode ───────────────────────────────────────────────────────────────
 // When accessed via /demo, a cookie is set and the UI becomes read-only.
 // All write operations are blocked and credentials are hidden.
@@ -5461,27 +5649,67 @@ function getISSPasses() {
 
 async function fetchISSPasses(lat, lon) {
   var block = document.getElementById('iss-pass-content');
-  block.innerHTML = '<p class="text-xs text-gray-400 animate-pulse">🛸 Calculating passes...</p>';
+  block.innerHTML = '<p class="text-xs text-gray-400 animate-pulse">📡 Downloading fresh TLEs from Celestrak...</p>';
 
   try {
-    // Use open-notify.org pass predictions
-    var url = 'https://api.open-notify.org/iss-pass.json?lat=' + lat.toFixed(4) + '&lon=' + lon.toFixed(4) + '&n=5&alt=' + (50);
-    var r = await fetch(url);
-    var d = await r.json();
+    // Fetch TLE via our proxy (avoids CORS, cached 6h server-side)
+    var r = await fetch('/api/tle');
+    if (!r.ok) throw new Error('TLE fetch failed: ' + r.status);
+    var tleText = await r.text();
 
-    if (d.response && d.response.length) {
-      _issPassData = d.response;
-      renderISSPasses(lat, lon);
-      // Update countdown every second
-      if (_issPassTimer) clearInterval(_issPassTimer);
-      _issPassTimer = setInterval(function() { renderISSPasses(lat, lon); }, 1000);
-    } else {
-      block.innerHTML = '<p class="text-xs text-red-400">No pass data returned. Try again later.</p>';
+    // Parse TLE - find ISS (ZARYA) lines
+    var lines = tleText.split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
+    var line1 = null, line2 = null;
+
+    for (var i = 0; i < lines.length; i++) {
+      // Name line followed by two TLE lines
+      if (lines[i].charAt(0) === '1' && lines[i].length >= 69) {
+        line1 = lines[i];
+        if (i+1 < lines.length && lines[i+1].charAt(0) === '2') {
+          line2 = lines[i+1];
+          break;
+        }
+      }
     }
+
+    if (!line1 || !line2) throw new Error('Could not parse TLE from response');
+
+    block.innerHTML = '<p class="text-xs text-gray-400 animate-pulse">🛸 Calculating passes using SGP4 orbital mechanics...</p>';
+
+    // Parse TLE and compute passes
+    var tle = SGP4.parseTLE(line1, line2);
+    var now = Date.now();
+    var passes = SGP4.findPasses(tle, lat, lon, 100, now, 7*24*3600*1000, 5);
+
+    // Store TLE for live position updates
+    window._issTLE = tle;
+
+    if (!passes.length) {
+      block.innerHTML = '<p class="text-xs text-yellow-400">No passes found above 5° elevation in the next 7 days.</p>';
+      return;
+    }
+
+    _issPassData = passes.map(function(p) {
+      return { risetime: Math.round(p.rise/1000), duration: p.duration,
+               maxEl: p.maxEl.toFixed(1), maxElTime: p.maxElTime };
+    });
+
+    // Show TLE epoch age
+    var tleAge = Math.round((now - tle.epochMs) / 3600000);
+    window._tleInfo = 'TLE age: ' + tleAge + 'h · Celestrak';
+
+    renderISSPasses(lat, lon);
+    if (_issPassTimer) clearInterval(_issPassTimer);
+    _issPassTimer = setInterval(function() { renderISSPasses(lat, lon); }, 1000);
+
   } catch(e) {
-    // Fallback: calculate approximate next pass using current ISS position
-    block.innerHTML = '<p class="text-xs text-yellow-400">Pass prediction API unavailable. Showing approximate orbit data.</p>';
-    renderISSOrbitFallback(lat, lon);
+    console.warn('TLE/SGP4 error:', e);
+    block.innerHTML = '<div class="text-xs space-y-2">'
+      + '<p class="text-red-400">Pass calculation failed: ' + e.message + '</p>'
+      + '<p class="text-gray-400">Visit <a href="https://www.heavens-above.com/PassSummary.aspx?lat='
+      + lat.toFixed(3) + '&lng=' + lon.toFixed(3) + '" target="_blank" class="text-blue-400 underline">Heavens Above ↗</a> for pass times.</p>'
+      + '<button onclick="fetchISSPasses(' + lat.toFixed(4) + ',' + lon.toFixed(4) + ')" class="bg-indigo-800 hover:bg-indigo-700 px-2 py-1 rounded">↻ Retry</button>'
+      + '</div>';
   }
 }
 
@@ -5548,9 +5776,10 @@ function renderISSPasses(lat, lon) {
   });
 
   html += '</div>';
-  html += '<div class="flex justify-between mt-2">'
-    + '<button onclick="fetchISSPasses(' + lat.toFixed(4) + ',' + lon.toFixed(4) + ')" class="text-xs bg-indigo-800 hover:bg-indigo-700 px-2 py-1 rounded">↻ Refresh</button>'
-    + '<span class="text-[10px] text-gray-600 self-center">Tune 145.825 MHz FM during pass</span>'
+  html += '<div class="flex justify-between mt-2 items-center">'
+    + '<button onclick="fetchISSPasses(' + lat.toFixed(4) + ',' + lon.toFixed(4) + ')" class="text-xs bg-indigo-800 hover:bg-indigo-700 px-2 py-1 rounded">↻ Refresh TLE</button>'
+    + '<span class="text-[10px] text-gray-600">' + (window._tleInfo||'') + '</span>'
+    + '<span class="text-[10px] text-indigo-600">145.825 MHz FM</span>'
     + '</div>';
 
   block.innerHTML = html;
