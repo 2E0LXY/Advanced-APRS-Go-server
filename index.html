@@ -5602,27 +5602,29 @@ function isMoving(st) {
     (st.movement && st.movement.spd > 0);
 }
 
-function detectNets(msgStore) {
-  // Group messages by conversation and detect nets/patterns
+function detectNets(msgs) {
   var groups = {};
-  msgStore.forEach(function(m) {
-    // NTS net detection - look for BLN, NTS in callsigns
-    var src = (m.from || '').toUpperCase();
-    var dst = (m.to || '').toUpperCase();
-    if (src.includes('NTS') || dst.includes('NTS')) {
-      groups['NTS Net'] = (groups['NTS Net'] || 0) + 1;
-    }
-    if (src.includes('ARISS') || dst.includes('RS0ISS') || dst.includes('NA1SS')) {
-      groups['ARISS / ISS'] = (groups['ARISS / ISS'] || 0) + 1;
-    }
-    // Detect message clusters - same dest getting many messages
-    if (dst && dst.length >= 3 && !dst.includes('*')) {
-      groups[dst + ' net'] = (groups[dst + ' net'] || 0) + 1;
+  msgs.forEach(function(m) {
+    var src = (m.from || '').toUpperCase().split('-')[0];
+    var dst = (m.to  || '').toUpperCase().split('-')[0];
+    // Known net patterns
+    if (src.includes('NTS') || dst === 'NTS')        { groups['NTS Net']    = (groups['NTS Net']    || 0) + 1; }
+    if (dst === 'RS0ISS' || dst === 'NA1SS' || dst === 'OR4ISS') { groups['ARISS/ISS'] = (groups['ARISS/ISS'] || 0) + 1; }
+    if (src.includes('ARISS'))                        { groups['ARISS/ISS'] = (groups['ARISS/ISS'] || 0) + 1; }
+    if (dst === 'SMSGTE' || dst === 'EMAIL')          { groups['SMS/Email Gateway'] = (groups['SMS/Email Gateway'] || 0) + 1; }
+    if (dst === 'WXBOT'  || dst === 'WX')             { groups['Weather Bot'] = (groups['Weather Bot'] || 0) + 1; }
+    if (dst === 'ANSRVR')                             { groups['ANSRVR Net']  = (groups['ANSRVR Net']  || 0) + 1; }
+    // Callsign cluster: >2 different sources messaging same dest
+    if (dst && dst.length >= 3 && !['BLN','INFO','QUERY'].includes(dst)) {
+      var key = dst + ' traffic';
+      groups[key] = (groups[key] || 0) + 1;
     }
   });
-  // Remove clusters with < 3 messages
-  return Object.entries(groups).filter(function(e){ return e[1] >= 2; })
-    .sort(function(a,b){ return b[1]-a[1]; }).slice(0, 8);
+  // Only show groups with 2+ messages, hide low-value solo traffic
+  return Object.entries(groups)
+    .filter(function(e){ return e[1] >= 2; })
+    .sort(function(a,b){ return b[1]-a[1]; })
+    .slice(0, 8);
 }
 
 function makeRows(arr, cols, tbodyId) {
@@ -5674,7 +5676,17 @@ function renderLeaderboard() {
   makeRows(byPackets, [
     { val: function(r){ return '<a class="text-rose-400 hover:underline">' + r.call + '</a>'; } },
     { val: function(r){ return r.packets; }, cls:'text-right text-orange-400 font-bold' },
-    { val: function(r){ return r.ago < 60 ? r.ago+'s' : Math.floor(r.ago/60)+'m'; }, cls:'text-right text-gray-500' },
+    { val: function(r){
+        // Show first heard time if available
+        if (r.st.positions && r.st.positions.length > 1) {
+          var firstTs = r.st.positions[0].ts;
+          var sessionAge = Math.floor(Date.now()/1000) - firstTs;
+          if (sessionAge < 60) return sessionAge+'s';
+          if (sessionAge < 3600) return Math.floor(sessionAge/60)+'m';
+          return Math.floor(sessionAge/3600)+'h'+Math.floor((sessionAge%3600)/60)+'m';
+        }
+        return r.ago < 60 ? r.ago+'s' : Math.floor(r.ago/60)+'m';
+      }, cls:'text-right text-gray-500' },
   ], 'lb-most-packets');
 
   // Farthest - need server geofence centre
@@ -5699,7 +5711,11 @@ function renderLeaderboard() {
   var byRecent = active.slice().sort(function(a,b){ return a.ago - b.ago; }).slice(0,10);
   makeRows(byRecent, [
     { val: function(r){ return '<a class="text-green-400 hover:underline">' + r.call + '</a>'; } },
-    { val: function(r){ return r.ago < 60 ? r.ago+'s ago' : Math.floor(r.ago/60)+'m ago'; }, cls:'text-right text-green-300' },
+    { val: function(r){
+        if (r.ago < 60) return r.ago+'s ago';
+        if (r.ago < 3600) return Math.floor(r.ago/60)+'m '+Math.floor(r.ago%60)+'s ago';
+        return Math.floor(r.ago/3600)+'h '+Math.floor((r.ago%3600)/60)+'m ago';
+      }, cls:'text-right text-green-300' },
     { val: function(r){ return stationTypeLabel(r.st); }, cls:'text-right text-gray-500' },
   ], 'lb-recent');
 
@@ -5713,7 +5729,7 @@ function renderLeaderboard() {
   ], 'lb-fastest');
 
   // Nets
-  var nets = detectNets(typeof msgStore !== 'undefined' ? msgStore : []);
+  var nets = detectNets(msgStore);
   var netsEl = document.getElementById('lb-nets');
   var netsEmpty = document.getElementById('lb-nets-empty');
   if (nets.length) {
@@ -5728,7 +5744,7 @@ function renderLeaderboard() {
   }
 
   // Message board
-  var msgs = typeof msgStore !== 'undefined' ? msgStore : [];
+  var msgs = msgStore || [];
   var msgBoard = document.getElementById('lb-msg-board');
   var msgEmpty = document.getElementById('lb-msg-empty');
   var msgCount = document.getElementById('lb-msg-count');
