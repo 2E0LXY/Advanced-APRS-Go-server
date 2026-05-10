@@ -1304,37 +1304,58 @@ func handleTLE(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch fresh TLEs from Celestrak
 	client := &http.Client{Timeout: 10 * time.Second}
-	urls := []string{
-		"https://celestrak.org/SATCAT/tle.php?CATNR=25544",
-		"https://celestrak.org/SATCAT/tle.php?CATNR=25544&FORMAT=TLE",
-		"https://live.ariss.org/iss.txt",
-	}
 
-	for _, url := range urls {
-		resp, err := client.Get(url)
-		if err != nil { continue }
-		body, err := io.ReadAll(resp.Body)
+	// Primary: live.ariss.org - always has current ISS TLE in 3-line format
+	if resp, err := client.Get("https://live.ariss.org/iss.txt"); err == nil {
+		if body, err := io.ReadAll(resp.Body); err == nil && len(body) > 50 {
+			resp.Body.Close()
+			tleCache = string(body)
+			tleCacheAt = time.Now()
+			w.Write(body)
+			return
+		}
 		resp.Body.Close()
-		if err != nil || len(body) < 50 { continue }
-		tleCache = string(body)
-		tleCacheAt = time.Now()
-		w.Write(body)
-		return
 	}
 
-	// Final fallback - Celestrak GPS-based endpoint
-	resp, err := client.Get("https://celestrak.org/SATCAT/tle.php?GROUP=stations&FORMAT=TLE")
-	if err != nil {
-		http.Error(w, "TLE fetch failed", 502)
-		return
+	// Secondary: wheretheiss.at JSON API - extract TLE fields
+	if resp, err := client.Get("https://api.wheretheiss.at/v1/satellites/25544/tles?units=miles"); err == nil {
+		var result map[string]interface{}
+		if err2 := json.NewDecoder(resp.Body).Decode(&result); err2 == nil {
+			resp.Body.Close()
+			name, _ := result["name"].(string)
+			l1, _   := result["line1"].(string)
+			l2, _   := result["line2"].(string)
+			if l1 != "" && l2 != "" {
+				text := name + "\n" + l1 + "\n" + l2 + "\n"
+				tleCache = text
+				tleCacheAt = time.Now()
+				w.Write([]byte(text))
+				return
+			}
+		} else {
+			resp.Body.Close()
+		}
 	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	tleCache = string(body)
-	tleCacheAt = time.Now()
-	w.Write(body)
+
+	// Tertiary: Celestrak (may be slow/blocked from some servers)
+	for _, url := range []string{
+		"https://celestrak.org/SATCAT/tle.php?CATNR=25544&FORMAT=TLE",
+		"https://celestrak.com/SATCAT/tle.php?CATNR=25544&FORMAT=TLE",
+	} {
+		if resp, err := client.Get(url); err == nil {
+			if body, err := io.ReadAll(resp.Body); err == nil && len(body) > 50 {
+				resp.Body.Close()
+				tleCache = string(body)
+				tleCacheAt = time.Now()
+				w.Write(body)
+				return
+			}
+			resp.Body.Close()
+		}
+	}
+
+	http.Error(w, "Could not fetch TLE from any source", 502)
 }
 
 // handleWhoami returns the authenticated username — used by the frontend

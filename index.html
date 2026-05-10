@@ -1961,7 +1961,7 @@
           <h3 class="text-sm font-bold text-gray-300 uppercase mb-3">APRS-IS Uplink</h3>
           <div class="grid grid-cols-2 gap-3 mb-3">
             <div><label class="block text-gray-500 text-xs mb-1">Callsign</label><input type="text" id="admCall" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-red-500 uppercase text-sm" oninput="autoPasscode(this.value)"></div>
-            <div><label class="block text-gray-500 text-xs mb-1">Passcode</label><input type="password" id="admPass" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-red-500 text-sm"></div>
+            <div><label class="block text-gray-500 text-xs mb-1">Passcode</label><form onsubmit="return false;" style="display:contents"><input type="password" id="admPass" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-red-500 text-sm" autocomplete="current-password"></form></div>
           </div>
           <div class="mb-3">
             <label class="block text-gray-500 text-xs mb-1">Upstream Server</label>
@@ -2993,9 +2993,17 @@ function connectWS() {
 
 async function loadHistory() {
   try {
-    const r = await fetch('/api/history'), d = await r.json();
-    if (!d) return;
-    d.sort((a,b)=>a.ts-b.ts).forEach(p=>updateStation(p.call,p.path,p.lat,p.lon,p.phg,p.ts,p.raw,p.sym));
+    // History comes via WS replay - this is just a fallback fetch
+    var headers = {};
+    var h = getAuthHeaders ? getAuthHeaders() : null;
+    if (h) headers = h;
+    var r = await fetch('/api/history', {headers: headers});
+    if (!r.ok) return; // 401 = no key, rely on WS replay instead
+    var d = await r.json();
+    if (!d || !Array.isArray(d)) return;
+    d.sort(function(a,b){return a.ts-b.ts;}).forEach(function(p){
+      updateStation(p.call,p.path,p.lat,p.lon,p.phg,p.ts,p.raw,p.sym);
+    });
     redrawMap(); renderList();
   } catch(e) { console.error('History fail',e); }
 }
