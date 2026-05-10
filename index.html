@@ -225,12 +225,12 @@
   
     <!-- Sidebar collapse tab - sits on right edge of sidebar -->
     <button onclick="toggleSidebar()" id="sidebar-tab"
-      style="position:absolute;top:50%;right:-14px;transform:translateY(-50%);
-             width:14px;height:44px;z-index:25;display:flex;align-items:center;
+      style="position:absolute;top:50%;right:-18px;transform:translateY(-50%);
+             width:18px;height:48px;z-index:25;display:flex;align-items:center;
              justify-content:center;background:#374151;border:1px solid #4b5563;
-             border-left:none;border-radius:0 4px 4px 0;cursor:pointer;
-             color:#9ca3af;box-shadow:2px 0 4px rgba(0,0,0,0.3)">
-      <span id="sidebar-arrow" style="font-size:9px;line-height:1;user-select:none">◀</span>
+             border-left:none;border-radius:0 6px 6px 0;cursor:pointer;
+             color:#d1d5db;font-size:11px;box-shadow:3px 0 6px rgba(0,0,0,0.4)">
+      <span id="sidebar-arrow" style="user-select:none;pointer-events:none">&#9664;</span>
     </button>
 </div>
 
@@ -2827,24 +2827,81 @@ function toggleOverlay(type) {
 // Built-in Maidenhead grid overlay (fallback when plugin not available)
 function drawMaidenheadGrid() {
   var layers = [];
-  var letters = 'ABCDEFGHIJKLMNOPQRSTUVWX';
-  // Draw field boundaries (2-char grid)
-  for (var i = 0; i < 18; i++) {
-    for (var j = 0; j < 18; j++) {
-      var lon1 = i*20 - 180, lat1 = j*10 - 90;
-      var rect = L.rectangle([[lat1,lon1],[lat1+10,lon1+20]], {
-        color:'#6366f1', weight:1, opacity:0.5, fill:false
-      }).addTo(map);
-      layers.push(rect);
-      var lbl = L.marker([(lat1+5),(lon1+10)], {
-        icon: L.divIcon({html:'<span style="color:#818cf8;font-size:9px;font-weight:bold;opacity:0.7">'+letters[i]+letters[j]+'</span>',
-          className:'', iconSize:[20,10], iconAnchor:[10,5]})
-      }).addTo(map);
-      layers.push(lbl);
+  var A = 'ABCDEFGHIJKLMNOPQRSTUVWX';
+  var zoom = map.getZoom();
+  var bounds = map.getBounds().pad(0.1);
+
+  if (zoom < 7) {
+    // Zoom <7: draw field squares (2 char: e.g. IO) - 20°x10° each
+    for (var i = 0; i < 18; i++) {
+      for (var j = 0; j < 18; j++) {
+        var lon1=i*20-180, lat1=j*10-90, lon2=lon1+20, lat2=lat1+10;
+        if (!bounds.intersects([[lat1,lon1],[lat2,lon2]])) continue;
+        layers.push(L.rectangle([[lat1,lon1],[lat2,lon2]],{color:'#6366f1',weight:1,opacity:0.5,fill:false}).addTo(map));
+        layers.push(L.marker([lat1+5,lon1+10],{icon:L.divIcon({
+          html:'<span style="color:#818cf8;font-size:11px;font-weight:bold;opacity:0.8">'+A[i]+A[j]+'</span>',
+          className:'',iconSize:[24,12],iconAnchor:[12,6]})}).addTo(map));
+      }
+    }
+  } else if (zoom < 11) {
+    // Zoom 7-10: draw square grid (4 char: e.g. IO93) - 2°x1° each
+    for (var i = 0; i < 18; i++) {
+      for (var j = 0; j < 18; j++) {
+        var flon=i*20-180, flat=j*10-90;
+        for (var x = 0; x < 10; x++) {
+          for (var y = 0; y < 10; y++) {
+            var lon1=flon+x*2, lat1=flat+y, lon2=lon1+2, lat2=lat1+1;
+            if (!bounds.intersects([[lat1,lon1],[lat2,lon2]])) continue;
+            layers.push(L.rectangle([[lat1,lon1],[lat2,lon2]],{color:'#6366f1',weight:0.5,opacity:0.4,fill:false}).addTo(map));
+            layers.push(L.marker([lat1+0.5,lon1+1],{icon:L.divIcon({
+              html:'<span style="color:#818cf8;font-size:9px;opacity:0.7">'+A[i]+A[j]+x+y+'</span>',
+              className:'',iconSize:[28,10],iconAnchor:[14,5]})}).addTo(map));
+          }
+        }
+      }
+    }
+  } else {
+    // Zoom 11+: draw subsquare grid (6 char: e.g. IO93jm) - 5'x2.5' each
+    var b = bounds;
+    var lonStep = 5/60, latStep = 2.5/60;
+    // Find field+square for visible area
+    for (var lon1 = Math.floor(b.getWest()/2)*2; lon1 < b.getEast(); lon1 += 2) {
+      for (var lat1 = Math.floor(b.getSouth()); lat1 < b.getNorth(); lat1 += 1) {
+        // Draw 24x24 subsquares within this square
+        for (var sx = 0; sx < 24; sx++) {
+          for (var sy = 0; sy < 24; sy++) {
+            var slon1=lon1+sx*lonStep, slat1=lat1+sy*latStep;
+            var slon2=slon1+lonStep,   slat2=slat1+latStep;
+            if (!bounds.intersects([[slat1,slon1],[slat2,slon2]])) continue;
+            var lbl = A[sx].toLowerCase()+A[sy].toLowerCase();
+            layers.push(L.rectangle([[slat1,slon1],[slat2,slon2]],{color:'#818cf8',weight:0.3,opacity:0.3,fill:false}).addTo(map));
+            if (zoom >= 13) {
+              layers.push(L.marker([slat1+latStep/2,slon1+lonStep/2],{icon:L.divIcon({
+                html:'<span style="color:#a5b4fc;font-size:7px;opacity:0.6">'+lbl+'</span>',
+                className:'',iconSize:[16,8],iconAnchor:[8,4]})}).addTo(map));
+            }
+          }
+        }
+      }
     }
   }
-  // Return a fake layer group
-  return { removeFrom: function(m){ layers.forEach(function(l){ m.removeLayer(l); }); }, _layers: layers };
+
+  // Redraw grid when map moves/zooms
+  var redrawGrid = function() {
+    layers.forEach(function(l){ map.removeLayer(l); });
+    layers = [];
+    var newGrid = drawMaidenheadGrid();
+    layers = newGrid._layers;
+  };
+  map.on('zoomend moveend', redrawGrid);
+
+  return {
+    removeFrom: function(m) {
+      layers.forEach(function(l){ m.removeLayer(l); });
+      map.off('zoomend moveend', redrawGrid);
+    },
+    _layers: layers
+  };
 }
 
 function togglePanel(panel) {
