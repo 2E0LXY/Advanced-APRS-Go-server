@@ -2477,20 +2477,21 @@ var SGP4 = (function() {
 
   function propagate(tle, tsince) {
     // tsince in minutes from epoch
-    var mu = 398600.4418; // km^3/s^2
-    var re = 6378.137;    // km
-    var ke = 60 / Math.sqrt(mu / (re*re*re)); // er^(3/2)/min
-    var j2 = 1.082616e-3;
+    // Using Earth radii (ER) as distance unit, 1 ER = 6378.137 km
+    var re = 6378.137;      // km per Earth radius
+    var mu = 398600.4418;   // km^3/s^2
+    // ke = sqrt(mu) in ER^3/min: sqrt(398600.4418 * 60^2 / 6378.137^3)
+    var ke = 0.0743669161;  // ER^(3/2)/min - standard SGP4 constant
 
-    var no   = tle.no;
+    var no   = tle.no;      // rad/min
     var eo   = tle.ecco;
     var io   = tle.inclo;
     var Mo   = tle.mo;
     var wo   = tle.argpo;
     var Om   = tle.nodeo;
 
-    // Mean motion (rad/min)
-    var a    = Math.pow(ke / no, 2/3);
+    // Semi-major axis in Earth radii
+    var a    = Math.pow(ke / no, 2/3);  // ER
     var n    = no;
 
     // Propagate mean anomaly
@@ -2518,12 +2519,13 @@ var SGP4 = (function() {
     var si = Math.sin(io), ci = Math.cos(io);
     var sO = Math.sin(Om), cO = Math.cos(Om);
 
-    // ECI position (km)
-    var x = r * (cu*cO - su*sO*ci);
-    var y = r * (cu*sO + su*cO*ci);
-    var z = r * su*si;
+    // ECI position: r is in ER, convert to km
+    var x = r * re * (cu*cO - su*sO*ci);
+    var y = r * re * (cu*sO + su*cO*ci);
+    var z = r * re * su*si;
+    var rkm = r * re;
 
-    return {x:x, y:y, z:z, r:r};
+    return {x:x, y:y, z:z, r:rkm};
   }
 
   function eciToGeo(x, y, z, gmst) {
@@ -5686,7 +5688,7 @@ async function fetchISSPasses(lat, lon) {
     }
     if (!line1 || !line2) {
       console.error('TLE parse failed. Lines:', lines);
-      throw new Error('Could not parse TLE from response (got ' + lines.length + ' lines)');
+      throw new Error('TLE parse failed: got ' + lines.length + ' lines, first: ' + (lines[0]||'empty'));
     }
     console.log('TLE parsed OK:', line1.substring(0,30));
 
@@ -5700,6 +5702,7 @@ async function fetchISSPasses(lat, lon) {
     // Store TLE for live position updates
     window._issTLE = tle;
 
+    console.log('Passes found:', passes.length, passes.map(function(p){ return new Date(p.rise).toISOString(); }));
     if (!passes.length) {
       block.innerHTML = '<p class="text-xs text-yellow-400">No passes found above 5° elevation in the next 7 days.</p>';
       return;
