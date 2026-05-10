@@ -59,6 +59,22 @@
 <!-- MAIN -->
 <div class="flex-1 relative flex overflow-hidden">
 
+  <!-- Replay Loading Overlay -->
+  <div id="replay-overlay" class="fixed inset-0 z-[100] bg-gray-950/95 flex flex-col items-center justify-center space-y-4">
+    <div class="text-4xl mb-2">📡</div>
+    <h2 class="text-white font-bold text-lg">Loading APRS History</h2>
+    <p class="text-gray-400 text-sm">Replaying last hour of activity from server...</p>
+    <div class="w-64 bg-gray-700 rounded-full h-2 overflow-hidden">
+      <div id="replay-bar" class="bg-blue-500 h-2 rounded-full transition-all duration-200" style="width:0%"></div>
+    </div>
+    <div class="flex items-center space-x-4 text-xs text-gray-400">
+      <span id="replay-packets">0 packets</span>
+      <span id="replay-stations">0 stations</span>
+      <span id="replay-elapsed">0s</span>
+    </div>
+    <p class="text-gray-600 text-xs">Map will appear automatically when complete</p>
+  </div>
+
   <!-- SIDEBAR -->
   <div id="controls-sidebar" class="w-64 bg-gray-800 border-r border-gray-700 p-3 flex flex-col space-y-4 overflow-y-auto z-20 text-sm">
     <div>
@@ -675,11 +691,18 @@
             <span id="iss-last-update" class="text-xs text-gray-500 self-center"></span>
           </div>
         </div>
-        <div class="grid grid-cols-3 gap-3 text-xs">
+        <div class="grid grid-cols-3 gap-3 text-xs" id="iss-info-grid">
           <div class="bg-gray-800 rounded border border-indigo-900 p-3">
             <p class="text-indigo-400 font-bold uppercase mb-1">ISS Position</p>
             <p id="iss-pos" class="font-mono text-white text-sm">Loading...</p>
             <p id="iss-alt" class="text-gray-400 mt-1"></p>
+          </div>
+          <div class="bg-gray-800 rounded border border-indigo-900 p-3 col-span-3" id="iss-pass-block">
+            <p class="text-indigo-400 font-bold uppercase mb-1">Next Pass Over Your Location</p>
+            <div id="iss-pass-content">
+              <button onclick="getISSPasses()" class="text-xs bg-indigo-800 hover:bg-indigo-700 px-3 py-1 rounded">📍 Get Pass Times</button>
+              <span class="text-xs text-gray-500 ml-2">Requires location access</span>
+            </div>
           </div>
           <div class="bg-gray-800 rounded border border-indigo-900 p-3">
             <p class="text-indigo-400 font-bold uppercase mb-1">ARISS Callsign</p>
@@ -1128,6 +1151,13 @@
             <p class="text-indigo-400 font-bold uppercase mb-1">ISS Position</p>
             <p id="iss-pos" class="font-mono text-white text-sm">Loading...</p>
             <p id="iss-alt" class="text-gray-400 mt-1"></p>
+          </div>
+          <div class="bg-gray-800 rounded border border-indigo-900 p-3 col-span-3" id="iss-pass-block">
+            <p class="text-indigo-400 font-bold uppercase mb-1">Next Pass Over Your Location</p>
+            <div id="iss-pass-content">
+              <button onclick="getISSPasses()" class="text-xs bg-indigo-800 hover:bg-indigo-700 px-3 py-1 rounded">📍 Get Pass Times</button>
+              <span class="text-xs text-gray-500 ml-2">Requires location access</span>
+            </div>
           </div>
           <div class="bg-gray-800 rounded border border-indigo-900 p-3">
             <p class="text-indigo-400 font-bold uppercase mb-1">ARISS Callsign</p>
@@ -1687,6 +1717,13 @@
             <p class="text-indigo-400 font-bold uppercase mb-1">ISS Position</p>
             <p id="iss-pos" class="font-mono text-white text-sm">Loading...</p>
             <p id="iss-alt" class="text-gray-400 mt-1"></p>
+          </div>
+          <div class="bg-gray-800 rounded border border-indigo-900 p-3 col-span-3" id="iss-pass-block">
+            <p class="text-indigo-400 font-bold uppercase mb-1">Next Pass Over Your Location</p>
+            <div id="iss-pass-content">
+              <button onclick="getISSPasses()" class="text-xs bg-indigo-800 hover:bg-indigo-700 px-3 py-1 rounded">📍 Get Pass Times</button>
+              <span class="text-xs text-gray-500 ml-2">Requires location access</span>
+            </div>
           </div>
           <div class="bg-gray-800 rounded border border-indigo-900 p-3">
             <p class="text-indigo-400 font-bold uppercase mb-1">ARISS Callsign</p>
@@ -2756,12 +2793,12 @@ function connectWS() {
     } else if (d.type==='rx') {
       packetCount++;
       document.getElementById('rx-count').innerText='RX: '+packetCount;
+      if (_replayActive) updateReplayProgress();
       handleIncoming(d);
     } else if (d.type==='msg_history') {
       if (d.data) logMsgHistory(d.data);
     } else if (d.type==='replay_done') {
-      redrawMap(); renderList();
-      logChat('SERVER','Replay complete — showing last hour of activity','text-indigo-400');
+      finishReplay();
     }
   };
 }
@@ -5337,7 +5374,217 @@ setInterval(function() {
   }
 }, 30000);
 
+
+// ─── Replay Loading Overlay ───────────────────────────────────────────────────
+var _replayActive  = true;
+var _replayStart   = Date.now();
+var _replayPackets = 0;
+var _replayTimer   = null;
+
+// Estimate ring buffer size from /api/status for progress bar
+// If we can't get it, animate indefinitely
+async function initReplayProgress() {
+  try {
+    var r = await fetch('/api/status');
+    var d = await r.json();
+    window._replayTotal = d.ring_size || d.packets_rx || 500;
+  } catch(e) {
+    window._replayTotal = 500;
+  }
+  // Elapsed timer
+  _replayTimer = setInterval(function() {
+    var el = document.getElementById('replay-elapsed');
+    if (el) el.innerText = ((Date.now()-_replayStart)/1000).toFixed(0) + 's';
+  }, 500);
+}
+
+function updateReplayProgress() {
+  _replayPackets++;
+  var total = window._replayTotal || 500;
+  var pct   = Math.min(95, (_replayPackets / total) * 100);
+  var bar   = document.getElementById('replay-bar');
+  var pkts  = document.getElementById('replay-packets');
+  var stns  = document.getElementById('replay-stations');
+  if (bar)  bar.style.width  = pct + '%';
+  if (pkts) pkts.innerText  = _replayPackets + ' packets';
+  if (stns) stns.innerText  = Object.keys(stations).length + ' stations';
+}
+
+function finishReplay() {
+  _replayActive = false;
+  if (_replayTimer) { clearInterval(_replayTimer); _replayTimer = null; }
+
+  // Complete the bar
+  var bar = document.getElementById('replay-bar');
+  if (bar) { bar.style.width = '100%'; bar.classList.replace('bg-blue-500','bg-green-500'); }
+
+  // Short pause then hide overlay
+  setTimeout(function() {
+    var overlay = document.getElementById('replay-overlay');
+    if (overlay) {
+      overlay.style.transition = 'opacity 0.4s';
+      overlay.style.opacity = '0';
+      setTimeout(function(){ overlay.style.display = 'none'; }, 400);
+    }
+    redrawMap();
+    renderList();
+    logChat('SERVER', 'Replay complete — ' + _replayPackets + ' packets · ' + Object.keys(stations).length + ' stations', 'text-indigo-400');
+  }, 400);
+}
+
+
+// ─── ISS Pass Prediction ──────────────────────────────────────────────────────
+var _issPassTimer = null;
+var _issPassData  = null;
+var _userLat = null, _userLon = null;
+
+function getISSPasses() {
+  var block = document.getElementById('iss-pass-content');
+  if (!block) return;
+
+  if (!navigator.geolocation) {
+    block.innerHTML = '<p class="text-xs text-red-400">Geolocation not supported in this browser</p>';
+    return;
+  }
+
+  block.innerHTML = '<p class="text-xs text-gray-400 animate-pulse">📍 Getting your location...</p>';
+
+  navigator.geolocation.getCurrentPosition(function(pos) {
+    _userLat = pos.coords.latitude;
+    _userLon = pos.coords.longitude;
+    fetchISSPasses(_userLat, _userLon);
+  }, function(err) {
+    block.innerHTML = '<p class="text-xs text-red-400">Location denied: ' + err.message + '</p>'
+      + '<button onclick="getISSPasses()" class="text-xs bg-indigo-800 hover:bg-indigo-700 px-2 py-1 rounded mt-1">Retry</button>';
+  });
+}
+
+async function fetchISSPasses(lat, lon) {
+  var block = document.getElementById('iss-pass-content');
+  block.innerHTML = '<p class="text-xs text-gray-400 animate-pulse">🛸 Calculating passes...</p>';
+
+  try {
+    // Use open-notify.org pass predictions
+    var url = 'https://api.open-notify.org/iss-pass.json?lat=' + lat.toFixed(4) + '&lon=' + lon.toFixed(4) + '&n=5&alt=' + (50);
+    var r = await fetch(url);
+    var d = await r.json();
+
+    if (d.response && d.response.length) {
+      _issPassData = d.response;
+      renderISSPasses(lat, lon);
+      // Update countdown every second
+      if (_issPassTimer) clearInterval(_issPassTimer);
+      _issPassTimer = setInterval(function() { renderISSPasses(lat, lon); }, 1000);
+    } else {
+      block.innerHTML = '<p class="text-xs text-red-400">No pass data returned. Try again later.</p>';
+    }
+  } catch(e) {
+    // Fallback: calculate approximate next pass using current ISS position
+    block.innerHTML = '<p class="text-xs text-yellow-400">Pass prediction API unavailable. Showing approximate orbit data.</p>';
+    renderISSOrbitFallback(lat, lon);
+  }
+}
+
+function renderISSPasses(lat, lon) {
+  var block = document.getElementById('iss-pass-content');
+  if (!block || !_issPassData) return;
+
+  var now = Math.floor(Date.now() / 1000);
+  var grid = document.getElementById('iss-info-grid');
+  var maidenhead = '';
+  try { maidenhead = coordsToMaidenhead(lat, lon, 6); } catch(e) {}
+
+  var html = '<div class="space-y-2">';
+  html += '<div class="text-[10px] text-gray-500 mb-1">Your location: ' 
+    + lat.toFixed(3) + ', ' + lon.toFixed(3)
+    + (maidenhead ? ' (' + maidenhead + ')' : '') + '</div>';
+
+  var nextPass = null;
+  _issPassData.forEach(function(pass, i) {
+    var riseTs = pass.risetime;
+    var dur    = pass.duration;
+    var setTs  = riseTs + dur;
+    var inPass = now >= riseTs && now <= setTs;
+    var future = riseTs > now;
+    var past   = setTs < now;
+
+    if (past) return; // skip past passes
+
+    var riseDate = new Date(riseTs * 1000);
+    var setDate  = new Date(setTs  * 1000);
+
+    var timeToRise = riseTs - now;
+    var countdown  = '';
+    var badge = '';
+
+    if (inPass) {
+      var timeLeft = setTs - now;
+      var m = Math.floor(timeLeft/60), s = timeLeft%60;
+      countdown = '<span class="text-green-400 font-bold animate-pulse">🔴 OVERHEAD NOW — ' + m + 'm ' + s + 's remaining</span>';
+      badge = 'border-green-500 bg-green-900/20';
+    } else if (future) {
+      if (i === 0 || !nextPass) nextPass = pass;
+      var h = Math.floor(timeToRise/3600);
+      var m = Math.floor((timeToRise%3600)/60);
+      var s = timeToRise % 60;
+      var countStr = h > 0 ? h + 'h ' + m + 'm' : m + 'm ' + s + 's';
+      countdown = '<span class="' + (timeToRise < 600 ? "text-yellow-400 font-bold" : "text-indigo-300") + '">In ' + countStr + '</span>';
+      badge = timeToRise < 600 ? 'border-yellow-600 bg-yellow-900/10' : 'border-indigo-800';
+    }
+
+    html += '<div class="border ' + badge + ' rounded p-2 text-xs">'
+      + '<div class="flex justify-between items-start">'
+      + '<div>'
+      + '<div class="font-bold text-white">' + countdown + '</div>'
+      + '<div class="text-gray-400 mt-1">'
+      + '↑ Rise: ' + riseDate.toLocaleTimeString() + ' &nbsp;·&nbsp; '
+      + '↓ Set: ' + setDate.toLocaleTimeString() + ' &nbsp;·&nbsp; '
+      + 'Duration: ' + Math.floor(dur/60) + 'm ' + (dur%60) + 's'
+      + '</div>'
+      + '</div>'
+      + '<div class="text-right text-[10px] text-gray-500">'
+      + riseDate.toLocaleDateString([], {weekday:"short",month:"short",day:"numeric"})
+      + '</div></div></div>';
+  });
+
+  html += '</div>';
+  html += '<div class="flex justify-between mt-2">'
+    + '<button onclick="fetchISSPasses(' + lat.toFixed(4) + ',' + lon.toFixed(4) + ')" class="text-xs bg-indigo-800 hover:bg-indigo-700 px-2 py-1 rounded">↻ Refresh</button>'
+    + '<span class="text-[10px] text-gray-600 self-center">Tune 145.825 MHz FM during pass</span>'
+    + '</div>';
+
+  block.innerHTML = html;
+}
+
+function renderISSOrbitFallback(lat, lon) {
+  var block = document.getElementById('iss-pass-content');
+  // Basic info when API unavailable
+  block.innerHTML = '<div class="text-xs text-gray-300">'
+    + '<p>The ISS orbits every ~92 minutes at ~400km altitude.</p>'
+    + '<p class="mt-1">For accurate pass times, visit: '
+    + '<a href="https://www.heavens-above.com/PassSummary.aspx?lat=' + lat.toFixed(3) + '&lng=' + lon.toFixed(3) + '" '
+    + 'target="_blank" class="text-blue-400 underline">Heavens Above ↗</a></p>'
+    + '</div>';
+}
+
+// Stop countdown timer when ISS panel closes
+var _origTogglePanel = togglePanel;
+togglePanel = function(panel) {
+  if (panel !== 'iss' && _issPassTimer) {
+    clearInterval(_issPassTimer);
+    _issPassTimer = null;
+  }
+  _origTogglePanel(panel);
+  if (panel === 'iss' && _userLat !== null) {
+    // Re-start countdown if we already have location
+    if (_issPassData) {
+      _issPassTimer = setInterval(function(){ renderISSPasses(_userLat, _userLon); }, 1000);
+    }
+  }
+};
+
 // ─── Boot ─────────────────────────────────────────────────────────────────────
+initReplayProgress();
 connectWS();
 setInterval(redrawMap, 30000);
 populateConnInfo();

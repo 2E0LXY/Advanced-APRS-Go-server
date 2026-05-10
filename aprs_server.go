@@ -1115,6 +1115,9 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	res["upstream_addr"] = config.UpstreamAddr
 	config.RUnlock()
 	res["upstream_connected"] = atomic.LoadInt32(&upstreamConnected) == 1
+	rawRingMu.RLock()
+	res["ring_size"] = len(rawRing)
+	rawRingMu.RUnlock()
 	active := []map[string]interface{}{}
 	clientsMu.Lock()
 	for c := range clients {
