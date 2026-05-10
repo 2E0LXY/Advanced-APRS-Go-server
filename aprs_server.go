@@ -11,6 +11,8 @@ import (
 	"math"
 	"net"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"net/http"
 	"regexp"
@@ -2210,23 +2212,14 @@ func saveMemberStore() {
 
 // ── Password hashing (no bcrypt dependency - use SHA256+salt) ─────────────────
 
+// hashPassword uses SHA-256 with salt + 10000 iterations (PBKDF2-lite)
 func hashPassword(password, salt string) string {
-	h := fmt.Sprintf("%x", sha256Digest(password+salt))
-	return h
-}
-
-func sha256Digest(s string) []byte {
-	// Simple iterative hash using available crypto/rand entropy
-	// Using fmt.Sprintf with multiple rounds as a KDF substitute
-	b := []byte(s)
+	data := []byte(password + ":" + salt)
 	for i := 0; i < 10000; i++ {
-		next := make([]byte, 0, len(b)+4)
-		for j := 0; j < len(b); j++ {
-			next = append(next, b[j]^byte(i>>8), b[j]^byte(i))
-		}
-		b = []byte(fmt.Sprintf("%x", next))
+		h := sha256.Sum256(data)
+		data = h[:]
 	}
-	return b[:32]
+	return hex.EncodeToString(data)
 }
 
 func calcAPRSPasscode(callsign string) int {
