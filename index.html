@@ -77,17 +77,11 @@
     <p class="text-gray-600 text-xs">Map will appear automatically when complete</p>
   </div>
 
-  <!-- SIDEBAR TOGGLE -->
-  <button id="sidebar-tab" onclick="toggleSidebar()" title="Toggle sidebar"
-    class="absolute z-30 bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded-r-md
-           cursor-pointer flex items-center justify-center text-gray-300 select-none shadow-md
-           transition-left duration-300"
-    style="position:fixed;left:256px;top:50%;transform:translateY(-50%);width:16px;height:48px">
-    <span id="sidebar-arrow" style="font-size:10px">◀</span>
-  </button>
+  <!-- SIDEBAR + MAP ROW -->
+  <div class="flex flex-1 min-h-0 relative">
 
   <!-- SIDEBAR -->
-  <div id="controls-sidebar" class="w-64 bg-gray-800 border-r border-gray-700 p-3 flex flex-col space-y-4 overflow-y-auto z-20 text-s
+  <div id="controls-sidebar" style="position:relative" class="w-64 bg-gray-800 border-r border-gray-700 p-3 flex flex-col space-y-4 overflow-y-auto z-20 text-s
     <div>
       <h3 class="text-xs uppercase text-gray-400 font-bold mb-2">Map Style</h3>
       <select id="map-style" class="w-full bg-gray-700 p-1.5 rounded outline-none mb-2" onchange="changeMapStyle()">
@@ -234,8 +228,18 @@
     </div>
   </div>
 
+    <!-- Sidebar collapse tab -->
+    <button id="sidebar-tab" onclick="toggleSidebar()" title="Toggle sidebar"
+      class="absolute right-0 top-1/2 z-30 bg-gray-700 hover:bg-gray-600
+             border border-gray-600 border-l-0 rounded-r-md cursor-pointer
+             flex items-center justify-center text-gray-300 select-none shadow-md"
+      style="transform:translateY(-50%);width:14px;height:48px;right:-14px">
+      <span id="sidebar-arrow" style="font-size:9px">◀</span>
+    </button>
+  </div>
+
   <!-- PANELS -->
-  <div class="flex-1 relative">
+  <div class="flex-1 relative min-w-0">
 
     <!-- MAP -->
     <div id="map-panel" class="absolute inset-0 z-10">
@@ -5918,7 +5922,6 @@ function toggleSidebar() {
     sidebar.style.padding = '';
     sidebar.style.overflow = '';
     sidebar.style.opacity = '1';
-    tab.style.left = '256px';
     arrow.innerText = '◀';
   } else {
     sidebar.style.width = '0';
@@ -5926,7 +5929,6 @@ function toggleSidebar() {
     sidebar.style.padding = '0';
     sidebar.style.overflow = 'hidden';
     sidebar.style.opacity = '0';
-    tab.style.left = '0px';
     arrow.innerText = '▶';
   }
   setTimeout(function(){ map.invalidateSize(); }, 320);
@@ -5990,6 +5992,8 @@ setInterval(checkForUpdates, 3600000); // re-check every hour
     </div>
   </div>
 </div>
+
+  </div><!-- end SIDEBAR + MAP ROW -->
 
 </body>
 </html>
