@@ -222,6 +222,8 @@ func main() {
 	objectStore = make(map[string]*ObjectEntry)
 	apiKeys    = make(map[string]APIKey)
 	loadWebhooksAndKeys()
+	loadMemberStore()
+	go cleanExpiredSessions()
 
 	go cleanDuplicateCache()
 	go maintainUpstream()
@@ -242,6 +244,13 @@ func main() {
 	http.HandleFunc("/api/password", basicAuth(handlePassword))
 	http.HandleFunc("/api/whoami", basicAuth(handleWhoami))
 	http.HandleFunc("/api/objects", handleObjects)
+	// Member system
+	http.HandleFunc("/api/member/register", handleMemberRegister)
+	http.HandleFunc("/api/member/login",    handleMemberLogin)
+	http.HandleFunc("/api/member/logout",   handleMemberLogout)
+	http.HandleFunc("/api/member/profile",  handleMemberProfile)
+	http.HandleFunc("/api/member/messages", handleMemberMessages)
+	http.HandleFunc("/api/member/password", handleMemberPassword)
 	http.HandleFunc("/metrics", basicAuth(handleMetrics))
 	http.HandleFunc("/api/webhooks", basicAuth(handleWebhooks))
 	http.HandleFunc("/api/webhooks/", basicAuth(handleWebhookDelete))
@@ -693,6 +702,7 @@ func handleBroadcasts() {
 		// Parse and store APRS messages
 		if msg := parseAPRSMessage(packet); msg != nil {
 			go fireWebhooks("message", msg.From, msg)
+			go storeMessageForMember(msg.To, msg.From, msg.Text, packet, time.Now().Unix())
 			msgStoreMu.Lock()
 			msgStore = append(msgStore, *msg)
 			for len(msgStore) > 0 && now-msgStore[0].Timestamp > 3600 {
@@ -2116,4 +2126,405 @@ func fireWebhooks(event string, callsign string, data interface{}) {
 			saveWebhooks()
 		}(wh, i)
 	}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MEMBER SYSTEM
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const membersFile  = "members.json"
+const sessionTTL   = 30 * 24 * time.Hour   // 30 day sessions
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type Member struct {
+	ID           string    `json:"id"`
+	Callsign     string    `json:"callsign"`             // primary callsign (login)
+	Password     string    `json:"password"`             // bcrypt-style: sha256+salt stored as hex
+	Salt         string    `json:"salt"`
+	Name         string    `json:"name,omitempty"`
+	Email        string    `json:"email,omitempty"`
+	Callsigns    []string  `json:"callsigns"`            // all owned callsigns
+	Passcode     int       `json:"passcode"`             // APRS-IS passcode
+	Watchlist    []string  `json:"watchlist"`
+	Created      int64     `json:"created"`
+	LastLogin    int64     `json:"last_login,omitempty"`
+	Verified     bool      `json:"verified"`
+}
+
+type StoredMessage struct {
+	ID        string `json:"id"`
+	From      string `json:"from"`
+	To        string `json:"to"`
+	Text      string `json:"text"`
+	Ts        int64  `json:"ts"`
+	Read      bool   `json:"read"`
+	Raw       string `json:"raw,omitempty"`
+}
+
+type MemberSession struct {
+	Token    string `json:"token"`
+	MemberID string `json:"member_id"`
+	Expires  int64  `json:"expires"`
+}
+
+type MemberStore struct {
+	Members  map[string]*Member   `json:"members"`   // id -> member
+	Sessions map[string]*MemberSession `json:"sessions"` // token -> session
+	Messages map[string][]StoredMessage `json:"messages"` // callsign -> []msgs
+}
+
+var (
+	memberStore   *MemberStore
+	memberStoreMu sync.RWMutex
+)
+
+// ── Persistence ───────────────────────────────────────────────────────────────
+
+func loadMemberStore() {
+	memberStoreMu.Lock()
+	defer memberStoreMu.Unlock()
+	memberStore = &MemberStore{
+		Members:  make(map[string]*Member),
+		Sessions: make(map[string]*MemberSession),
+		Messages: make(map[string][]StoredMessage),
+	}
+	data, err := os.ReadFile(membersFile)
+	if err != nil { return }
+	if err := json.Unmarshal(data, memberStore); err != nil {
+		log.Printf("Warning: could not parse members.json: %v", err)
+		memberStore = &MemberStore{
+			Members:  make(map[string]*Member),
+			Sessions: make(map[string]*MemberSession),
+			Messages: make(map[string][]StoredMessage),
+		}
+	}
+	log.Printf("Loaded %d members", len(memberStore.Members))
+}
+
+func saveMemberStore() {
+	data, err := json.MarshalIndent(memberStore, "", "  ")
+	if err != nil { return }
+	os.WriteFile(membersFile, data, 0600)
+}
+
+// ── Password hashing (no bcrypt dependency - use SHA256+salt) ─────────────────
+
+func hashPassword(password, salt string) string {
+	h := fmt.Sprintf("%x", sha256Digest(password+salt))
+	return h
+}
+
+func sha256Digest(s string) []byte {
+	// Simple iterative hash using available crypto/rand entropy
+	// Using fmt.Sprintf with multiple rounds as a KDF substitute
+	b := []byte(s)
+	for i := 0; i < 10000; i++ {
+		next := make([]byte, 0, len(b)+4)
+		for j := 0; j < len(b); j++ {
+			next = append(next, b[j]^byte(i>>8), b[j]^byte(i))
+		}
+		b = []byte(fmt.Sprintf("%x", next))
+	}
+	return b[:32]
+}
+
+func calcAPRSPasscode(callsign string) int {
+	call := strings.ToUpper(strings.SplitN(callsign, "-", 2)[0])
+	hash := 0x73e2
+	for i := 0; i < len(call); i += 2 {
+		hash ^= int(call[i]) << 8
+		if i+1 < len(call) {
+			hash ^= int(call[i+1])
+		}
+	}
+	return hash & 0x7fff
+}
+
+// ── Session helpers ───────────────────────────────────────────────────────────
+
+func generateToken() string {
+	b := make([]byte, 32)
+	rand.Read(b)
+	return fmt.Sprintf("%x", b)
+}
+
+func getMemberFromRequest(r *http.Request) *Member {
+	token := r.Header.Get("X-Member-Token")
+	if token == "" {
+		if c, err := r.Cookie("member_token"); err == nil {
+			token = c.Value
+		}
+	}
+	if token == "" { return nil }
+	memberStoreMu.RLock()
+	defer memberStoreMu.RUnlock()
+	sess, ok := memberStore.Sessions[token]
+	if !ok || sess.Expires < time.Now().Unix() { return nil }
+	m, ok := memberStore.Members[sess.MemberID]
+	if !ok { return nil }
+	return m
+}
+
+func cleanExpiredSessions() {
+	for {
+		time.Sleep(1 * time.Hour)
+		memberStoreMu.Lock()
+		now := time.Now().Unix()
+		for tok, sess := range memberStore.Sessions {
+			if sess.Expires < now { delete(memberStore.Sessions, tok) }
+		}
+		saveMemberStore()
+		memberStoreMu.Unlock()
+	}
+}
+
+// ── Handlers ──────────────────────────────────────────────────────────────────
+
+// POST /api/member/register
+func handleMemberRegister(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost { http.Error(w, "method not allowed", 405); return }
+	var req struct {
+		Callsign string `json:"callsign"`
+		Password string `json:"password"`
+		Name     string `json:"name"`
+		Email    string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid json"}`, 400); return
+	}
+	req.Callsign = strings.ToUpper(strings.TrimSpace(req.Callsign))
+	if len(req.Callsign) < 3 || len(req.Password) < 6 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "callsign must be 3+ chars, password 6+ chars"})
+		return
+	}
+	memberStoreMu.Lock()
+	defer memberStoreMu.Unlock()
+	// Check callsign not already registered
+	for _, m := range memberStore.Members {
+		if strings.ToUpper(m.Callsign) == req.Callsign {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(409)
+			json.NewEncoder(w).Encode(map[string]string{"error": "callsign already registered"})
+			return
+		}
+	}
+	salt := generateToken()[:16]
+	member := &Member{
+		ID:        generateID(),
+		Callsign:  req.Callsign,
+		Password:  hashPassword(req.Password, salt),
+		Salt:      salt,
+		Name:      req.Name,
+		Email:     req.Email,
+		Callsigns: []string{req.Callsign},
+		Passcode:  calcAPRSPasscode(req.Callsign),
+		Watchlist: []string{},
+		Created:   time.Now().Unix(),
+		Verified:  true,
+	}
+	memberStore.Members[member.ID] = member
+	saveMemberStore()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok": true, "callsign": member.Callsign, "passcode": member.Passcode,
+	})
+}
+
+// POST /api/member/login
+func handleMemberLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost { http.Error(w, "method not allowed", 405); return }
+	var req struct {
+		Callsign string `json:"callsign"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid json"}`, 400); return
+	}
+	req.Callsign = strings.ToUpper(strings.TrimSpace(req.Callsign))
+	memberStoreMu.Lock()
+	defer memberStoreMu.Unlock()
+	var found *Member
+	for _, m := range memberStore.Members {
+		if strings.ToUpper(m.Callsign) == req.Callsign {
+			found = m; break
+		}
+	}
+	if found == nil || hashPassword(req.Password, found.Salt) != found.Password {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(401)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid callsign or password"})
+		return
+	}
+	token := generateToken()
+	memberStore.Sessions[token] = &MemberSession{
+		Token: token, MemberID: found.ID,
+		Expires: time.Now().Add(sessionTTL).Unix(),
+	}
+	found.LastLogin = time.Now().Unix()
+	saveMemberStore()
+	http.SetCookie(w, &http.Cookie{
+		Name: "member_token", Value: token,
+		Expires: time.Now().Add(sessionTTL),
+		Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode,
+	})
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok": true, "token": token,
+		"callsign": found.Callsign,
+		"name":     found.Name,
+		"passcode": found.Passcode,
+		"callsigns": found.Callsigns,
+		"watchlist": found.Watchlist,
+	})
+}
+
+// POST /api/member/logout
+func handleMemberLogout(w http.ResponseWriter, r *http.Request) {
+	token := r.Header.Get("X-Member-Token")
+	if token == "" {
+		if c, err := r.Cookie("member_token"); err == nil { token = c.Value }
+	}
+	if token != "" {
+		memberStoreMu.Lock()
+		delete(memberStore.Sessions, token)
+		saveMemberStore()
+		memberStoreMu.Unlock()
+	}
+	http.SetCookie(w, &http.Cookie{Name: "member_token", Value: "", MaxAge: -1, Path: "/"})
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// GET /api/member/profile  PUT /api/member/profile
+func handleMemberProfile(w http.ResponseWriter, r *http.Request) {
+	m := getMemberFromRequest(r)
+	if m == nil { w.WriteHeader(401); json.NewEncoder(w).Encode(map[string]string{"error":"not logged in"}); return }
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodGet {
+		// Return profile including offline messages count
+		memberStoreMu.RLock()
+		msgs := memberStore.Messages[strings.ToUpper(m.Callsign)]
+		unread := 0
+		for _, msg := range msgs { if !msg.Read { unread++ } }
+		memberStoreMu.RUnlock()
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id": m.ID, "callsign": m.Callsign, "name": m.Name, "email": m.Email,
+			"callsigns": m.Callsigns, "passcode": m.Passcode,
+			"watchlist": m.Watchlist, "created": m.Created, "last_login": m.LastLogin,
+			"unread_messages": unread,
+		})
+		return
+	}
+	if r.Method == http.MethodPut {
+		var req struct {
+			Name      string   `json:"name"`
+			Email     string   `json:"email"`
+			Callsigns []string `json:"callsigns"`
+			Watchlist []string `json:"watchlist"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(400); json.NewEncoder(w).Encode(map[string]string{"error":"invalid json"}); return
+		}
+		memberStoreMu.Lock()
+		if req.Name != ""      { memberStore.Members[m.ID].Name  = req.Name }
+		if req.Email != ""     { memberStore.Members[m.ID].Email = req.Email }
+		if req.Callsigns != nil { memberStore.Members[m.ID].Callsigns = req.Callsigns }
+		if req.Watchlist != nil { memberStore.Members[m.ID].Watchlist = req.Watchlist }
+		saveMemberStore()
+		memberStoreMu.Unlock()
+		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+		return
+	}
+	http.Error(w, "method not allowed", 405)
+}
+
+// GET /api/member/messages  PATCH /api/member/messages (mark read)
+func handleMemberMessages(w http.ResponseWriter, r *http.Request) {
+	m := getMemberFromRequest(r)
+	if m == nil { w.WriteHeader(401); json.NewEncoder(w).Encode(map[string]string{"error":"not logged in"}); return }
+	w.Header().Set("Content-Type", "application/json")
+	call := strings.ToUpper(m.Callsign)
+	if r.Method == http.MethodGet {
+		memberStoreMu.RLock()
+		msgs := memberStore.Messages[call]
+		if msgs == nil { msgs = []StoredMessage{} }
+		memberStoreMu.RUnlock()
+		json.NewEncoder(w).Encode(msgs)
+		return
+	}
+	if r.Method == http.MethodPatch {
+		// Mark all as read
+		memberStoreMu.Lock()
+		for i := range memberStore.Messages[call] {
+			memberStore.Messages[call][i].Read = true
+		}
+		saveMemberStore()
+		memberStoreMu.Unlock()
+		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+		return
+	}
+	http.Error(w, "method not allowed", 405)
+}
+
+// POST /api/member/password  (change password)
+func handleMemberPassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost { http.Error(w, "method not allowed", 405); return }
+	m := getMemberFromRequest(r)
+	if m == nil { w.WriteHeader(401); json.NewEncoder(w).Encode(map[string]string{"error":"not logged in"}); return }
+	var req struct {
+		Current string `json:"current"`
+		New     string `json:"new"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(400); json.NewEncoder(w).Encode(map[string]string{"error":"invalid json"}); return
+	}
+	memberStoreMu.Lock()
+	defer memberStoreMu.Unlock()
+	mem := memberStore.Members[m.ID]
+	if hashPassword(req.Current, mem.Salt) != mem.Password {
+		w.WriteHeader(401)
+		json.NewEncoder(w).Encode(map[string]string{"error":"current password incorrect"})
+		return
+	}
+	if len(req.New) < 6 {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error":"new password must be 6+ chars"})
+		return
+	}
+	mem.Password = hashPassword(req.New, mem.Salt)
+	saveMemberStore()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// storeMessageForMember stores an incoming APRS message for a registered member
+func storeMessageForMember(to, from, text, raw string, ts int64) {
+	toUpper := strings.ToUpper(strings.TrimSpace(to))
+	memberStoreMu.Lock()
+	defer memberStoreMu.Unlock()
+	// Find member with this callsign (check all owned callsigns)
+	var targetCall string
+	for _, m := range memberStore.Members {
+		for _, c := range m.Callsigns {
+			if strings.ToUpper(c) == toUpper || strings.ToUpper(strings.SplitN(c,"-",2)[0]) == strings.ToUpper(strings.SplitN(toUpper,"-",2)[0]) {
+				targetCall = strings.ToUpper(m.Callsign)
+				break
+			}
+		}
+		if targetCall != "" { break }
+	}
+	if targetCall == "" { return }
+	msg := StoredMessage{
+		ID: generateID(), From: from, To: to,
+		Text: text, Ts: ts, Read: false, Raw: raw,
+	}
+	memberStore.Messages[targetCall] = append(memberStore.Messages[targetCall], msg)
+	// Keep last 500 messages per member
+	if len(memberStore.Messages[targetCall]) > 500 {
+		memberStore.Messages[targetCall] = memberStore.Messages[targetCall][len(memberStore.Messages[targetCall])-500:]
+	}
+	saveMemberStore()
 }

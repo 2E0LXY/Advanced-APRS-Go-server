@@ -196,6 +196,7 @@ body { background: var(--bg-base); color: var(--text-base); }
     <button onclick="togglePanel('utils')" class="px-3 py-1.5 bg-teal-900 hover:bg-teal-700 rounded transition-colors">🔧 Utils</button>
     <button onclick="togglePanel('leaderboard')" class="px-3 py-1.5 bg-rose-900 hover:bg-rose-700 rounded transition-colors">🏆 Board</button>
     <button onclick="togglePanel('help')" class="px-3 py-1.5 bg-green-900 hover:bg-green-700 rounded transition-colors">Help</button>
+    <button onclick="openMemberPanel()" id="member-btn" class="px-3 py-1.5 bg-cyan-900 hover:bg-cyan-700 rounded transition-colors">👤 <span id="member-btn-label">Login</span></button>
     <button onclick="togglePanel('admin')" class="px-3 py-1.5 bg-red-900 hover:bg-red-700 rounded transition-colors">Admin</button>
     <button id="update-btn" onclick="triggerUpdateFromHeader()"
        class="hidden px-3 py-1.5 bg-yellow-600 hover:bg-yellow-500 rounded transition-colors font-bold animate-pulse"
@@ -6313,9 +6314,437 @@ setTimeout(function() {
   }
 }, 2000);
 
+
+// ─── Member System ────────────────────────────────────────────────────────────
+var _memberSession = null;  // { token, callsign, name, passcode, callsigns, watchlist }
+
+// Restore session from localStorage on load
+function initMemberSession() {
+  var saved = localStorage.getItem('aprs-member-session');
+  if (!saved) return;
+  try {
+    _memberSession = JSON.parse(saved);
+    // Verify session is still valid server-side
+    fetch(location.origin + '/api/member/profile', {
+      headers: { 'X-Member-Token': _memberSession.token }
+    }).then(function(r) {
+      if (!r.ok) {
+        _memberSession = null;
+        localStorage.removeItem('aprs-member-session');
+        updateMemberBtn();
+        return;
+      }
+      return r.json();
+    }).then(function(d) {
+      if (!d) return;
+      _memberSession.unread = d.unread_messages;
+      updateMemberBtn();
+      // Merge server watchlist with local
+      if (d.watchlist && d.watchlist.length) {
+        mergeWatchlists(d.watchlist);
+      }
+    }).catch(function() {
+      _memberSession = null;
+      localStorage.removeItem('aprs-member-session');
+      updateMemberBtn();
+    });
+    updateMemberBtn();
+  } catch(e) {
+    localStorage.removeItem('aprs-member-session');
+  }
+}
+
+function updateMemberBtn() {
+  var lbl = document.getElementById('member-btn-label');
+  var btn = document.getElementById('member-btn');
+  if (!lbl) return;
+  if (_memberSession) {
+    lbl.innerText = _memberSession.callsign;
+    var unread = _memberSession.unread || 0;
+    if (unread > 0) lbl.innerText += ' (' + unread + ')';
+    if (btn) btn.style.background = '#164e63';
+  } else {
+    lbl.innerText = 'Login';
+    if (btn) btn.style.background = '';
+  }
+}
+
+function openMemberPanel() {
+  var modal = document.getElementById('member-modal');
+  modal.classList.remove('hidden');
+  if (_memberSession) {
+    showMMView('dashboard');
+    loadMemberDashboard();
+  } else {
+    showMMView('login');
+  }
+}
+
+function closeMemberModal() {
+  document.getElementById('member-modal').classList.add('hidden');
+}
+
+function showMMView(view) {
+  ['login','register','dashboard'].forEach(function(v) {
+    document.getElementById('mm-' + v).classList.add('hidden');
+  });
+  document.getElementById('mm-' + view).classList.remove('hidden');
+  var titles = { login: ['Member Login','Sign in to your account'],
+    register: ['Create Account','Join the APRS community'],
+    dashboard: [(_memberSession ? _memberSession.callsign : '') + ' — Member Dashboard','Your APRS account'] };
+  var t = titles[view] || ['Member',''];
+  document.getElementById('mm-title').innerText    = t[0];
+  document.getElementById('mm-subtitle').innerText = t[1];
+}
+
+function mmTab(tab) {
+  ['watchlist','messages','callsigns','settings'].forEach(function(t) {
+    document.getElementById('mm-tab-' + t).classList.add('hidden');
+    var btn = document.getElementById('mmt-' + t);
+    if (btn) { btn.classList.remove('text-white','border-cyan-500'); btn.classList.add('text-gray-400','border-transparent'); }
+  });
+  document.getElementById('mm-tab-' + tab).classList.remove('hidden');
+  var btn = document.getElementById('mmt-' + tab);
+  if (btn) { btn.classList.add('text-white','border-cyan-500'); btn.classList.remove('text-gray-400','border-transparent'); }
+  if (tab === 'messages') loadMemberMessages();
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+async function memberLogin() {
+  var call = (document.getElementById('mm-login-call').value || '').toUpperCase().trim();
+  var pass = document.getElementById('mm-login-pass').value;
+  var err  = document.getElementById('mm-login-err');
+  if (!call || !pass) { err.innerText = 'Enter callsign and password'; err.classList.remove('hidden'); return; }
+  try {
+    var r = await fetch(location.origin + '/api/member/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callsign: call, password: pass })
+    });
+    var d = await r.json();
+    if (!r.ok) { err.innerText = d.error || 'Login failed'; err.classList.remove('hidden'); return; }
+    err.classList.add('hidden');
+    _memberSession = { token: d.token, callsign: d.callsign, name: d.name,
+      passcode: d.passcode, callsigns: d.callsigns, watchlist: d.watchlist };
+    localStorage.setItem('aprs-member-session', JSON.stringify(_memberSession));
+    updateMemberBtn();
+    mergeWatchlists(d.watchlist || []);
+    showMMView('dashboard');
+    loadMemberDashboard();
+  } catch(e) { err.innerText = 'Network error'; err.classList.remove('hidden'); }
+}
+
+async function memberRegister() {
+  var call  = (document.getElementById('mm-reg-call').value  || '').toUpperCase().trim();
+  var name  = document.getElementById('mm-reg-name').value.trim();
+  var pass  = document.getElementById('mm-reg-pass').value;
+  var pass2 = document.getElementById('mm-reg-pass2').value;
+  var email = document.getElementById('mm-reg-email').value.trim();
+  var err   = document.getElementById('mm-reg-err');
+  if (!call || !pass) { err.innerText = 'Callsign and password are required'; err.classList.remove('hidden'); return; }
+  if (pass !== pass2) { err.innerText = 'Passwords do not match'; err.classList.remove('hidden'); return; }
+  if (pass.length < 6) { err.innerText = 'Password must be at least 6 characters'; err.classList.remove('hidden'); return; }
+  try {
+    var r = await fetch(location.origin + '/api/member/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callsign: call, password: pass, name: name, email: email })
+    });
+    var d = await r.json();
+    if (!r.ok) { err.innerText = d.error || 'Registration failed'; err.classList.remove('hidden'); return; }
+    err.classList.add('hidden');
+    // Auto-login after registration
+    document.getElementById('mm-login-call').value = call;
+    document.getElementById('mm-login-pass').value = pass;
+    showMMView('login');
+    memberLogin();
+  } catch(e) { err.innerText = 'Network error'; err.classList.remove('hidden'); }
+}
+
+async function memberLogout() {
+  if (_memberSession) {
+    fetch(location.origin + '/api/member/logout', {
+      method: 'POST',
+      headers: { 'X-Member-Token': _memberSession.token }
+    }).catch(function(){});
+  }
+  _memberSession = null;
+  localStorage.removeItem('aprs-member-session');
+  updateMemberBtn();
+  showMMView('login');
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+
+async function loadMemberDashboard() {
+  if (!_memberSession) return;
+  try {
+    var r = await fetch(location.origin + '/api/member/profile', {
+      headers: { 'X-Member-Token': _memberSession.token }
+    });
+    if (!r.ok) return;
+    var d = await r.json();
+
+    document.getElementById('mm-avatar').innerText       = d.callsign[0];
+    document.getElementById('mm-dash-call').innerText    = d.callsign;
+    document.getElementById('mm-dash-name').innerText    = d.name || 'No name set';
+    document.getElementById('mm-dash-passcode').innerText= d.passcode;
+    document.getElementById('mm-dash-callcount').innerText = (d.callsigns || []).length;
+    document.getElementById('mm-dash-unread').innerText  = d.unread_messages || 0;
+
+    _memberSession.unread = d.unread_messages;
+    updateMemberBtn();
+
+    // Populate settings
+    document.getElementById('mm-set-name').value  = d.name  || '';
+    document.getElementById('mm-set-email').value = d.email || '';
+
+    // Load watchlist tab
+    renderMemberWatchlist(d.watchlist || []);
+
+    // Load callsigns
+    renderMemberCallsigns(d.callsigns || [d.callsign]);
+
+    // Auto-load messages tab if unread
+    if (d.unread_messages > 0) mmTab('messages');
+    else mmTab('watchlist');
+  } catch(e) { console.warn('loadMemberDashboard:', e); }
+}
+
+// ── Watchlist ─────────────────────────────────────────────────────────────────
+
+function renderMemberWatchlist(list) {
+  var el = document.getElementById('mm-watchlist-items');
+  if (!list.length) { el.innerHTML = '<p class="text-xs text-gray-600 text-center py-2">No callsigns watched yet</p>'; return; }
+  el.innerHTML = list.map(function(call) {
+    return '<div class="flex items-center justify-between bg-gray-800 rounded px-3 py-1.5 text-xs">'
+      + '<span class="font-mono text-cyan-300">' + call + '</span>'
+      + '<button class="text-red-400 hover:text-red-300 mm-wl-remove" data-call="' + call + '">✕</button>'
+      + '</div>';
+  }).join('');
+  el.onclick = function(e) {
+    var btn = e.target.closest('.mm-wl-remove');
+    if (btn) removeMemberWatchlist(btn.dataset.call);
+  };
+}
+
+async function addMemberWatchlist() {
+  var call = (document.getElementById('mm-watch-input').value || '').toUpperCase().trim();
+  if (!call) return;
+  document.getElementById('mm-watch-input').value = '';
+  var current = (_memberSession && _memberSession.watchlist) ? _memberSession.watchlist : [];
+  if (current.includes(call)) return;
+  current.push(call);
+  await saveMemberWatchlist(current);
+}
+
+async function removeMemberWatchlist(call) {
+  var current = (_memberSession && _memberSession.watchlist) ? _memberSession.watchlist : [];
+  current = current.filter(function(c){ return c !== call; });
+  await saveMemberWatchlist(current);
+}
+
+async function saveMemberWatchlist(list) {
+  if (!_memberSession) return;
+  try {
+    await fetch(location.origin + '/api/member/profile', {
+      method: 'PUT',
+      headers: { 'Content-Type':'application/json', 'X-Member-Token': _memberSession.token },
+      body: JSON.stringify({ watchlist: list })
+    });
+    _memberSession.watchlist = list;
+    localStorage.setItem('aprs-member-session', JSON.stringify(_memberSession));
+    renderMemberWatchlist(list);
+    // Also update local watchlist
+    mergeWatchlists(list);
+  } catch(e) {}
+}
+
+async function syncWatchlistToServer() {
+  // Push current localStorage watchlist up to server
+  if (!_memberSession) return;
+  var merged = mergeWatchlists(_memberSession.watchlist || []);
+  await saveMemberWatchlist(watchlist);
+}
+
+function mergeWatchlists(serverList) {
+  // Merge server watchlist into local watchlist
+  (serverList || []).forEach(function(call) {
+    if (!watchlist.includes(call)) watchlist.push(call);
+  });
+  saveWatchlist();
+  return watchlist;
+}
+
+// ── Messages ──────────────────────────────────────────────────────────────────
+
+async function loadMemberMessages() {
+  if (!_memberSession) return;
+  try {
+    var r = await fetch(location.origin + '/api/member/messages', {
+      headers: { 'X-Member-Token': _memberSession.token }
+    });
+    var msgs = await r.json();
+    var list  = document.getElementById('mm-messages-list');
+    var empty = document.getElementById('mm-messages-empty');
+    if (!msgs || !msgs.length) {
+      list.innerHTML = ''; empty.classList.remove('hidden'); return;
+    }
+    empty.classList.add('hidden');
+    list.onclick = function(e) {
+      var s = e.target.closest('.mm-from-call');
+      if (s) { closeMemberModal(); openDetail(s.dataset.call); }
+    };
+    list.innerHTML = msgs.slice().reverse().map(function(m) {
+      var t = new Date(m.ts * 1000).toLocaleString();
+      return '<div class="' + (m.read ? 'opacity-60' : 'bg-blue-900/20 border-l-2 border-blue-500') + ' rounded p-2 mb-1">'
+        + '<div class="flex justify-between mb-0.5">'
+        + '<span class="text-blue-400 font-bold cursor-pointer hover:underline mm-from-call" data-call="' + m.from + '">' + m.from + '</span>'
+        + '<span class="text-gray-500">' + t + '</span>'
+        + '</div>'
+        + '<div class="text-gray-300">' + m.text + '</div>'
+        + '</div>';
+    }).join('');
+  } catch(e) {}
+}
+
+async function markAllRead() {
+  if (!_memberSession) return;
+  await fetch(location.origin + '/api/member/messages', {
+    method: 'PATCH',
+    headers: { 'X-Member-Token': _memberSession.token }
+  });
+  _memberSession.unread = 0;
+  updateMemberBtn();
+  loadMemberMessages();
+}
+
+// ── Callsigns ─────────────────────────────────────────────────────────────────
+
+function renderMemberCallsigns(list) {
+  var el = document.getElementById('mm-callsigns-list');
+  el.innerHTML = list.map(function(call) {
+    var pc = calcPasscode ? calcPasscodeValue(call) : '?';
+    return '<div class="flex items-center justify-between bg-gray-800 rounded px-3 py-2 text-xs">'
+      + '<div><span class="font-mono text-white font-bold">' + call + '</span>'
+      + '<span class="text-gray-500 ml-3">Passcode: </span><span class="font-mono text-blue-300">' + pc + '</span></div>'
+      + (list.length > 1 ? '<button class="text-red-400 hover:text-red-300 mm-call-remove" data-call="' + call + '">✕</button>' : '')
+      + '</div>';
+  }).join('');
+  el.onclick = function(e) {
+    var btn = e.target.closest('.mm-call-remove');
+    if (btn) removeMemberCallsign(btn.dataset.call);
+  };
+}
+
+function calcPasscodeValue(call) {
+  var base = call.toUpperCase().split('-')[0];
+  var hash = 0x73e2;
+  for (var i = 0; i < base.length; i += 2) {
+    hash ^= base.charCodeAt(i) << 8;
+    if (i+1 < base.length) hash ^= base.charCodeAt(i+1);
+  }
+  return hash & 0x7fff;
+}
+
+async function addMemberCallsign() {
+  var call = (document.getElementById('mm-add-call').value || '').toUpperCase().trim();
+  if (!call || !_memberSession) return;
+  document.getElementById('mm-add-call').value = '';
+  var list = (_memberSession.callsigns || []).slice();
+  if (list.includes(call)) return;
+  list.push(call);
+  await fetch(location.origin + '/api/member/profile', {
+    method: 'PUT',
+    headers: { 'Content-Type':'application/json', 'X-Member-Token': _memberSession.token },
+    body: JSON.stringify({ callsigns: list })
+  });
+  _memberSession.callsigns = list;
+  localStorage.setItem('aprs-member-session', JSON.stringify(_memberSession));
+  renderMemberCallsigns(list);
+}
+
+async function removeMemberCallsign(call) {
+  if (!_memberSession) return;
+  var list = (_memberSession.callsigns || []).filter(function(c){ return c !== call; });
+  await fetch(location.origin + '/api/member/profile', {
+    method: 'PUT',
+    headers: { 'Content-Type':'application/json', 'X-Member-Token': _memberSession.token },
+    body: JSON.stringify({ callsigns: list })
+  });
+  _memberSession.callsigns = list;
+  localStorage.setItem('aprs-member-session', JSON.stringify(_memberSession));
+  renderMemberCallsigns(list);
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+
+async function saveMemberSettings() {
+  if (!_memberSession) return;
+  var name  = document.getElementById('mm-set-name').value.trim();
+  var email = document.getElementById('mm-set-email').value.trim();
+  var msg   = document.getElementById('mm-settings-msg');
+  try {
+    await fetch(location.origin + '/api/member/profile', {
+      method: 'PUT',
+      headers: { 'Content-Type':'application/json', 'X-Member-Token': _memberSession.token },
+      body: JSON.stringify({ name: name, email: email })
+    });
+    _memberSession.name = name;
+    localStorage.setItem('aprs-member-session', JSON.stringify(_memberSession));
+    msg.className = 'text-xs rounded p-2 bg-green-900/30 border border-green-700 text-green-400';
+    msg.innerText = 'Settings saved';
+    msg.classList.remove('hidden');
+    setTimeout(function(){ msg.classList.add('hidden'); }, 3000);
+  } catch(e) {
+    msg.className = 'text-xs rounded p-2 bg-red-900/30 border border-red-700 text-red-400';
+    msg.innerText = 'Failed to save';
+    msg.classList.remove('hidden');
+  }
+}
+
+async function changeMemberPassword() {
+  if (!_memberSession) return;
+  var oldPass = document.getElementById('mm-old-pass').value;
+  var newPass = document.getElementById('mm-new-pass').value;
+  var msg     = document.getElementById('mm-settings-msg');
+  if (!oldPass || !newPass) { msg.innerText='Enter both passwords'; msg.className='text-xs rounded p-2 bg-red-900/30 border border-red-700 text-red-400'; msg.classList.remove('hidden'); return; }
+  try {
+    var r = await fetch(location.origin + '/api/member/password', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'X-Member-Token': _memberSession.token },
+      body: JSON.stringify({ current: oldPass, new: newPass })
+    });
+    var d = await r.json();
+    msg.classList.remove('hidden');
+    if (r.ok) {
+      msg.className = 'text-xs rounded p-2 bg-green-900/30 border border-green-700 text-green-400';
+      msg.innerText = 'Password changed successfully';
+      document.getElementById('mm-old-pass').value = '';
+      document.getElementById('mm-new-pass').value = '';
+    } else {
+      msg.className = 'text-xs rounded p-2 bg-red-900/30 border border-red-700 text-red-400';
+      msg.innerText = d.error || 'Failed to change password';
+    }
+  } catch(e) {}
+}
+
+function updatePasscodePreview() {
+  var call = (document.getElementById('mm-reg-call').value||'').toUpperCase().trim();
+  var el   = document.getElementById('mm-passcode-preview');
+  if (call.length >= 3) {
+    document.getElementById('mm-passcode-val').innerText = calcPasscodeValue(call);
+    el.classList.remove('hidden');
+  } else {
+    el.classList.add('hidden');
+  }
+}
+
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 initReplayProgress();
 initTheme();
+initMemberSession();
 connectWS();
 setInterval(redrawMap, 30000);
 populateConnInfo();
@@ -6372,6 +6801,194 @@ setInterval(checkForUpdates, 3600000); // re-check every hour
     </div>
   </div>
 </div>
+
+<!-- Member Login/Register/Dashboard Modal -->
+<div id="member-modal" class="hidden fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70" onclick="if(event.target===this)closeMemberModal()">
+  <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
+      <div class="flex items-center space-x-3">
+        <span class="text-2xl">👤</span>
+        <div>
+          <h2 id="mm-title" class="text-lg font-bold text-cyan-400">Member Login</h2>
+          <p id="mm-subtitle" class="text-xs text-gray-400">Access your APRS account</p>
+        </div>
+      </div>
+      <button onclick="closeMemberModal()" class="text-gray-400 hover:text-white text-xl">✕</button>
+    </div>
+
+    <!-- Content -->
+    <div class="flex-1 overflow-y-auto p-4">
+
+      <!-- LOGIN FORM -->
+      <div id="mm-login" class="space-y-3">
+        <form onsubmit="memberLogin();return false;" action="#" method="post" autocomplete="on">
+          <input type="text" name="username" style="display:none" autocomplete="username" value="">
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Callsign</label>
+            <input type="text" id="mm-login-call" name="callsign" placeholder="M0ABC" autocomplete="username"
+              class="w-full bg-gray-800 border border-gray-700 rounded p-2.5 text-white text-sm outline-none focus:border-cyan-500 uppercase">
+          </div>
+          <div class="mt-3">
+            <label class="text-xs text-gray-400 block mb-1">Password</label>
+            <input type="password" id="mm-login-pass" name="password" placeholder="Password" autocomplete="current-password"
+              class="w-full bg-gray-800 border border-gray-700 rounded p-2.5 text-white text-sm outline-none focus:border-cyan-500">
+          </div>
+          <div id="mm-login-err" class="hidden mt-2 text-red-400 text-xs bg-red-900/30 border border-red-800 rounded p-2"></div>
+          <button type="submit" class="w-full mt-3 bg-cyan-700 hover:bg-cyan-600 text-white p-2.5 rounded font-bold text-sm">Sign In</button>
+        </form>
+        <div class="text-center">
+          <button onclick="showMMView('register')" class="text-xs text-cyan-400 hover:underline">Create a new account →</button>
+        </div>
+      </div>
+
+      <!-- REGISTER FORM -->
+      <div id="mm-register" class="hidden space-y-3">
+        <form onsubmit="memberRegister();return false;" action="#" method="post" autocomplete="on">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Callsign *</label>
+              <input type="text" id="mm-reg-call" name="callsign" placeholder="M0ABC" autocomplete="username"
+                class="w-full bg-gray-800 border border-gray-700 rounded p-2.5 text-white text-sm outline-none focus:border-cyan-500 uppercase"
+                oninput="this.value=this.value.toUpperCase();updatePasscodePreview()">
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Name</label>
+              <input type="text" id="mm-reg-name" name="name" placeholder="John Smith" autocomplete="name"
+                class="w-full bg-gray-800 border border-gray-700 rounded p-2.5 text-white text-sm outline-none focus:border-cyan-500">
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Password * (6+ chars)</label>
+              <input type="password" id="mm-reg-pass" name="new-password" placeholder="Choose password" autocomplete="new-password"
+                class="w-full bg-gray-800 border border-gray-700 rounded p-2.5 text-white text-sm outline-none focus:border-cyan-500">
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Confirm Password *</label>
+              <input type="password" id="mm-reg-pass2" name="confirm-password" placeholder="Confirm password" autocomplete="new-password"
+                class="w-full bg-gray-800 border border-gray-700 rounded p-2.5 text-white text-sm outline-none focus:border-cyan-500">
+            </div>
+            <div class="col-span-2">
+              <label class="text-xs text-gray-400 block mb-1">Email (optional)</label>
+              <input type="email" id="mm-reg-email" name="email" placeholder="you@example.com" autocomplete="email"
+                class="w-full bg-gray-800 border border-gray-700 rounded p-2.5 text-white text-sm outline-none focus:border-cyan-500">
+            </div>
+          </div>
+          <div id="mm-passcode-preview" class="bg-blue-900/20 border border-blue-800 rounded p-3 text-xs hidden">
+            <span class="text-gray-400">Your APRS-IS passcode will be: </span>
+            <span id="mm-passcode-val" class="text-blue-300 font-bold font-mono text-lg"></span>
+          </div>
+          <div id="mm-reg-err" class="hidden mt-2 text-red-400 text-xs bg-red-900/30 border border-red-800 rounded p-2"></div>
+          <button type="submit" class="w-full mt-3 bg-cyan-700 hover:bg-cyan-600 text-white p-2.5 rounded font-bold text-sm">Create Account</button>
+        </form>
+        <div class="text-center">
+          <button onclick="showMMView('login')" class="text-xs text-cyan-400 hover:underline">← Back to login</button>
+        </div>
+      </div>
+
+      <!-- DASHBOARD -->
+      <div id="mm-dashboard" class="hidden space-y-4">
+        <!-- Profile card -->
+        <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center space-x-3">
+              <div class="w-12 h-12 bg-cyan-900 rounded-full flex items-center justify-center text-2xl font-bold text-cyan-300 font-mono" id="mm-avatar"></div>
+              <div>
+                <p id="mm-dash-call" class="font-bold text-white font-mono text-lg"></p>
+                <p id="mm-dash-name" class="text-xs text-gray-400"></p>
+              </div>
+            </div>
+            <button onclick="memberLogout()" class="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded text-gray-300">Sign Out</button>
+          </div>
+          <div class="grid grid-cols-3 gap-3 text-center text-xs">
+            <div class="bg-gray-700 rounded p-2">
+              <div class="text-gray-400 uppercase font-bold mb-1">APRS Passcode</div>
+              <div id="mm-dash-passcode" class="font-mono text-blue-300 font-bold text-lg"></div>
+            </div>
+            <div class="bg-gray-700 rounded p-2">
+              <div class="text-gray-400 uppercase font-bold mb-1">Callsigns</div>
+              <div id="mm-dash-callcount" class="font-bold text-white text-lg"></div>
+            </div>
+            <div class="bg-gray-700 rounded p-2">
+              <div class="text-gray-400 uppercase font-bold mb-1">Unread Msgs</div>
+              <div id="mm-dash-unread" class="font-bold text-amber-400 text-lg"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex border-b border-gray-700 text-xs">
+          <button onclick="mmTab('watchlist')" id="mmt-watchlist" class="mm-tab px-4 py-2 font-medium text-white border-b-2 border-cyan-500">👁 Watchlist</button>
+          <button onclick="mmTab('messages')"  id="mmt-messages"  class="mm-tab px-4 py-2 font-medium text-gray-400 border-b-2 border-transparent hover:text-white">📨 Messages</button>
+          <button onclick="mmTab('callsigns')" id="mmt-callsigns" class="mm-tab px-4 py-2 font-medium text-gray-400 border-b-2 border-transparent hover:text-white">📡 Callsigns</button>
+          <button onclick="mmTab('settings')"  id="mmt-settings"  class="mm-tab px-4 py-2 font-medium text-gray-400 border-b-2 border-transparent hover:text-white">⚙ Settings</button>
+        </div>
+
+        <!-- Watchlist tab -->
+        <div id="mm-tab-watchlist" class="space-y-2">
+          <div class="flex items-center space-x-2">
+            <input type="text" id="mm-watch-input" placeholder="Add callsign or wildcard (G*, M0ABC)" 
+              class="flex-1 bg-gray-800 border border-gray-700 rounded p-2 text-white text-xs outline-none focus:border-cyan-500 uppercase"
+              oninput="this.value=this.value.toUpperCase()"
+              onkeydown="if(event.key==='Enter')addMemberWatchlist()">
+            <button onclick="addMemberWatchlist()" class="bg-cyan-700 hover:bg-cyan-600 px-3 py-2 rounded text-xs text-white font-bold">Add</button>
+            <button onclick="syncWatchlistToServer()" class="bg-gray-600 hover:bg-gray-500 px-3 py-2 rounded text-xs text-gray-200">⬆ Sync</button>
+          </div>
+          <div id="mm-watchlist-items" class="space-y-1 max-h-52 overflow-y-auto"></div>
+          <p class="text-xs text-gray-600">Watchlist synced to server — active across all devices</p>
+        </div>
+
+        <!-- Messages tab -->
+        <div id="mm-tab-messages" class="hidden">
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-xs text-gray-400">Messages sent to your callsign while offline are stored here</p>
+            <button onclick="markAllRead()" class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">Mark all read</button>
+          </div>
+          <div id="mm-messages-list" class="space-y-1 max-h-64 overflow-y-auto font-mono text-xs"></div>
+          <p id="mm-messages-empty" class="text-xs text-gray-600 text-center py-4">No stored messages</p>
+        </div>
+
+        <!-- Callsigns tab -->
+        <div id="mm-tab-callsigns" class="hidden space-y-2">
+          <p class="text-xs text-gray-400">All callsigns associated with your account. Messages to any of these are stored when you are offline.</p>
+          <div id="mm-callsigns-list" class="space-y-1"></div>
+          <div class="flex space-x-2 mt-2">
+            <input type="text" id="mm-add-call" placeholder="Add callsign (e.g. M0ABC-9)"
+              class="flex-1 bg-gray-800 border border-gray-700 rounded p-2 text-white text-xs outline-none focus:border-cyan-500 uppercase"
+              oninput="this.value=this.value.toUpperCase()">
+            <button onclick="addMemberCallsign()" class="bg-cyan-700 hover:bg-cyan-600 px-3 py-2 rounded text-xs text-white font-bold">Add</button>
+          </div>
+        </div>
+
+        <!-- Settings tab -->
+        <div id="mm-tab-settings" class="hidden space-y-3">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Display Name</label>
+              <input type="text" id="mm-set-name" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white text-sm outline-none focus:border-cyan-500">
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Email</label>
+              <input type="email" id="mm-set-email" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white text-sm outline-none focus:border-cyan-500">
+            </div>
+          </div>
+          <button onclick="saveMemberSettings()" class="bg-cyan-700 hover:bg-cyan-600 px-4 py-2 rounded text-sm text-white font-bold">Save Changes</button>
+          <hr class="border-gray-700">
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Current Password</label>
+            <input type="password" id="mm-old-pass" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white text-sm outline-none focus:border-cyan-500 mb-2">
+            <label class="text-xs text-gray-400 block mb-1">New Password</label>
+            <input type="password" id="mm-new-pass" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white text-sm outline-none focus:border-cyan-500">
+          </div>
+          <div id="mm-settings-msg" class="hidden text-xs rounded p-2"></div>
+          <button onclick="changeMemberPassword()" class="bg-orange-700 hover:bg-orange-600 px-4 py-2 rounded text-sm text-white font-bold">Change Password</button>
+        </div>
+
+      </div><!-- end dashboard -->
+    </div><!-- end content -->
+  </div>
+</div>
+
 
 </body>
 </html>
