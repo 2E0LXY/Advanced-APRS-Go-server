@@ -2841,7 +2841,7 @@ async function doAdminLogin() {
   err.classList.add('hidden');
   try {
     // Use /api/whoami to verify — lightweight, no config data returned on failure
-    const check = await fetch('/api/whoami', {headers: {'Authorization': creds}});
+    const check = await fetch(location.origin + '/api/whoami', {headers: {'Authorization': creds}});
     if (check.status === 401) {
       err.innerText = 'Invalid username or password';
       err.classList.remove('hidden');
@@ -2850,7 +2850,7 @@ async function doAdminLogin() {
     }
     // Credentials good — now fetch config
     adminAuth = creds;
-    const cfgRes = await fetch('/api/config', {headers: {'Authorization': adminAuth}});
+    const cfgRes = await fetch(location.origin + '/api/config', {headers: {'Authorization': adminAuth}});
     if (!cfgRes.ok) { err.innerText = 'Config load failed'; err.classList.remove('hidden'); return; }
     err.classList.add('hidden');
     document.getElementById('admin-login-gate').classList.add('hidden');
@@ -2874,7 +2874,7 @@ function doAdminLogout() {
 async function loadStatus() {
   // Also fetch metrics for packet rate display
   try {
-    var mr = await fetch('/metrics');
+    var mr = await fetch(location.origin + '/metrics');
     var mt = await mr.text();
     var rateM = mt.match(/aprs_packets_per_second ([\d.]+)/);
     var pktsM = mt.match(/aprs_packets_total\S* (\d+)/);
@@ -2889,7 +2889,7 @@ async function loadStatus() {
   } catch(e) {}
 
   try {
-    const r = await fetch('/api/status'), d = await r.json();
+    const r = await fetch(location.origin + '/api/status'); if (!r.ok) return; const d = await r.json();
     document.getElementById('stat-uptime').innerText = d.uptime||'0s';
     document.getElementById('stat-pkts').innerText = `${(d.pkts_rx||0).toLocaleString()} / ${(d.pkts_tx||0).toLocaleString()}`;
     document.getElementById('stat-bytes').innerText = `${formatBytes(d.bytes_rx)} / ${formatBytes(d.bytes_tx)}`;
@@ -2950,7 +2950,10 @@ function logChat(sender, message, colorClass) {
 }
 
 function pollUpstreamStatus() {
-  fetch('/api/status').then(r=>r.json()).then(d=>{
+  fetch(location.origin + '/api/status', {redirect:'follow'}).then(r=>{
+    if (!r.ok) throw new Error(r.status);
+    return r.json();
+  }).then(d=>{
     const dot = document.getElementById('conn-status');
     dot.classList.remove('bg-red-500','bg-yellow-500','bg-green-500');
     if (d.upstream_connected) {
@@ -3012,7 +3015,7 @@ async function loadHistory() {
     var headers = {};
     var h = getAuthHeaders ? getAuthHeaders() : null;
     if (h) headers = h;
-    var r = await fetch('/api/history', {headers: headers});
+    var r = await fetch(location.origin + '/api/history', {headers: headers});
     if (!r.ok) return; // 401 = no key, rely on WS replay instead
     var d = await r.json();
     if (!d || !Array.isArray(d)) return;
@@ -3328,7 +3331,7 @@ function loadAdmin() {
     document.getElementById('admin-login-gate').classList.add('hidden');
     document.getElementById('admin-content').classList.remove('hidden');
     // Refresh config data
-    fetch('/api/config', {headers: getAuthHeaders()})
+    fetch(location.origin + '/api/config', {headers: getAuthHeaders()})
       .then(r => { if(r.status===401){doAdminLogout();} return r.json(); })
       .then(d => populateAdmin(d))
       .catch(e => console.error('Config fetch fail', e));
@@ -3381,7 +3384,7 @@ async function saveAdmin() {
     radius_km: parseFloat(document.getElementById('admRad').value)||100,
   };
   try {
-    const r = await fetch('/api/config',{method:'POST',headers:h,body:JSON.stringify(payload)});
+    const r = await fetch(location.origin + '/api/config',{method:'POST',headers:h,body:JSON.stringify(payload)});
     if (r.status===401) { doAdminLogout(); return; }
     if (r.ok) {
       const ind=document.getElementById('save-indicator');
@@ -3398,7 +3401,7 @@ async function changePassword() {
   if (p1!==p2) { msg.innerText='Passwords do not match'; msg.className='text-xs mt-2 text-red-400'; msg.classList.remove('hidden'); return; }
   const h = getAuthHeaders(); if (!h) { doAdminLogout(); return; }
   try {
-    const r = await fetch('/api/password',{method:'POST',headers:h,body:JSON.stringify({new_password:p1})});
+    const r = await fetch(location.origin + '/api/password',{method:'POST',headers:h,body:JSON.stringify({new_password:p1})});
     if (r.ok) {
       // Update cached auth header with new password
       adminAuth='Basic '+btoa(h['Authorization'].replace('Basic ','').split(':')[0].padStart(0)+':'+p1);
@@ -3450,7 +3453,7 @@ function semverGt(a, b) {
 async function checkForUpdates() {
   try {
     // Get running version
-    const vRes = await fetch('/api/version');
+    const vRes = await fetch(location.origin + '/api/version');
     if (!vRes.ok) return;
     const vData = await vRes.json();
     _runningVersion = String(vData.version || '0.0.0').replace(/^v/,'');
@@ -3528,7 +3531,7 @@ async function doUpdate() {
   if (!h) { doAdminLogout(); return; }
 
   try {
-    const res = await fetch('/api/update', { method: 'POST', headers: h });
+    const res = await fetch(location.origin + '/api/update', { method: 'POST', headers: h });
     if (res.status === 401) { doAdminLogout(); return; }
 
     const reader = res.body.getReader();
@@ -3696,7 +3699,7 @@ async function refreshISS() {
 
   try {
     // Fetch ISS position from open-notify API
-    const issPos = await fetch('/api/iss');
+    const issPos = await fetch(location.origin + '/api/iss');
     if (issPos.ok) {
       const iss = await issPos.json();
       document.getElementById('iss-pos').innerText =
@@ -3708,7 +3711,7 @@ async function refreshISS() {
 
   try {
     // Fetch ARISS data via our own proxy to avoid CORS restrictions
-    const r = await fetch('/api/ariss');
+    const r = await fetch(location.origin + '/api/ariss');
     if (!r.ok) throw new Error('Server returned ' + r.status);
     const d = await r.json();
     const all = (d.entries || []).sort((a,b) => (b.time||b.lasttime||0) - (a.time||a.lasttime||0)).slice(0,80);
@@ -4028,7 +4031,7 @@ function showDemoAdmin() {
   document.getElementById('admin-content').classList.remove('hidden');
 
   // Fetch redacted config from public endpoint
-  fetch('/api/config/demo')
+  fetch(location.origin + '/api/config/demo')
     .then(function(r) { return r.json(); })
     .then(function(d) {
       populateAdmin(d);
@@ -4869,7 +4872,7 @@ function showObjectDetail(name) {
 // Load existing objects from API on connect
 async function loadObjects() {
   try {
-    var r = await fetch('/api/objects');
+    var r = await fetch(location.origin + '/api/objects');
     var objs = await r.json();
     (objs || []).forEach(function(o) {
       aprsObjects[o.name] = o;
@@ -5268,7 +5271,7 @@ function renderWXChart(canvasId, hist, field, color, unit) {
 async function loadWebhooks() {
   var h = getAuthHeaders(); if (!h) return;
   try {
-    var r = await fetch('/api/webhooks', {headers: h});
+    var r = await fetch(location.origin + '/api/webhooks', {headers: h});
     var whs = await r.json();
     var list  = document.getElementById('webhook-list');
     var empty = document.getElementById('webhook-empty');
@@ -5306,7 +5309,7 @@ async function addWebhook() {
   var secret = document.getElementById('wh-secret').value.trim();
   if (!url) return;
   try {
-    var r = await fetch('/api/webhooks', {
+    var r = await fetch(location.origin + '/api/webhooks', {
       method: 'POST', headers: Object.assign({'Content-Type':'application/json'}, h),
       body: JSON.stringify({url:url, callsign:call, events:[event], secret:secret})
     });
@@ -5323,7 +5326,7 @@ async function deleteWebhook(id) {
   if (demoBlock('webhooks are disabled')) return;
   var h = getAuthHeaders(); if (!h) return;
   try {
-    await fetch('/api/webhooks/' + id, {method: 'DELETE', headers: h});
+    await fetch(location.origin + '/api/webhooks/' + id, {method: 'DELETE', headers: h});
     loadWebhooks();
   } catch(e) {}
 }
@@ -5331,7 +5334,7 @@ async function deleteWebhook(id) {
 async function loadAPIKeys() {
   var h = getAuthHeaders(); if (!h) return;
   try {
-    var r = await fetch('/api/keys', {headers: h});
+    var r = await fetch(location.origin + '/api/keys', {headers: h});
     var keys = await r.json();
     var list  = document.getElementById('apikey-list');
     var empty = document.getElementById('apikey-empty');
@@ -5364,7 +5367,7 @@ async function createAPIKey() {
   var name     = document.getElementById('key-name').value.trim() || 'API Key';
   var readOnly = document.getElementById('key-readonly').checked;
   try {
-    var r = await fetch('/api/keys', {
+    var r = await fetch(location.origin + '/api/keys', {
       method: 'POST', headers: Object.assign({'Content-Type':'application/json'}, h),
       body: JSON.stringify({name: name, read_only: readOnly})
     });
@@ -5380,7 +5383,7 @@ async function deleteAPIKey(id) {
   if (demoBlock('API key deletion is disabled')) return;
   var h = getAuthHeaders(); if (!h) return;
   try {
-    await fetch('/api/keys/' + id, {method: 'DELETE', headers: h});
+    await fetch(location.origin + '/api/keys/' + id, {method: 'DELETE', headers: h});
     loadAPIKeys();
   } catch(e) {}
 }
@@ -5615,7 +5618,8 @@ var _replayTimer   = null;
 // If we can't get it, animate indefinitely
 async function initReplayProgress() {
   try {
-    var r = await fetch('/api/status');
+    var r = await fetch(location.origin + '/api/status');
+    if (!r.ok) throw new Error(r.status);
     var d = await r.json();
     window._replayTotal = d.ring_size || d.packets_rx || 500;
   } catch(e) {
@@ -5695,7 +5699,7 @@ async function fetchISSPasses(lat, lon) {
 
   try {
     // Fetch TLE via our proxy (avoids CORS, cached 6h server-side)
-    var r = await fetch('/api/tle');
+    var r = await fetch(location.origin + '/api/tle');
     if (!r.ok) throw new Error('TLE fetch failed: ' + r.status);
     var tleText = await r.text();
 
