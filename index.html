@@ -18,8 +18,7 @@
   .my-station-ring{outline:2px solid #facc15;outline-offset:2px;border-radius:50%}
   .leaflet-tooltip{background:#1e293b;border:1px solid #334155;color:#e2e8f0;font-size:12px;padding:4px 8px}
   .leaflet-tooltip-top:before{border-top-color:#334155}
-  #controls-sidebar{transition:width 0.3s,opacity 0.3s,padding 0.3s,min-width 0.3s}
-  #sidebar-tab{transition:left 0.3s}
+  #controls-sidebar{transition:width 0.25s ease,opacity 0.25s ease,padding 0.25s ease}
   /* Cluster icon styles */
   .marker-cluster-small,.marker-cluster-medium,.marker-cluster-large{background-clip:padding-box;border-radius:20px}
   .marker-cluster-small{background-color:rgba(29,78,216,0.6)}
@@ -78,17 +77,8 @@
   </div>
 
   <!-- SIDEBAR -->
-  <div id="controls-sidebar" style="position:relative" class="w-64 bg-gray-800 border-r border-gray-700 p-3 flex flex-col space-y-4 overflow-y-auto z-20 text-s
+  <div id="controls-sidebar" class="w-64 bg-gray-800 border-r border-gray-700 p-3 flex flex-col space-y-4 overflow-y-auto z-20 text-sm">
     <div>
-    <!-- Collapse tab -->
-    <button id="sidebar-tab" onclick="toggleSidebar()" title="Toggle sidebar"
-      style="position:absolute;right:-14px;top:50%;transform:translateY(-50%);width:14px;height:48px;z-index:30"
-      class="bg-gray-700 hover:bg-gray-600 border border-gray-600 border-l-0
-             rounded-r-md cursor-pointer flex items-center justify-center
-             text-gray-300 select-none shadow-md">
-      <span id="sidebar-arrow" style="font-size:9px">◀</span>
-    </button>
-
       <h3 class="text-xs uppercase text-gray-400 font-bold mb-2">Map Style</h3>
       <select id="map-style" class="w-full bg-gray-700 p-1.5 rounded outline-none mb-2" onchange="changeMapStyle()">
         <option value="osm">Street</option>
@@ -234,15 +224,15 @@
     </div>
   </div>
 
-    <!-- Sidebar collapse tab -->
-    <button id="sidebar-tab" onclick="toggleSidebar()" title="Toggle sidebar"
-      class="absolute right-0 top-1/2 z-30 bg-gray-700 hover:bg-gray-600
-             border border-gray-600 border-l-0 rounded-r-md cursor-pointer
-             flex items-center justify-center text-gray-300 select-none shadow-md"
-      style="transform:translateY(-50%);width:14px;height:48px;right:-14px">
-      <span id="sidebar-arrow" style="font-size:9px">◀</span>
-    </button>
-
+  <!-- Sidebar toggle -->
+  <button onclick="toggleSidebar()" id="sidebar-tab"
+    class="hidden md:flex absolute left-0 top-1/2 -translate-y-1/2 z-[25]
+           items-center justify-center bg-gray-700 hover:bg-gray-600
+           border-r border-t border-b border-gray-600 rounded-r
+           text-gray-400 cursor-pointer select-none shadow"
+    style="width:12px;height:40px;margin-top:0">
+    <span id="sidebar-arrow" style="font-size:8px;line-height:1">◀</span>
+  </button>
 
   <!-- PANELS -->
   <div class="flex-1 relative">
@@ -3167,7 +3157,7 @@ function redrawMap() {
   const tail = parseInt(document.getElementById('tail-length').value);
   const hideStatic = document.getElementById('hide-static').checked;
   const showPhg = document.getElementById('show-phg').checked;
-  const showAprs = document.getElementById('show-aprs').checked;
+  const showAprs   = document.getElementById('show-aprs').checked;
   const showCwop   = document.getElementById('show-cwop').checked;
   const showOgn    = document.getElementById('show-ogn').checked;
   const showPiStar = (document.getElementById('show-pistar')||{checked:false}).checked;
@@ -5915,29 +5905,31 @@ togglePanel = function(panel) {
 };
 
 
-// ─── Sidebar collapse ─────────────────────────────────────────────────────────
+// ─── Sidebar toggle ───────────────────────────────────────────────────────────
 var _sidebarOpen = true;
 function toggleSidebar() {
   _sidebarOpen = !_sidebarOpen;
-  var sidebar = document.getElementById('controls-sidebar');
-  var tab     = document.getElementById('sidebar-tab');
-  var arrow   = document.getElementById('sidebar-arrow');
+  var sb    = document.getElementById('controls-sidebar');
+  var arrow = document.getElementById('sidebar-arrow');
+  var tab   = document.getElementById('sidebar-tab');
   if (_sidebarOpen) {
-    sidebar.style.width = '16rem';
-    sidebar.style.minWidth = '16rem';
-    sidebar.style.padding = '';
-    sidebar.style.overflow = '';
-    sidebar.style.opacity = '1';
-    arrow.innerText = '◀';
+    sb.style.width    = '';
+    sb.style.minWidth = '';
+    sb.style.padding  = '';
+    sb.style.overflow = '';
+    sb.style.opacity  = '1';
+    if (arrow) arrow.innerText = '◀';
+    if (tab) tab.style.left = '';
   } else {
-    sidebar.style.width = '0';
-    sidebar.style.minWidth = '0';
-    sidebar.style.padding = '0';
-    sidebar.style.overflow = 'hidden';
-    sidebar.style.opacity = '0';
-    arrow.innerText = '▶';
+    sb.style.width    = '0';
+    sb.style.minWidth = '0';
+    sb.style.padding  = '0';
+    sb.style.overflow = 'hidden';
+    sb.style.opacity  = '0';
+    if (arrow) arrow.innerText = '▶';
+    if (tab) tab.style.left = '0';
   }
-  setTimeout(function(){ map.invalidateSize(); }, 320);
+  setTimeout(function(){ if(typeof map!=='undefined') map.invalidateSize(); }, 280);
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
@@ -5998,7 +5990,6 @@ setInterval(checkForUpdates, 3600000); // re-check every hour
     </div>
   </div>
 </div>
-
 
 </body>
 </html>
