@@ -226,12 +226,12 @@
 
   <!-- Sidebar toggle -->
   <button onclick="toggleSidebar()" id="sidebar-tab"
-    class="hidden md:flex absolute left-0 top-1/2 -translate-y-1/2 z-[25]
-           items-center justify-center bg-gray-700 hover:bg-gray-600
-           border-r border-t border-b border-gray-600 rounded-r
-           text-gray-400 cursor-pointer select-none shadow"
-    style="width:12px;height:40px;margin-top:0">
-    <span id="sidebar-arrow" style="font-size:8px;line-height:1">◀</span>
+    style="position:absolute;left:0;top:50%;transform:translateY(-50%);
+           width:14px;height:44px;z-index:25;display:flex;align-items:center;
+           justify-content:center;background:#374151;border:1px solid #4b5563;
+           border-left:none;border-radius:0 4px 4px 0;cursor:pointer;
+           color:#9ca3af;box-shadow:2px 0 4px rgba(0,0,0,0.3)">
+    <span id="sidebar-arrow" style="font-size:9px;line-height:1;user-select:none">◀</span>
   </button>
 
   <!-- PANELS -->
