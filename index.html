@@ -18,6 +18,8 @@
   .my-station-ring{outline:2px solid #facc15;outline-offset:2px;border-radius:50%}
   .leaflet-tooltip{background:#1e293b;border:1px solid #334155;color:#e2e8f0;font-size:12px;padding:4px 8px}
   .leaflet-tooltip-top:before{border-top-color:#334155}
+  #controls-sidebar{transition:width 0.3s,opacity 0.3s,padding 0.3s,min-width 0.3s}
+  #sidebar-tab{transition:left 0.3s}
   /* Cluster icon styles */
   .marker-cluster-small,.marker-cluster-medium,.marker-cluster-large{background-clip:padding-box;border-radius:20px}
   .marker-cluster-small{background-color:rgba(29,78,216,0.6)}
@@ -75,8 +77,17 @@
     <p class="text-gray-600 text-xs">Map will appear automatically when complete</p>
   </div>
 
+  <!-- SIDEBAR TOGGLE -->
+  <button id="sidebar-tab" onclick="toggleSidebar()" title="Toggle sidebar"
+    class="absolute z-30 bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded-r-md
+           cursor-pointer flex items-center justify-center text-gray-300 select-none shadow-md
+           transition-left duration-300"
+    style="position:fixed;left:256px;top:50%;transform:translateY(-50%);width:16px;height:48px">
+    <span id="sidebar-arrow" style="font-size:10px">◀</span>
+  </button>
+
   <!-- SIDEBAR -->
-  <div id="controls-sidebar" class="w-64 bg-gray-800 border-r border-gray-700 p-3 flex flex-col space-y-4 overflow-y-auto z-20 text-sm">
+  <div id="controls-sidebar" class="w-64 bg-gray-800 border-r border-gray-700 p-3 flex flex-col space-y-4 overflow-y-auto z-20 text-s
     <div>
       <h3 class="text-xs uppercase text-gray-400 font-bold mb-2">Map Style</h3>
       <select id="map-style" class="w-full bg-gray-700 p-1.5 rounded outline-none mb-2" onchange="changeMapStyle()">
@@ -114,6 +125,7 @@
           <button onclick="clearPathViz();document.getElementById('path-viz-label').innerText='No path shown'" class="text-[10px] text-gray-500 hover:text-red-400 hidden" id="clear-path-btn">✕ Clear</button>
         </div>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="cluster-enable" checked onchange="toggleClustering()"><span>Cluster Markers</span></label>
+        <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-pistar" onchange="redrawMap()"><span class="text-gray-500">●</span><span class="text-gray-400">Pi-Star / MMDVM</span></label>
       </div>
     </div>
     <div class="mt-auto pt-3 border-t border-gray-700 space-y-2">
@@ -3056,6 +3068,7 @@ function determineType(call, raw) {
   const u = (call+raw).toUpperCase();
   if (call.startsWith('CW')||u.includes('CWOP')) return 'cwop';
   if (u.includes('OGNFLR')||call.startsWith('FLR')) return 'ogn';
+  if (u.includes('PISTAR')||u.includes('MMDVM')||u.includes('APDPRS')) return 'pistar';
   return 'aprs';
 }
 
@@ -3145,8 +3158,9 @@ function redrawMap() {
   const hideStatic = document.getElementById('hide-static').checked;
   const showPhg = document.getElementById('show-phg').checked;
   const showAprs = document.getElementById('show-aprs').checked;
-  const showCwop = document.getElementById('show-cwop').checked;
-  const showOgn = document.getElementById('show-ogn').checked;
+  const showCwop   = document.getElementById('show-cwop').checked;
+  const showOgn    = document.getElementById('show-ogn').checked;
+  const showPiStar = (document.getElementById('show-pistar')||{checked:false}).checked;
 
   Object.keys(stations).forEach(call=>{
     const st = stations[call];
@@ -5889,6 +5903,34 @@ togglePanel = function(panel) {
     }
   }
 };
+
+
+// ─── Sidebar collapse ─────────────────────────────────────────────────────────
+var _sidebarOpen = true;
+function toggleSidebar() {
+  _sidebarOpen = !_sidebarOpen;
+  var sidebar = document.getElementById('controls-sidebar');
+  var tab     = document.getElementById('sidebar-tab');
+  var arrow   = document.getElementById('sidebar-arrow');
+  if (_sidebarOpen) {
+    sidebar.style.width = '16rem';
+    sidebar.style.minWidth = '16rem';
+    sidebar.style.padding = '';
+    sidebar.style.overflow = '';
+    sidebar.style.opacity = '1';
+    tab.style.left = '256px';
+    arrow.innerText = '◀';
+  } else {
+    sidebar.style.width = '0';
+    sidebar.style.minWidth = '0';
+    sidebar.style.padding = '0';
+    sidebar.style.overflow = 'hidden';
+    sidebar.style.opacity = '0';
+    tab.style.left = '0px';
+    arrow.innerText = '▶';
+  }
+  setTimeout(function(){ map.invalidateSize(); }, 320);
+}
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 initReplayProgress();
