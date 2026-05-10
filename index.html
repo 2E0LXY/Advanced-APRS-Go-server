@@ -78,7 +78,7 @@ body {
   color: var(--text-base);
   transition: width 0.25s ease, opacity 0.25s ease, padding 0.25s ease;
 }
-[data-theme="light"] #controls-sidebar * { color: var(--text-muted); }
+[data-theme="light"] #controls-sidebar * { color: var(--text-mid); }
 [data-theme="light"] #controls-sidebar h3,
 [data-theme="light"] #controls-sidebar .font-bold,
 [data-theme="light"] #controls-sidebar label { color: var(--text-mid) !important; }
@@ -97,22 +97,59 @@ body {
   background: var(--btn-primary) !important;
   color: #fff !important;
 }
-[data-theme="light"] .text-green-400 { color: #15803d !important; }
-[data-theme="light"] .text-blue-400  { color: #0369a1 !important; }
-[data-theme="light"] .text-sky-400   { color: #0284c7 !important; }
-[data-theme="light"] .text-purple-400{ color: #7e22ce !important; }
-[data-theme="light"] .text-amber-400 { color: #b45309 !important; }
-[data-theme="light"] .text-rose-400  { color: #be123c !important; }
-[data-theme="light"] .text-teal-400  { color: #0f766e !important; }
-[data-theme="light"] .text-indigo-400{ color: #4338ca !important; }
-[data-theme="light"] .text-yellow-400{ color: #a16207 !important; }
-[data-theme="light"] .text-orange-400{ color: #c2410c !important; }
-[data-theme="light"] .text-gray-400  { color: #475569 !important; }
-[data-theme="light"] .text-gray-500  { color: #64748b !important; }
-[data-theme="light"] .text-gray-300  { color: #334155 !important; }
-[data-theme="light"] .text-white     { color: #0f172a !important; }
-[data-theme="light"] .text-gray-200  { color: #1e293b !important; }
-[data-theme="light"] .text-gray-600  { color: #64748b !important; }
+/* Light mode text colour overrides - all WCAG AA compliant */
+[data-theme="light"] .text-green-400  { color: #15803d !important; }
+[data-theme="light"] .text-green-300  { color: #166534 !important; }
+[data-theme="light"] .text-blue-400   { color: #1d4ed8 !important; }
+[data-theme="light"] .text-blue-300   { color: #1e40af !important; }
+[data-theme="light"] .text-sky-400    { color: #0369a1 !important; }
+[data-theme="light"] .text-sky-300    { color: #075985 !important; }
+[data-theme="light"] .text-purple-400 { color: #6b21a8 !important; }
+[data-theme="light"] .text-purple-300 { color: #581c87 !important; }
+[data-theme="light"] .text-amber-400  { color: #92400e !important; }
+[data-theme="light"] .text-amber-300  { color: #78350f !important; }
+[data-theme="light"] .text-rose-400   { color: #9f1239 !important; }
+[data-theme="light"] .text-rose-300   { color: #881337 !important; }
+[data-theme="light"] .text-teal-400   { color: #0f766e !important; }
+[data-theme="light"] .text-teal-300   { color: #134e4a !important; }
+[data-theme="light"] .text-indigo-400 { color: #3730a3 !important; }
+[data-theme="light"] .text-indigo-300 { color: #312e81 !important; }
+[data-theme="light"] .text-yellow-400 { color: #854d0e !important; }
+[data-theme="light"] .text-yellow-300 { color: #713f12 !important; }
+[data-theme="light"] .text-orange-400 { color: #9a3412 !important; }
+[data-theme="light"] .text-orange-300 { color: #7c2d12 !important; }
+[data-theme="light"] .text-red-400    { color: #b91c1c !important; }
+[data-theme="light"] .text-red-300    { color: #991b1b !important; }
+[data-theme="light"] .text-gray-400   { color: #374151 !important; }
+[data-theme="light"] .text-gray-500   { color: #4b5563 !important; }
+[data-theme="light"] .text-gray-300   { color: #1f2937 !important; }
+[data-theme="light"] .text-gray-200   { color: #111827 !important; }
+[data-theme="light"] .text-gray-600   { color: #374151 !important; }
+[data-theme="light"] .text-gray-100   { color: #0f172a !important; }
+[data-theme="light"] .text-white      { color: #0f172a !important; }
+/* Mono / code text in light mode */
+[data-theme="light"] .font-mono       { color: #1e293b !important; }
+[data-theme="light"] code             { color: #1e293b !important; }
+[data-theme="light"] .text-green-400.font-mono,
+[data-theme="light"] pre              { color: #166534 !important; }
+/* Header always dark - all text/buttons inside stay light */
+[data-theme="light"] .flex-none { color: #e2e8f0 !important; }
+[data-theme="light"] .flex-none h1  { color: #38bdf8 !important; }
+[data-theme="light"] .flex-none button { color: #ffffff !important; }
+[data-theme="light"] .flex-none span   { color: #cbd5e1 !important; }
+[data-theme="light"] #rx-count  { color: #93c5fd !important; }
+[data-theme="light"] #stn-count { color: #93c5fd !important; }
+/* Ensure panel toggle buttons in header remain readable */
+[data-theme="light"] .flex-none .bg-blue-900,
+[data-theme="light"] .flex-none .bg-sky-900,
+[data-theme="light"] .flex-none .bg-teal-900,
+[data-theme="light"] .flex-none .bg-amber-900,
+[data-theme="light"] .flex-none .bg-purple-900,
+[data-theme="light"] .flex-none .bg-green-900,
+[data-theme="light"] .flex-none .bg-rose-900,
+[data-theme="light"] .flex-none .bg-red-900,
+[data-theme="light"] .flex-none .bg-indigo-900,
+[data-theme="light"] .flex-none .bg-gray-700 { color: #ffffff !important; }
 
 /* Panels */
 [data-theme="light"] .bg-gray-900 {
@@ -170,6 +207,14 @@ body {
 
 /* Connection info & status */
 [data-theme="light"] .select-all { color: #0369a1 !important; }
+[data-theme="light"] #controls-sidebar .text-green-400 { color: #15803d !important; }
+[data-theme="light"] #controls-sidebar .text-blue-400  { color: #1d4ed8 !important; }
+[data-theme="light"] #controls-sidebar .text-purple-400{ color: #6b21a8 !important; }
+[data-theme="light"] #controls-sidebar .text-amber-400 { color: #92400e !important; }
+[data-theme="light"] #controls-sidebar .text-sky-400   { color: #0369a1 !important; }
+[data-theme="light"] #controls-sidebar .text-gray-600  { color: #374151 !important; }
+[data-theme="light"] #controls-sidebar .text-gray-500  { color: #4b5563 !important; }
+[data-theme="light"] #controls-sidebar .font-mono      { color: #1e3a5f !important; }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
@@ -199,7 +244,7 @@ body {
 <body class="bg-gray-900 h-screen flex flex-col text-white font-sans overflow-hidden">
 
 <!-- HEADER -->
-<div class="flex-none bg-gray-800 border-b border-gray-700 p-2 flex justify-between items-center shadow-lg z-50">
+<div class="flex-none border-b p-2 flex justify-between items-center shadow-lg z-50" style="background:#1e3a5f;border-color:#2d4a7a">
   <div class="flex items-center space-x-3">
     <h1 class="text-lg font-bold tracking-tight text-blue-400">APRS Net</h1>
     <span id="conn-status" class="w-3 h-3 rounded-full bg-red-500 cursor-help" title="Disconnected"></span>
@@ -2106,11 +2151,11 @@ body {
           <p class="text-amber-500 text-xs mt-1">Want to explore? <a href="/demo" class="underline hover:text-amber-300">Enter demo mode</a></p>
           </div>
           <div id="admin-login-err" class="hidden text-red-400 text-xs bg-red-900/30 border border-red-800 rounded p-2 mb-4 text-center"></div>
-          <form onsubmit="doAdminLogin();return false;" autocomplete="on">
+          <form onsubmit="doAdminLogin();return false;" autocomplete="on" action="#" method="post">
           <div class="space-y-3">
-            <input type="text" id="adminLoginUser" placeholder="Username" autocomplete="username"
+            <input type="text" id="adminLoginUser" name="username" placeholder="Username" autocomplete="username"
               class="w-full bg-gray-700 p-2.5 rounded border border-gray-600 text-white outline-none focus:border-red-500 text-sm">
-            <input type="password" id="adminLoginPass" placeholder="Password" autocomplete="current-password"
+            <input type="password" id="adminLoginPass" name="password" placeholder="Password" autocomplete="current-password"
               class="w-full bg-gray-700 p-2.5 rounded border border-gray-600 text-white outline-none focus:border-red-500 text-sm">
             <button type="submit" class="w-full bg-red-700 hover:bg-red-600 text-white p-2.5 rounded font-bold text-sm uppercase tracking-wider transition-colors">
               Login
