@@ -2328,7 +2328,7 @@
 </div>
 
 <!-- Message Auth Modal -->
-<div id="msg-auth-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" onclick="if(event.target===this)closeMsgAuthModal()">
+<div id="msg-auth-modal" class="hidden fixed inset-0 z-[9999] flex items-center justify-center p-4" onclick="if(event.target===this)closeMsgAuthModal()">
   <div class="bg-gray-800 border border-gray-600 rounded-xl shadow-2xl w-full max-w-sm p-6">
     <div class="flex justify-between mb-4"><h2 class="font-bold text-green-400">✉ Send APRS Message</h2><button onclick="closeMsgAuthModal()" class="text-gray-400 hover:text-white text-xl">✕</button></div>
     <p class="text-xs text-gray-400 mb-4">Enter your callsign and APRS-IS passcode to send a message to <strong id="msg-target-display" class="text-white"></strong></p>
@@ -3640,7 +3640,7 @@ function openMsgFromModal() {
   if (myCallsign) document.getElementById('msg-auth-call').value=myCallsign;
   document.getElementById('msg-auth-modal').classList.remove('hidden');
 }
-function closeMsgAuthModal() { document.getElementById('msg-auth-modal').classList.add('hidden'); }
+function closeMsgAuthModal() { var m=document.getElementById('msg-auth-modal'); m.classList.add('hidden'); m.style.zIndex=''; }
 async function sendMsgFromModal() {
   if (demoBlock("messaging is disabled")) return;
   const call=document.getElementById('msg-auth-call').value.trim().toUpperCase();
@@ -4608,10 +4608,21 @@ function toggleWatchFromDetail() {
 
 function openMsgToStation() {
   if (demoBlock('messaging is disabled in demo mode')) return;
+  if (!_detailCall) return;
   _modalTarget = _detailCall;
-  document.getElementById('msg-target-display').innerText = _detailCall;
+  // Close detail modal first so msg modal appears on top
+  closeDetail();
+  document.getElementById('msg-target-display').innerText = _modalTarget;
   if (myCallsign) document.getElementById('msg-auth-call').value = myCallsign;
-  document.getElementById('msg-auth-modal').classList.remove('hidden');
+  // Bump z-index to ensure it's above everything
+  var m = document.getElementById('msg-auth-modal');
+  m.style.zIndex = '9999';
+  m.classList.remove('hidden');
+  // Focus message text field
+  setTimeout(function(){
+    var t = document.getElementById('msg-auth-text');
+    if (t) t.focus();
+  }, 100);
 }
 
 
