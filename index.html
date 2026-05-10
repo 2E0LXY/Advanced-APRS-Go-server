@@ -3216,6 +3216,13 @@ function handleIncoming(data) {
 // ─── Station Store ────────────────────────────────────────────────────────────
 function parseCseSpd(raw) {
   if (!raw) return null;
+  // Skip WX/CWOP packets - their ccc/sss is wind direction/speed not movement
+  // WX packets contain temperature 't' field and humidity 'h' field
+  var ci = raw.indexOf(':'); if (ci < 0) return null;
+  var payload = raw.slice(ci + 1);
+  // If packet has WX fields (temperature + humidity), don't parse as movement
+  if (payload.match(/t[0-9-]{3}/) && payload.match(/h[0-9]{2}/)) return null;
+  // Standard APRS position: ddd/sss in payload after position fields
   const m = raw.match(/([0-9]{3})\/([0-9]{3})/);
   if (m) { const c=parseInt(m[1]),s=parseInt(m[2]); if(c<=360&&s>0) return {cse:c,spd:s}; }
   return null;
