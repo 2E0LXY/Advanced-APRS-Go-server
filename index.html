@@ -47,6 +47,7 @@
     <button onclick="togglePanel('watch')" class="px-3 py-1.5 bg-amber-900 hover:bg-amber-700 rounded transition-colors">👁 Watch</button>
     <button onclick="togglePanel('iss')" class="px-3 py-1.5 bg-indigo-900 hover:bg-indigo-700 rounded transition-colors">🛸 ISS</button>
     <button onclick="togglePanel('utils')" class="px-3 py-1.5 bg-teal-900 hover:bg-teal-700 rounded transition-colors">🔧 Utils</button>
+    <button onclick="togglePanel('leaderboard')" class="px-3 py-1.5 bg-rose-900 hover:bg-rose-700 rounded transition-colors">🏆 Board</button>
     <button onclick="togglePanel('help')" class="px-3 py-1.5 bg-green-900 hover:bg-green-700 rounded transition-colors">Help</button>
     <button onclick="togglePanel('admin')" class="px-3 py-1.5 bg-red-900 hover:bg-red-700 rounded transition-colors">Admin</button>
     <button id="update-btn" onclick="triggerUpdateFromHeader()"
@@ -547,6 +548,1127 @@
           </div>
 
         </div>
+      </div>
+    </div>
+
+    <!-- LEADERBOARD -->
+    <div id="leaderboard-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
+      <div class="max-w-5xl mx-auto space-y-5">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-bold text-rose-400">🏆 Leaderboard &amp; Community</h2>
+          <div class="flex items-center space-x-2">
+            <span id="lb-updated" class="text-xs text-gray-500"></span>
+            <button onclick="renderLeaderboard()" class="text-xs bg-rose-800 hover:bg-rose-700 px-3 py-1 rounded">↻ Refresh</button>
+          </div>
+        </div>
+
+        <!-- Top stats bar -->
+        <div class="grid grid-cols-4 gap-3">
+          <div class="bg-gray-800 rounded border border-gray-700 p-3 text-center">
+            <div class="text-2xl mb-1">📡</div>
+            <div class="text-xs text-gray-400 uppercase font-bold mb-1">Active Stations</div>
+            <div id="lb-total-stations" class="text-xl font-bold text-rose-400">--</div>
+          </div>
+          <div class="bg-gray-800 rounded border border-gray-700 p-3 text-center">
+            <div class="text-2xl mb-1">📦</div>
+            <div class="text-xs text-gray-400 uppercase font-bold mb-1">Packets Today</div>
+            <div id="lb-total-packets" class="text-xl font-bold text-orange-400">--</div>
+          </div>
+          <div class="bg-gray-800 rounded border border-gray-700 p-3 text-center">
+            <div class="text-2xl mb-1">🚗</div>
+            <div class="text-xs text-gray-400 uppercase font-bold mb-1">Mobile Stations</div>
+            <div id="lb-mobile-count" class="text-xl font-bold text-green-400">--</div>
+          </div>
+          <div class="bg-gray-800 rounded border border-gray-700 p-3 text-center">
+            <div class="text-2xl mb-1">🌦</div>
+            <div class="text-xs text-gray-400 uppercase font-bold mb-1">WX Stations</div>
+            <div id="lb-wx-count" class="text-xl font-bold text-sky-400">--</div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+
+          <!-- Most Active (most packets) -->
+          <div class="bg-gray-800 rounded border border-gray-700">
+            <div class="p-3 border-b border-gray-700 font-bold text-xs uppercase tracking-widest text-rose-300">
+              🏅 Most Packets (this session)
+            </div>
+            <table class="w-full text-xs">
+              <thead class="text-gray-500 uppercase border-b border-gray-700">
+                <tr><th class="p-2 text-left">#</th><th class="p-2 text-left">Callsign</th><th class="p-2 text-right">Packets</th><th class="p-2 text-right">Last Heard</th></tr>
+              </thead>
+              <tbody id="lb-most-packets" class="divide-y divide-gray-700 font-mono"></tbody>
+            </table>
+          </div>
+
+          <!-- Farthest stations -->
+          <div class="bg-gray-800 rounded border border-gray-700">
+            <div class="p-3 border-b border-gray-700 font-bold text-xs uppercase tracking-widest text-blue-300">
+              📏 Farthest Stations Heard
+            </div>
+            <table class="w-full text-xs">
+              <thead class="text-gray-500 uppercase border-b border-gray-700">
+                <tr><th class="p-2 text-left">#</th><th class="p-2 text-left">Callsign</th><th class="p-2 text-right">Distance</th><th class="p-2 text-right">Bearing</th></tr>
+              </thead>
+              <tbody id="lb-farthest" class="divide-y divide-gray-700 font-mono"></tbody>
+            </table>
+          </div>
+
+          <!-- Most recently heard -->
+          <div class="bg-gray-800 rounded border border-gray-700">
+            <div class="p-3 border-b border-gray-700 font-bold text-xs uppercase tracking-widest text-green-300">
+              ⚡ Most Recently Heard
+            </div>
+            <table class="w-full text-xs">
+              <thead class="text-gray-500 uppercase border-b border-gray-700">
+                <tr><th class="p-2 text-left">#</th><th class="p-2 text-left">Callsign</th><th class="p-2 text-right">Time</th><th class="p-2 text-right">Type</th></tr>
+              </thead>
+              <tbody id="lb-recent" class="divide-y divide-gray-700 font-mono"></tbody>
+            </table>
+          </div>
+
+          <!-- Fastest moving -->
+          <div class="bg-gray-800 rounded border border-gray-700">
+            <div class="p-3 border-b border-gray-700 font-bold text-xs uppercase tracking-widest text-yellow-300">
+              🚀 Fastest Moving
+            </div>
+            <table class="w-full text-xs">
+              <thead class="text-gray-500 uppercase border-b border-gray-700">
+                <tr><th class="p-2 text-left">#</th><th class="p-2 text-left">Callsign</th><th class="p-2 text-right">Speed</th><th class="p-2 text-right">Course</th></tr>
+              </thead>
+              <tbody id="lb-fastest" class="divide-y divide-gray-700 font-mono"></tbody>
+            </table>
+          </div>
+
+        </div>
+
+        <!-- Active Nets Detection -->
+        <div class="bg-gray-800 rounded border border-gray-700">
+          <div class="p-3 border-b border-gray-700 font-bold text-xs uppercase tracking-widest text-purple-300">
+            📻 Active Nets &amp; Groups Detected
+          </div>
+          <div id="lb-nets" class="p-3 flex flex-wrap gap-2">
+            <p id="lb-nets-empty" class="text-xs text-gray-600">Analysing traffic for NTS nets, tactical groups and message clusters...</p>
+          </div>
+        </div>
+
+        <!-- Message Board -->
+        <div class="bg-gray-800 rounded border border-gray-700">
+          <div class="flex items-center justify-between p-3 border-b border-gray-700">
+            <div class="font-bold text-xs uppercase tracking-widest text-teal-300">📋 Recent APRS Messages</div>
+            <span id="lb-msg-count" class="text-xs text-gray-500"></span>
+          </div>
+          <div id="lb-msg-board" class="divide-y divide-gray-700 max-h-72 overflow-y-auto text-xs font-mono"></div>
+          <p id="lb-msg-empty" class="text-xs text-gray-600 text-center py-4">No messages heard yet</p>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ISS / ARISS -->
+    <div id="iss-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
+      <div class="max-w-3xl mx-auto space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-bold text-indigo-400">🛸 ISS / ARISS APRS</h2>
+          <div class="flex space-x-2">
+            <button onclick="refreshISS()" class="text-xs bg-indigo-800 hover:bg-indigo-700 px-3 py-1 rounded">↻ Refresh</button>
+            <span id="iss-last-update" class="text-xs text-gray-500 self-center"></span>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-3 text-xs">
+          <div class="bg-gray-800 rounded border border-indigo-900 p-3">
+            <p class="text-indigo-400 font-bold uppercase mb-1">ISS Position</p>
+            <p id="iss-pos" class="font-mono text-white text-sm">Loading...</p>
+            <p id="iss-alt" class="text-gray-400 mt-1"></p>
+          </div>
+          <div class="bg-gray-800 rounded border border-indigo-900 p-3">
+            <p class="text-indigo-400 font-bold uppercase mb-1">ARISS Callsign</p>
+            <p class="font-mono text-white text-sm">RS0ISS / NA1SS</p>
+            <p class="text-gray-400 mt-1">Freq: 145.825 MHz FM</p>
+          </div>
+          <div class="bg-gray-800 rounded border border-indigo-900 p-3">
+            <p class="text-indigo-400 font-bold uppercase mb-1">Digipeater</p>
+            <p class="font-mono text-white text-sm">RS0ISS-4</p>
+            <p class="text-gray-400 mt-1">Path: RS0ISS or ARISS</p>
+          </div>
+        </div>
+        <div class="bg-gray-800 rounded border border-gray-700">
+          <div class="flex items-center justify-between p-3 border-b border-gray-700">
+            <h3 class="font-bold text-sm uppercase text-gray-300">Recent ARISS Packets</h3>
+            <span id="ariss-count" class="text-xs text-gray-500"></span>
+          </div>
+          <div id="ariss-loading" class="p-4 text-center text-gray-500 text-sm">Loading from aprs.fi...</div>
+          <table id="ariss-table" class="w-full text-left text-xs hidden">
+            <thead class="bg-gray-700 text-gray-400 uppercase">
+              <tr>
+                <th class="p-2">Time</th>
+                <th class="p-2">From</th>
+                <th class="p-2">To / Via</th>
+                <th class="p-2">Comment</th>
+                <th class="p-2">Coords</th>
+              </tr>
+            </thead>
+            <tbody id="ariss-list" class="divide-y divide-gray-700 font-mono"></tbody>
+          </table>
+        </div>
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <h3 class="font-bold text-sm uppercase text-gray-300 mb-2">Heard via ISS on this gateway</h3>
+          <p class="text-xs text-gray-400 mb-2">Stations received by this gateway that were digipeated via RS0ISS or ARISS:</p>
+          <table class="w-full text-xs">
+            <thead class="text-gray-500 uppercase border-b border-gray-700"><tr><th class="text-left p-1">Callsign</th><th class="text-left p-1">Last Heard</th><th class="text-left p-1">Position</th></tr></thead>
+            <tbody id="iss-local-list" class="divide-y divide-gray-700 font-mono"></tbody>
+          </table>
+          <p id="iss-local-empty" class="text-xs text-gray-600 text-center py-3">No ISS-digipeated packets received yet</p>
+        </div>
+        <div class="bg-indigo-900/20 border border-indigo-800 rounded p-3 text-xs text-gray-300">
+          <p class="font-bold text-indigo-300 mb-1">How to use ARISS APRS</p>
+          <p>Tune to <strong class="text-white">145.825 MHz FM</strong> · Set your path to <code class="text-yellow-400">ARISS</code> or <code class="text-yellow-400">RS0ISS</code> · 
+          Check pass times at <a href="https://www.heavens-above.com" target="_blank" class="text-blue-400 hover:underline">heavens-above.com ↗</a> · 
+          Live ISS track at <a href="https://aprs.fi/?call=RS0ISS" target="_blank" class="text-blue-400 hover:underline">aprs.fi ↗</a></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- HELP -->
+    <div id="help-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
+      <div class="max-w-4xl mx-auto space-y-4 pb-8">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-bold text-green-400">📖 User Guide &amp; API Reference</h2>
+          <span class="text-xs text-gray-500">Advanced APRS Go Server · 2E0LXY</span>
+        </div>
+
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <h3 class="font-bold text-green-300 mb-3">🚀 Quick Start — All Panels</h3>
+          <div class="grid grid-cols-2 gap-2 text-xs text-gray-300">
+            <div><span class="text-white font-bold">Map</span> — Live stations. Click marker for detail. Clusters expand on zoom.</div>
+            <div><span class="text-white font-bold">Stations</span> — Sortable list with icons, path, raw packet.</div>
+            <div><span class="text-white font-bold">Messages</span> — Send/receive APRS-IS messages with your callsign.</div>
+            <div><span class="text-white font-bold">Status</span> — Server health, export buttons, Prometheus link.</div>
+            <div><span class="text-white font-bold">🌦 Weather</span> — All WX/CWOP stations with gauges. Click 📈 for graphs.</div>
+            <div><span class="text-white font-bold">🏆 Board</span> — Leaderboard: packets, distance, speed, messages, nets.</div>
+            <div><span class="text-white font-bold">👁 Watch</span> — Watchlist with browser push notifications.</div>
+            <div><span class="text-white font-bold">🛸 ISS</span> — Live ISS position and ARISS/RS0ISS packets.</div>
+            <div><span class="text-white font-bold">🔧 Utils</span> — Passcode, Maidenhead, beacon generator, symbol picker.</div>
+            <div><span class="text-white font-bold">Admin</span> — Config, filters, webhooks, API keys, update.</div>
+          </div>
+        </div>
+
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <h3 class="font-bold text-green-300 mb-3">🗺 Map Features</h3>
+          <div class="space-y-1 text-xs text-gray-300">
+            <div><span class="text-white font-bold">Click station</span> — Station Detail modal: Overview, History, Packets, Path tabs.</div>
+            <div><span class="text-white font-bold">Show Path</span> — Draws digi hop chain: yellow=source, green=used, blue=other. Auto-clears 30s.</div>
+            <div><span class="text-white font-bold">History tab</span> — Speed graph + all positions with timestamps.</div>
+            <div><span class="text-white font-bold">Packets tab</span> — Last 50 raw packets for callsign.</div>
+            <div><span class="text-white font-bold">Path tab</span> — Visual hop chain with plain-English explanation (WIDE, Q-construct, digi, iGate).</div>
+            <div><span class="text-white font-bold">Clusters</span> — Blue/orange/red badges. Click to zoom. Individual icons at zoom 13+.</div>
+            <div><span class="text-white font-bold">Age fading</span> — Stations fade as they age: fresh=100%, 20min=75%, 80min=45% greyscale.</div>
+            <div><span class="text-white font-bold">Objects/Items</span> — Amber outline. APRS objects (storms, events, etc). Toggle in sidebar.</div>
+            <div><span class="text-white font-bold">Path visualiser</span> — Purple indicator in sidebar shows active path. ✕ to clear.</div>
+          </div>
+        </div>
+
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <h3 class="font-bold text-green-300 mb-3">🔌 Connecting to this Server</h3>
+          <div class="space-y-3 text-xs">
+            <div>
+              <p class="text-white font-bold mb-1">APRS-IS TCP (APRSDroid · YAAC · Direwolf · APRSIS32)</p>
+              <div class="bg-gray-900 rounded p-2 font-mono text-gray-400">
+                Host: <span class="text-green-400" id="help-host"></span> &nbsp;·&nbsp; Port: 14580 &nbsp;·&nbsp; No TLS
+              </div>
+            </div>
+            <div>
+              <p class="text-white font-bold mb-1">WebSocket (Browser / Custom)</p>
+              <div class="bg-gray-900 rounded p-2 font-mono text-gray-400">
+                <span class="text-blue-400" id="help-ws"></span>
+              </div>
+              <p class="text-gray-500 mt-1">Receives JSON frames on connect. Types: <code>rx</code> (position) · <code>obj</code> (object) · <code>msg_history</code> · <code>replay_done</code>. Last hour replayed automatically on connect.</p>
+            </div>
+            <div>
+              <p class="text-white font-bold mb-1">UDP Hardware Trackers (TinyTrak · OpenTracker)</p>
+              <div class="bg-gray-900 rounded p-2 font-mono text-gray-400">
+                <span class="text-purple-400" id="help-udp"></span> — no login, raw APRS datagrams
+              </div>
+            </div>
+            <div>
+              <p class="text-white font-bold mb-1">REST API (Grafana · Node-RED · scripts)</p>
+              <div class="bg-gray-900 rounded p-2 font-mono text-[10px] text-gray-400 space-y-0.5">
+                <div>GET <span class="text-green-400" id="help-hist"></span></div>
+                <div>GET <span class="text-green-400" id="help-geo"></span></div>
+                <div>GET <span class="text-green-400" id="help-kml"></span></div>
+                <div>GET <span class="text-green-400" id="help-obj"></span></div>
+                <div>GET <span class="text-green-400" id="help-ariss"></span></div>
+                <div>GET <span class="text-green-400" id="help-metrics"></span> <span class="text-gray-600">(admin auth)</span></div>
+              </div>
+              <p class="text-gray-500 mt-1">Auth: <code>X-API-Key: aprs_xxx</code> header or <code>?api_key=aprs_xxx</code> · Generate in Admin → API Keys</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <h3 class="font-bold text-green-300 mb-3">🔗 Webhooks</h3>
+          <div class="space-y-1 text-xs text-gray-300">
+            <div>Configure in <strong>Admin → Webhooks</strong>. Server POSTs JSON to your URL on each event.</div>
+            <div><span class="text-white font-bold">Events:</span> <code>position</code> (every position packet) · <code>message</code> (APRS messages)</div>
+            <div><span class="text-white font-bold">Filters:</span> callsign, event type, or blank for all traffic</div>
+            <div><span class="text-white font-bold">Secret:</span> sent as <code>X-APRS-Secret</code> header for HMAC verification</div>
+            <div class="bg-gray-900 rounded p-2 font-mono text-[10px] text-gray-400 mt-1">
+              POST your-url &nbsp;·&nbsp; X-APRS-Event: position &nbsp;·&nbsp; X-APRS-Callsign: M0ABC-9<br>
+              {"event":"position","timestamp":1234567890,"callsign":"M0ABC-9","data":{...}}
+            </div>
+            <div class="text-gray-500">Works with: Node-RED · Home Assistant · n8n · IFTTT · Zapier · custom scripts</div>
+          </div>
+        </div>
+
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <h3 class="font-bold text-green-300 mb-3">👁 Watchlist · 🗝 API Keys · 🔧 Utils · 👁 Demo</h3>
+          <div class="grid grid-cols-2 gap-3 text-xs text-gray-300">
+            <div><span class="text-white font-bold">Watchlist</span> — Add callsign or wildcard (G* = all G-prefix). SSID-agnostic. Browser push notifications. Persists in localStorage.</div>
+            <div><span class="text-white font-bold">API Keys</span> — Generate in Admin. Prefix <code>aprs_</code>. Use as header or query param. Last-used tracked. Read-only option.</div>
+            <div><span class="text-white font-bold">Passcode Calc</span> — Enter callsign → APRS-IS passcode. Standard XOR algorithm.</div>
+            <div><span class="text-white font-bold">Maidenhead</span> — Lat/lon ↔ grid square (8 char). Use My Location button.</div>
+            <div><span class="text-white font-bold">Beacon Generator</span> — Build valid APRS packet. Symbol, path presets, copy to clipboard.</div>
+            <div><span class="text-white font-bold">Demo Mode</span> — Visit <code>/demo</code>. Full dashboard, admin visible, all writes blocked. Share with others.</div>
+          </div>
+        </div>
+
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <h3 class="font-bold text-green-300 mb-3">📡 API Reference</h3>
+          <div class="text-xs font-mono space-y-0.5">
+            <div class="grid grid-cols-3 gap-2 text-gray-500 uppercase text-[10px] font-sans border-b border-gray-700 pb-1 mb-1"><span>Endpoint</span><span>Auth</span><span>Description</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/status</span><span class="text-gray-500">None</span><span class="text-gray-300">Server metrics + upstream status</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/history</span><span class="text-gray-500">API Key</span><span class="text-gray-300">Last hour position packets</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/objects</span><span class="text-gray-500">None</span><span class="text-gray-300">Active APRS objects/items</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/messages</span><span class="text-gray-500">None</span><span class="text-gray-300">Last hour APRS messages</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/ariss</span><span class="text-gray-500">None</span><span class="text-gray-300">Recent ARISS/ISS packets</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/version</span><span class="text-gray-500">None</span><span class="text-gray-300">Running version</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/export/geojson</span><span class="text-gray-500">None</span><span class="text-gray-300">GeoJSON download</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/export/kml</span><span class="text-gray-500">None</span><span class="text-gray-300">KML download (Google Earth)</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /metrics</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Prometheus metrics</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-yellow-400">GET/POST /api/config</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Read/update server config</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-yellow-400">POST /api/password</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Change admin password</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-yellow-400">POST /api/update</span><span class="text-gray-500">Admin</span><span class="text-gray-300">git pull + rebuild + restart</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-purple-400">GET/POST /api/webhooks</span><span class="text-gray-500">Admin</span><span class="text-gray-300">List / create webhooks</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-purple-400">DELETE /api/webhooks/{id}</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Delete webhook</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-purple-400">GET/POST /api/keys</span><span class="text-gray-500">Admin</span><span class="text-gray-300">List / generate API keys</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-purple-400">DELETE /api/keys/{id}</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Revoke API key</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-sky-400">GET /demo</span><span class="text-gray-500">None</span><span class="text-gray-300">Read-only demo mode</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- UTILITIES -->
+    <div id="utils-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
+      <div class="max-w-4xl mx-auto space-y-6">
+        <h2 class="text-xl font-bold text-teal-400">🔧 APRS Utilities</h2>
+
+        <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+
+          <!-- APRS Passcode Calculator -->
+          <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+            <h3 class="font-bold text-teal-300 mb-3 flex items-center space-x-2">
+              <span>🔑</span><span>APRS-IS Passcode</span>
+            </h3>
+            <p class="text-xs text-gray-400 mb-3">Calculate the APRS-IS passcode for any amateur callsign.</p>
+            <div class="flex space-x-2 mb-3">
+              <input type="text" id="pc-call" placeholder="Enter callsign (e.g. M0ABC)"
+                class="flex-1 bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm uppercase"
+                oninput="calcPasscode()" maxlength="12">
+            </div>
+            <div class="bg-gray-900 rounded p-3 text-center">
+              <div id="pc-result" class="text-3xl font-bold font-mono text-teal-400">--</div>
+              <div id="pc-callnorm" class="text-xs text-gray-500 mt-1"></div>
+            </div>
+            <p class="text-[10px] text-gray-600 mt-2">Based on the standard APRS-IS passcode algorithm (XOR hash of callsign, SSID stripped).</p>
+          </div>
+
+          <!-- Maidenhead Locator -->
+          <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+            <h3 class="font-bold text-teal-300 mb-3 flex items-center space-x-2">
+              <span>📐</span><span>Maidenhead / QTH Locator</span>
+            </h3>
+            <p class="text-xs text-gray-400 mb-3">Convert between lat/lon and Maidenhead grid square.</p>
+            <div class="space-y-2 mb-3">
+              <div class="flex space-x-2">
+                <input type="text" id="mh-lat" placeholder="Latitude (e.g. 53.7392)"
+                  class="flex-1 bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm"
+                  oninput="latLonToMH()">
+                <input type="text" id="mh-lon" placeholder="Longitude (e.g. -1.5992)"
+                  class="flex-1 bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm"
+                  oninput="latLonToMH()">
+              </div>
+              <div id="mh-result" class="bg-gray-900 rounded p-3 text-center">
+                <div class="text-2xl font-bold font-mono text-yellow-400">--</div>
+                <div class="text-xs text-gray-500 mt-1">Maidenhead grid square</div>
+              </div>
+              <div class="border-t border-gray-700 pt-2">
+                <input type="text" id="mh-grid" placeholder="Grid square (e.g. IO93)"
+                  class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm uppercase"
+                  oninput="mhToLatLon()" maxlength="8">
+                <div id="mh-latlon-result" class="text-xs text-gray-400 mt-2 font-mono text-center"></div>
+              </div>
+            </div>
+            <button onclick="useMHMyLocation()" class="text-xs bg-teal-800 hover:bg-teal-700 px-3 py-1 rounded w-full">📍 Use My Location</button>
+          </div>
+
+          <!-- Beacon Generator -->
+          <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+            <h3 class="font-bold text-teal-300 mb-3 flex items-center space-x-2">
+              <span>📡</span><span>APRS Beacon Generator</span>
+            </h3>
+            <p class="text-xs text-gray-400 mb-3">Build a valid APRS position packet string.</p>
+            <div class="space-y-2 text-sm">
+              <div class="flex space-x-2">
+                <div class="flex-1">
+                  <label class="text-xs text-gray-400">Callsign-SSID</label>
+                  <input type="text" id="bg-call" placeholder="M0ABC-9"
+                    class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm uppercase mt-1"
+                    oninput="genBeacon()">
+                </div>
+                <div class="flex-1">
+                  <label class="text-xs text-gray-400">Symbol</label>
+                  <input type="text" id="bg-sym" value=">-" maxlength="2"
+                    class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm font-mono mt-1"
+                    oninput="genBeacon()">
+                </div>
+              </div>
+              <div class="flex space-x-2">
+                <div class="flex-1">
+                  <label class="text-xs text-gray-400">Latitude</label>
+                  <input type="text" id="bg-lat" placeholder="53.7392"
+                    class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm mt-1"
+                    oninput="genBeacon()">
+                </div>
+                <div class="flex-1">
+                  <label class="text-xs text-gray-400">Longitude</label>
+                  <input type="text" id="bg-lon" placeholder="-1.5992"
+                    class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm mt-1"
+                    oninput="genBeacon()">
+                </div>
+              </div>
+              <div>
+                <label class="text-xs text-gray-400">Comment</label>
+                <input type="text" id="bg-comment" placeholder="My APRS station" maxlength="43"
+                  class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm mt-1"
+                  oninput="genBeacon()">
+              </div>
+              <div>
+                <label class="text-xs text-gray-400">Path</label>
+                <select id="bg-path" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none text-sm mt-1" onchange="genBeacon()">
+                  <option value="APRS,WIDE1-1,WIDE2-1">WIDE1-1,WIDE2-1 (standard mobile)</option>
+                  <option value="APRS,WIDE2-1">WIDE2-1 (fixed station)</option>
+                  <option value="APRS,WIDE1-1">WIDE1-1 (local only)</option>
+                  <option value="APRS">No path (direct only)</option>
+                  <option value="APRS,TCPIP*">TCPIP* (internet inject)</option>
+                </select>
+              </div>
+            </div>
+            <div class="mt-3 bg-gray-900 rounded p-3">
+              <p class="text-[10px] text-gray-500 mb-1">Generated packet:</p>
+              <code id="bg-result" class="block text-green-400 font-mono text-xs break-all">Fill in fields above...</code>
+            </div>
+            <button onclick="copyBeacon()" class="mt-2 text-xs bg-teal-800 hover:bg-teal-700 px-3 py-1.5 rounded w-full font-bold">📋 Copy to Clipboard</button>
+          </div>
+
+          <!-- Symbol Picker -->
+          <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+            <h3 class="font-bold text-teal-300 mb-3 flex items-center space-x-2">
+              <span>🎯</span><span>Symbol Picker</span>
+            </h3>
+            <p class="text-xs text-gray-400 mb-2">Click a symbol to see its code. Use in beacon generator or TNC config.</p>
+            <div class="flex space-x-2 mb-2">
+              <button onclick="showSymTable('/')" id="sym-tab-pri" class="text-xs px-3 py-1 rounded bg-teal-700 text-white font-bold">Primary /</button>
+              <button onclick="showSymTable('\\')" id="sym-tab-alt" class="text-xs px-3 py-1 rounded bg-gray-700 text-gray-300 hover:bg-gray-600">Alternate \</button>
+            </div>
+            <div id="sym-picker-grid" class="grid gap-1 overflow-y-auto max-h-64" style="grid-template-columns: repeat(16, 1fr)"></div>
+            <div id="sym-selected" class="mt-2 bg-gray-900 rounded p-2 text-xs hidden">
+              <div class="flex items-center space-x-3">
+                <div id="sym-sel-icon" class="flex-shrink-0"></div>
+                <div>
+                  <p class="text-white font-bold" id="sym-sel-name"></p>
+                  <p class="text-gray-400 font-mono" id="sym-sel-code"></p>
+                </div>
+                <button onclick="useSymbolInBeacon()" class="ml-auto text-xs bg-teal-800 hover:bg-teal-700 px-2 py-1 rounded">Use in Beacon</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- LEADERBOARD -->
+    <div id="leaderboard-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
+      <div class="max-w-5xl mx-auto space-y-5">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-bold text-rose-400">🏆 Leaderboard &amp; Community</h2>
+          <div class="flex items-center space-x-2">
+            <span id="lb-updated" class="text-xs text-gray-500"></span>
+            <button onclick="renderLeaderboard()" class="text-xs bg-rose-800 hover:bg-rose-700 px-3 py-1 rounded">↻ Refresh</button>
+          </div>
+        </div>
+
+        <!-- Top stats bar -->
+        <div class="grid grid-cols-4 gap-3">
+          <div class="bg-gray-800 rounded border border-gray-700 p-3 text-center">
+            <div class="text-2xl mb-1">📡</div>
+            <div class="text-xs text-gray-400 uppercase font-bold mb-1">Active Stations</div>
+            <div id="lb-total-stations" class="text-xl font-bold text-rose-400">--</div>
+          </div>
+          <div class="bg-gray-800 rounded border border-gray-700 p-3 text-center">
+            <div class="text-2xl mb-1">📦</div>
+            <div class="text-xs text-gray-400 uppercase font-bold mb-1">Packets Today</div>
+            <div id="lb-total-packets" class="text-xl font-bold text-orange-400">--</div>
+          </div>
+          <div class="bg-gray-800 rounded border border-gray-700 p-3 text-center">
+            <div class="text-2xl mb-1">🚗</div>
+            <div class="text-xs text-gray-400 uppercase font-bold mb-1">Mobile Stations</div>
+            <div id="lb-mobile-count" class="text-xl font-bold text-green-400">--</div>
+          </div>
+          <div class="bg-gray-800 rounded border border-gray-700 p-3 text-center">
+            <div class="text-2xl mb-1">🌦</div>
+            <div class="text-xs text-gray-400 uppercase font-bold mb-1">WX Stations</div>
+            <div id="lb-wx-count" class="text-xl font-bold text-sky-400">--</div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+
+          <!-- Most Active (most packets) -->
+          <div class="bg-gray-800 rounded border border-gray-700">
+            <div class="p-3 border-b border-gray-700 font-bold text-xs uppercase tracking-widest text-rose-300">
+              🏅 Most Packets (this session)
+            </div>
+            <table class="w-full text-xs">
+              <thead class="text-gray-500 uppercase border-b border-gray-700">
+                <tr><th class="p-2 text-left">#</th><th class="p-2 text-left">Callsign</th><th class="p-2 text-right">Packets</th><th class="p-2 text-right">Last Heard</th></tr>
+              </thead>
+              <tbody id="lb-most-packets" class="divide-y divide-gray-700 font-mono"></tbody>
+            </table>
+          </div>
+
+          <!-- Farthest stations -->
+          <div class="bg-gray-800 rounded border border-gray-700">
+            <div class="p-3 border-b border-gray-700 font-bold text-xs uppercase tracking-widest text-blue-300">
+              📏 Farthest Stations Heard
+            </div>
+            <table class="w-full text-xs">
+              <thead class="text-gray-500 uppercase border-b border-gray-700">
+                <tr><th class="p-2 text-left">#</th><th class="p-2 text-left">Callsign</th><th class="p-2 text-right">Distance</th><th class="p-2 text-right">Bearing</th></tr>
+              </thead>
+              <tbody id="lb-farthest" class="divide-y divide-gray-700 font-mono"></tbody>
+            </table>
+          </div>
+
+          <!-- Most recently heard -->
+          <div class="bg-gray-800 rounded border border-gray-700">
+            <div class="p-3 border-b border-gray-700 font-bold text-xs uppercase tracking-widest text-green-300">
+              ⚡ Most Recently Heard
+            </div>
+            <table class="w-full text-xs">
+              <thead class="text-gray-500 uppercase border-b border-gray-700">
+                <tr><th class="p-2 text-left">#</th><th class="p-2 text-left">Callsign</th><th class="p-2 text-right">Time</th><th class="p-2 text-right">Type</th></tr>
+              </thead>
+              <tbody id="lb-recent" class="divide-y divide-gray-700 font-mono"></tbody>
+            </table>
+          </div>
+
+          <!-- Fastest moving -->
+          <div class="bg-gray-800 rounded border border-gray-700">
+            <div class="p-3 border-b border-gray-700 font-bold text-xs uppercase tracking-widest text-yellow-300">
+              🚀 Fastest Moving
+            </div>
+            <table class="w-full text-xs">
+              <thead class="text-gray-500 uppercase border-b border-gray-700">
+                <tr><th class="p-2 text-left">#</th><th class="p-2 text-left">Callsign</th><th class="p-2 text-right">Speed</th><th class="p-2 text-right">Course</th></tr>
+              </thead>
+              <tbody id="lb-fastest" class="divide-y divide-gray-700 font-mono"></tbody>
+            </table>
+          </div>
+
+        </div>
+
+        <!-- Active Nets Detection -->
+        <div class="bg-gray-800 rounded border border-gray-700">
+          <div class="p-3 border-b border-gray-700 font-bold text-xs uppercase tracking-widest text-purple-300">
+            📻 Active Nets &amp; Groups Detected
+          </div>
+          <div id="lb-nets" class="p-3 flex flex-wrap gap-2">
+            <p id="lb-nets-empty" class="text-xs text-gray-600">Analysing traffic for NTS nets, tactical groups and message clusters...</p>
+          </div>
+        </div>
+
+        <!-- Message Board -->
+        <div class="bg-gray-800 rounded border border-gray-700">
+          <div class="flex items-center justify-between p-3 border-b border-gray-700">
+            <div class="font-bold text-xs uppercase tracking-widest text-teal-300">📋 Recent APRS Messages</div>
+            <span id="lb-msg-count" class="text-xs text-gray-500"></span>
+          </div>
+          <div id="lb-msg-board" class="divide-y divide-gray-700 max-h-72 overflow-y-auto text-xs font-mono"></div>
+          <p id="lb-msg-empty" class="text-xs text-gray-600 text-center py-4">No messages heard yet</p>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ISS / ARISS -->
+    <div id="iss-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
+      <div class="max-w-3xl mx-auto space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-bold text-indigo-400">🛸 ISS / ARISS APRS</h2>
+          <div class="flex space-x-2">
+            <button onclick="refreshISS()" class="text-xs bg-indigo-800 hover:bg-indigo-700 px-3 py-1 rounded">↻ Refresh</button>
+            <span id="iss-last-update" class="text-xs text-gray-500 self-center"></span>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-3 text-xs">
+          <div class="bg-gray-800 rounded border border-indigo-900 p-3">
+            <p class="text-indigo-400 font-bold uppercase mb-1">ISS Position</p>
+            <p id="iss-pos" class="font-mono text-white text-sm">Loading...</p>
+            <p id="iss-alt" class="text-gray-400 mt-1"></p>
+          </div>
+          <div class="bg-gray-800 rounded border border-indigo-900 p-3">
+            <p class="text-indigo-400 font-bold uppercase mb-1">ARISS Callsign</p>
+            <p class="font-mono text-white text-sm">RS0ISS / NA1SS</p>
+            <p class="text-gray-400 mt-1">Freq: 145.825 MHz FM</p>
+          </div>
+          <div class="bg-gray-800 rounded border border-indigo-900 p-3">
+            <p class="text-indigo-400 font-bold uppercase mb-1">Digipeater</p>
+            <p class="font-mono text-white text-sm">RS0ISS-4</p>
+            <p class="text-gray-400 mt-1">Path: RS0ISS or ARISS</p>
+          </div>
+        </div>
+        <div class="bg-gray-800 rounded border border-gray-700">
+          <div class="flex items-center justify-between p-3 border-b border-gray-700">
+            <h3 class="font-bold text-sm uppercase text-gray-300">Recent ARISS Packets</h3>
+            <span id="ariss-count" class="text-xs text-gray-500"></span>
+          </div>
+          <div id="ariss-loading" class="p-4 text-center text-gray-500 text-sm">Loading from aprs.fi...</div>
+          <table id="ariss-table" class="w-full text-left text-xs hidden">
+            <thead class="bg-gray-700 text-gray-400 uppercase">
+              <tr>
+                <th class="p-2">Time</th>
+                <th class="p-2">From</th>
+                <th class="p-2">To / Via</th>
+                <th class="p-2">Comment</th>
+                <th class="p-2">Coords</th>
+              </tr>
+            </thead>
+            <tbody id="ariss-list" class="divide-y divide-gray-700 font-mono"></tbody>
+          </table>
+        </div>
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <h3 class="font-bold text-sm uppercase text-gray-300 mb-2">Heard via ISS on this gateway</h3>
+          <p class="text-xs text-gray-400 mb-2">Stations received by this gateway that were digipeated via RS0ISS or ARISS:</p>
+          <table class="w-full text-xs">
+            <thead class="text-gray-500 uppercase border-b border-gray-700"><tr><th class="text-left p-1">Callsign</th><th class="text-left p-1">Last Heard</th><th class="text-left p-1">Position</th></tr></thead>
+            <tbody id="iss-local-list" class="divide-y divide-gray-700 font-mono"></tbody>
+          </table>
+          <p id="iss-local-empty" class="text-xs text-gray-600 text-center py-3">No ISS-digipeated packets received yet</p>
+        </div>
+        <div class="bg-indigo-900/20 border border-indigo-800 rounded p-3 text-xs text-gray-300">
+          <p class="font-bold text-indigo-300 mb-1">How to use ARISS APRS</p>
+          <p>Tune to <strong class="text-white">145.825 MHz FM</strong> · Set your path to <code class="text-yellow-400">ARISS</code> or <code class="text-yellow-400">RS0ISS</code> · 
+          Check pass times at <a href="https://www.heavens-above.com" target="_blank" class="text-blue-400 hover:underline">heavens-above.com ↗</a> · 
+          Live ISS track at <a href="https://aprs.fi/?call=RS0ISS" target="_blank" class="text-blue-400 hover:underline">aprs.fi ↗</a></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- HELP -->
+    <div id="help-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
+      <div class="max-w-4xl mx-auto space-y-4 pb-8">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-bold text-green-400">📖 User Guide &amp; API Reference</h2>
+          <span class="text-xs text-gray-500">Advanced APRS Go Server · 2E0LXY</span>
+        </div>
+
+        <!-- Quick start -->
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <h3 class="font-bold text-green-300 mb-3">🚀 Quick Start</h3>
+          <div class="grid grid-cols-2 gap-3 text-xs text-gray-300">
+            <div><span class="text-white font-bold">Map</span> — Live APRS stations. Click any marker for full station detail. Cluster badges expand on zoom.</div>
+            <div><span class="text-white font-bold">Stations</span> — Sortable list of all heard stations with icons, path and raw packet.</div>
+            <div><span class="text-white font-bold">Messages</span> — Send and receive APRS-IS messages. Login with your callsign and passcode.</div>
+            <div><span class="text-white font-bold">Status</span> — Server health, upstream connection, data export and Prometheus metrics.</div>
+            <div><span class="text-white font-bold">🌦 Weather</span> — All WX/CWOP stations with live gauges. Click 📈 for historical graphs.</div>
+            <div><span class="text-white font-bold">🏆 Board</span> — Leaderboard: most packets, farthest, fastest, message board, net detection.</div>
+            <div><span class="text-white font-bold">👁 Watch</span> — Watchlist with browser push notifications for any callsign or wildcard.</div>
+            <div><span class="text-white font-bold">🛸 ISS</span> — Live ISS position and recent ARISS/RS0ISS packets.</div>
+            <div><span class="text-white font-bold">🔧 Utils</span> — Passcode calculator, Maidenhead converter, beacon generator, symbol picker.</div>
+            <div><span class="text-white font-bold">Admin</span> — Server config, filter builder, webhooks, API keys, software update.</div>
+          </div>
+        </div>
+
+        <!-- Map features -->
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <h3 class="font-bold text-green-300 mb-3">🗺 Map Features</h3>
+          <div class="space-y-2 text-xs text-gray-300">
+            <div><span class="text-white font-bold">Click station</span> — Opens Station Detail modal with 4 tabs: Overview, History, Packets, Path.</div>
+            <div><span class="text-white font-bold">Station Detail → Show Path</span> — Draws the digipeater hop chain on the map with coloured lines. Yellow=source, green=used hop, blue=other. Auto-clears after 30s.</div>
+            <div><span class="text-white font-bold">Station Detail → History tab</span> — Speed graph over time + all position history with timestamps.</div>
+            <div><span class="text-white font-bold">Station Detail → Packets tab</span> — Last 50 raw packets for that callsign, timestamped.</div>
+            <div><span class="text-white font-bold">Station Detail → Path tab</span> — Visual hop chain with plain-English explanation of each element (WIDE, Q-construct, digi, iGate).</div>
+            <div><span class="text-white font-bold">Cluster markers</span> — Blue/orange/red badges at low zoom. Click to zoom in, expand at zoom 13+. Toggle via sidebar checkbox.</div>
+            <div><span class="text-white font-bold">Age fading</span> — Stations fade and greyscale as they age: fresh=100%, 20min=75%, 80min=45%.</div>
+            <div><span class="text-white font-bold">Objects/Items</span> — APRS objects shown with amber outline. Click for detail. Toggle via sidebar.</div>
+            <div><span class="text-white font-bold">Trail length</span> — Set how far back position trails are drawn (sidebar dropdown).</div>
+            <div><span class="text-white font-bold">PHG circles</span> — Show/hide coverage circles for digipeaters with PHG data.</div>
+            <div><span class="text-white font-bold">Locator grid</span> — Overlay Maidenhead grid squares on the map.</div>
+            <div><span class="text-white font-bold">Day/Night</span> — Toggle the solar terminator overlay.</div>
+            <div><span class="text-white font-bold">Map styles</span> — Switch between Street, Satellite, Topo and Dark basemaps.</div>
+          </div>
+        </div>
+
+        <!-- Connecting -->
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <h3 class="font-bold text-green-300 mb-3">🔌 Connecting to this Server</h3>
+          <div class="space-y-3 text-xs">
+            <div>
+              <p class="text-white font-bold mb-1">APRS-IS TCP Clients (APRSDroid, YAAC, Direwolf, APRSIS32)</p>
+              <div class="bg-gray-900 rounded p-2 font-mono text-gray-400">
+                Host: <span class="text-green-400" id="help-host"></span> &nbsp;·&nbsp; Port: <span class="text-green-400">14580</span> &nbsp;·&nbsp; Protocol: APRS-IS &nbsp;·&nbsp; TLS: None
+              </div>
+              <p class="text-gray-500 mt-1">Use your callsign and APRS-IS passcode. The server acts as a full APRS-IS feed server.</p>
+            </div>
+            <div>
+              <p class="text-white font-bold mb-1">WebSocket API (Browser / Custom clients)</p>
+              <div class="bg-gray-900 rounded p-2 font-mono text-gray-400">
+                URL: <span class="text-blue-400" id="help-ws"></span>
+              </div>
+              <p class="text-gray-500 mt-1">Connect and receive JSON frames. Types: <code class="text-gray-300">rx</code> (position), <code class="text-gray-300">obj</code> (object/item), <code class="text-gray-300">msg_history</code> (message), <code class="text-gray-300">replay_done</code>. On connect, server replays the last hour of packets automatically.</p>
+              <div class="bg-gray-900 rounded p-2 font-mono text-[10px] text-gray-500 mt-1">
+                {"type":"rx","packet":"M0ABC>APRS,WIDE2-1:!5322.40N/00127.30W-","data":{...}}
+              </div>
+            </div>
+            <div>
+              <p class="text-white font-bold mb-1">UDP (Hardware Trackers — TinyTrak, OpenTracker)</p>
+              <div class="bg-gray-900 rounded p-2 font-mono text-gray-400">
+                Host: <span class="text-purple-400" id="help-udp"></span> &nbsp;·&nbsp; Port: <span class="text-purple-400">14580</span>
+              </div>
+              <p class="text-gray-500 mt-1">Send raw APRS packets as UDP datagrams. No login or handshake required.</p>
+            </div>
+            <div>
+              <p class="text-white font-bold mb-1">REST API (Grafana, Node-RED, scripts)</p>
+              <div class="bg-gray-900 rounded p-2 font-mono text-[10px] text-gray-400 space-y-1">
+                <div>GET <span class="text-green-400" id="help-hist"></span> — Last hour of position packets (JSON)</div>
+                <div>GET <span class="text-green-400" id="help-geo"></span> — All stations as GeoJSON FeatureCollection</div>
+                <div>GET <span class="text-green-400" id="help-kml"></span> — All stations as KML (Google Earth)</div>
+                <div>GET <span class="text-green-400" id="help-obj"></span> — Active APRS objects/items (JSON)</div>
+                <div>GET <span class="text-green-400" id="help-metrics"></span> — Prometheus metrics (admin auth)</div>
+                <div>GET <span class="text-green-400" id="help-ariss"></span> — Recent ARISS/ISS packets proxied from aprs.fi</div>
+              </div>
+              <p class="text-gray-500 mt-1">Auth: <code class="text-gray-300">X-API-Key: aprs_xxx</code> header, or <code class="text-gray-300">?api_key=aprs_xxx</code> query param. Generate keys in Admin → API Keys.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Watchlist -->
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <h3 class="font-bold text-green-300 mb-3">👁 Watchlist &amp; Notifications</h3>
+          <div class="space-y-1 text-xs text-gray-300">
+            <div>Add any callsign to the watchlist — you get a <strong class="text-white">browser push notification</strong> and map highlight when it's heard.</div>
+            <div><span class="text-white font-bold">SSID-agnostic</span> — watching <code class="text-gray-300">M0ABC</code> alerts for M0ABC, M0ABC-9, M0ABC-10 etc.</div>
+            <div><span class="text-white font-bold">Wildcards</span> — <code class="text-gray-300">G*</code> matches all G-prefix callsigns. <code class="text-gray-300">MB7*</code> matches all MB7 repeaters.</div>
+            <div><span class="text-white font-bold">Persists</span> — watchlist saved to browser localStorage, survives page reloads.</div>
+            <div><span class="text-white font-bold">📍 Map button</span> — centres map on station's last known position.</div>
+            <div><span class="text-white font-bold">Alert log</span> — last 50 alerts with time, callsign and packet snippet.</div>
+          </div>
+        </div>
+
+        <!-- Webhooks -->
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <h3 class="font-bold text-green-300 mb-3">🔗 Webhooks</h3>
+          <div class="space-y-1 text-xs text-gray-300">
+            <div>Configure in <strong class="text-white">Admin → Webhooks</strong>. Server POSTs JSON to your URL on each APRS event.</div>
+            <div><span class="text-white font-bold">Events:</span> <code class="text-gray-300">position</code> (every position packet), <code class="text-gray-300">message</code> (APRS messages)</div>
+            <div><span class="text-white font-bold">Filters:</span> callsign (exact or base), event type, or leave blank for all</div>
+            <div><span class="text-white font-bold">Secret:</span> sent as <code class="text-gray-300">X-APRS-Secret</code> header for HMAC verification</div>
+            <div class="bg-gray-900 rounded p-2 font-mono text-[10px] text-gray-400 mt-1">
+              POST https://your-server/hook<br>
+              X-APRS-Event: position<br>
+              X-APRS-Callsign: M0ABC-9<br><br>
+              {"event":"position","timestamp":1234567890,"callsign":"M0ABC-9","data":{"lat":53.74,"lon":-1.59,...}}
+            </div>
+            <div class="text-gray-500">Works with: Node-RED · Home Assistant · n8n · IFTTT · Zapier · custom scripts</div>
+          </div>
+        </div>
+
+        <!-- API Keys -->
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <h3 class="font-bold text-green-300 mb-3">🗝 API Keys</h3>
+          <div class="space-y-1 text-xs text-gray-300">
+            <div>Generate in <strong class="text-white">Admin → API Keys</strong>. Keys are prefixed <code class="text-gray-300">aprs_</code> and shown once on creation.</div>
+            <div><span class="text-white font-bold">Usage:</span> <code class="text-gray-300">curl -H "X-API-Key: aprs_abc123" /api/history</code></div>
+            <div><span class="text-white font-bold">Or:</span> <code class="text-gray-300">curl "/api/history?api_key=aprs_abc123"</code></div>
+            <div><span class="text-white font-bold">Read-only keys</span> — access /api/history, /api/objects, /api/export/* without admin credentials</div>
+            <div><span class="text-white font-bold">Last used</span> — timestamp tracked per key so you can audit usage</div>
+          </div>
+        </div>
+
+        <!-- Utilities -->
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <h3 class="font-bold text-green-300 mb-3">🔧 Utilities</h3>
+          <div class="grid grid-cols-2 gap-3 text-xs text-gray-300">
+            <div><span class="text-white font-bold">Passcode Calculator</span> — Enter any callsign, get the APRS-IS numeric passcode instantly. Based on standard XOR algorithm.</div>
+            <div><span class="text-white font-bold">Maidenhead Converter</span> — Lat/lon → grid square (up to 8 chars) or grid square → lat/lon. Use My Location button.</div>
+            <div><span class="text-white font-bold">Beacon Generator</span> — Build a valid APRS position packet. Choose symbol, path preset, add comment. Copy to clipboard.</div>
+            <div><span class="text-white font-bold">Symbol Picker</span> — Visual grid of all 94 primary + 94 alternate APRS symbols. Click to see code, use in beacon generator.</div>
+          </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <h3 class="font-bold text-green-300 mb-3">⚙ APRS-IS Filter Builder (Admin)</h3>
+          <div class="space-y-1 text-xs text-gray-300">
+            <div><code class="text-yellow-300">auto</code> — Expands to a range filter centred on your geofence coordinates</div>
+            <div><code class="text-yellow-300">r/lat/lon/km</code> — Range filter: packets within km of lat/lon</div>
+            <div><code class="text-yellow-300">p/prefix</code> — Prefix filter: only callsigns starting with prefix (e.g. G, M, 2)</div>
+            <div><code class="text-yellow-300">b/call1/call2</code> — Buddy list: only packets from listed callsigns</div>
+            <div><code class="text-yellow-300">t/type</code> — Type filter: p=position, w=weather, o=object, m=message</div>
+            <div><code class="text-yellow-300">f/call/km</code> — Friend range: packets within km of a specific callsign</div>
+          </div>
+        </div>
+
+        <!-- Demo mode -->
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <h3 class="font-bold text-green-300 mb-3">👁 Demo Mode</h3>
+          <div class="text-xs text-gray-300 space-y-1">
+            <div>Visit <code class="text-amber-400">/demo</code> to see the full dashboard in read-only mode — no login required.</div>
+            <div>Admin panel accessible in demo mode with passcode hidden. All write actions blocked with toast notification.</div>
+            <div>Share <code class="text-amber-400">https://your-domain/demo</code> with others to show off the gateway.</div>
+          </div>
+        </div>
+
+        <!-- API reference -->
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <h3 class="font-bold text-green-300 mb-3">📡 Full API Reference</h3>
+          <div class="space-y-1 text-xs font-mono">
+            <div class="grid grid-cols-3 gap-2 text-gray-500 uppercase text-[10px] font-sans border-b border-gray-700 pb-1 mb-1">
+              <span>Endpoint</span><span>Auth</span><span>Description</span>
+            </div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/status</span><span class="text-gray-500">None</span><span class="text-gray-300">Server metrics and upstream status</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/history</span><span class="text-gray-500">API Key</span><span class="text-gray-300">Last hour of position packets</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/objects</span><span class="text-gray-500">None</span><span class="text-gray-300">Active APRS objects/items</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/messages</span><span class="text-gray-500">None</span><span class="text-gray-300">Last hour of APRS messages</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/ariss</span><span class="text-gray-500">None</span><span class="text-gray-300">Recent ARISS/ISS packets</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/version</span><span class="text-gray-500">None</span><span class="text-gray-300">Running version string</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/export/geojson</span><span class="text-gray-500">None</span><span class="text-gray-300">All stations as GeoJSON download</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/export/kml</span><span class="text-gray-500">None</span><span class="text-gray-300">All stations as KML download</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /metrics</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Prometheus metrics endpoint</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-yellow-400">GET /api/config</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Full server configuration</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-yellow-400">POST /api/config</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Update config + hot reload</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-yellow-400">POST /api/password</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Change admin password</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-yellow-400">POST /api/update</span><span class="text-gray-500">Admin</span><span class="text-gray-300">git pull + rebuild + restart (SSE)</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-purple-400">GET /api/webhooks</span><span class="text-gray-500">Admin</span><span class="text-gray-300">List webhooks</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-purple-400">POST /api/webhooks</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Create webhook</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-purple-400">DELETE /api/webhooks/{id}</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Delete webhook</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-purple-400">GET /api/keys</span><span class="text-gray-500">Admin</span><span class="text-gray-300">List API keys (masked)</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-purple-400">POST /api/keys</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Generate new API key</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-purple-400">DELETE /api/keys/{id}</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Revoke API key</span></div>
+            <div class="grid grid-cols-3 gap-2"><span class="text-sky-400">GET /demo</span><span class="text-gray-500">None</span><span class="text-gray-300">Read-only demo mode</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <!-- WEATHER DASHBOARD -->
+    <div id="wx-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
+      <div class="max-w-5xl mx-auto space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-bold text-sky-400">🌦 Weather Dashboard</h2>
+          <div class="flex items-center space-x-3">
+            <input type="text" id="wx-filter" placeholder="Filter station..."
+              class="bg-gray-700 px-2 py-1 rounded border border-gray-600 text-white text-xs outline-none focus:border-sky-500 uppercase"
+              oninput="renderWX()">
+            <span id="wx-count" class="text-xs text-gray-500"></span>
+            <button onclick="renderWX()" class="text-xs bg-sky-800 hover:bg-sky-700 px-3 py-1 rounded">↻ Refresh</button>
+          </div>
+        </div>
+
+        <!-- Summary cards -->
+        <div class="grid grid-cols-4 gap-3" id="wx-summary">
+          <div class="bg-gray-800 rounded border border-gray-700 p-3 text-center">
+            <div class="text-2xl mb-1">🌡</div>
+            <div class="text-xs text-gray-400 uppercase font-bold mb-1">Avg Temp</div>
+            <div id="wx-avg-temp" class="text-xl font-bold text-orange-400">--</div>
+          </div>
+          <div class="bg-gray-800 rounded border border-gray-700 p-3 text-center">
+            <div class="text-2xl mb-1">💧</div>
+            <div class="text-xs text-gray-400 uppercase font-bold mb-1">Avg Humidity</div>
+            <div id="wx-avg-hum" class="text-xl font-bold text-blue-400">--</div>
+          </div>
+          <div class="bg-gray-800 rounded border border-gray-700 p-3 text-center">
+            <div class="text-2xl mb-1">🌬</div>
+            <div class="text-xs text-gray-400 uppercase font-bold mb-1">Max Wind</div>
+            <div id="wx-max-wind" class="text-xl font-bold text-green-400">--</div>
+          </div>
+          <div class="bg-gray-800 rounded border border-gray-700 p-3 text-center">
+            <div class="text-2xl mb-1">📡</div>
+            <div class="text-xs text-gray-400 uppercase font-bold mb-1">WX Stations</div>
+            <div id="wx-station-count" class="text-xl font-bold text-sky-400">--</div>
+          </div>
+        </div>
+
+        <!-- Station cards grid -->
+        <div id="wx-grid" class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3"></div>
+        <p id="wx-empty" class="text-center text-gray-500 py-8 hidden">No weather stations heard yet. Waiting for CWOP/WX packets...</p>
+      </div>
+    </div>
+
+    <!-- UTILITIES -->
+    <div id="utils-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
+      <div class="max-w-4xl mx-auto space-y-6">
+        <h2 class="text-xl font-bold text-teal-400">🔧 APRS Utilities</h2>
+
+        <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+
+          <!-- APRS Passcode Calculator -->
+          <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+            <h3 class="font-bold text-teal-300 mb-3 flex items-center space-x-2">
+              <span>🔑</span><span>APRS-IS Passcode</span>
+            </h3>
+            <p class="text-xs text-gray-400 mb-3">Calculate the APRS-IS passcode for any amateur callsign.</p>
+            <div class="flex space-x-2 mb-3">
+              <input type="text" id="pc-call" placeholder="Enter callsign (e.g. M0ABC)"
+                class="flex-1 bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm uppercase"
+                oninput="calcPasscode()" maxlength="12">
+            </div>
+            <div class="bg-gray-900 rounded p-3 text-center">
+              <div id="pc-result" class="text-3xl font-bold font-mono text-teal-400">--</div>
+              <div id="pc-callnorm" class="text-xs text-gray-500 mt-1"></div>
+            </div>
+            <p class="text-[10px] text-gray-600 mt-2">Based on the standard APRS-IS passcode algorithm (XOR hash of callsign, SSID stripped).</p>
+          </div>
+
+          <!-- Maidenhead Locator -->
+          <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+            <h3 class="font-bold text-teal-300 mb-3 flex items-center space-x-2">
+              <span>📐</span><span>Maidenhead / QTH Locator</span>
+            </h3>
+            <p class="text-xs text-gray-400 mb-3">Convert between lat/lon and Maidenhead grid square.</p>
+            <div class="space-y-2 mb-3">
+              <div class="flex space-x-2">
+                <input type="text" id="mh-lat" placeholder="Latitude (e.g. 53.7392)"
+                  class="flex-1 bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm"
+                  oninput="latLonToMH()">
+                <input type="text" id="mh-lon" placeholder="Longitude (e.g. -1.5992)"
+                  class="flex-1 bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm"
+                  oninput="latLonToMH()">
+              </div>
+              <div id="mh-result" class="bg-gray-900 rounded p-3 text-center">
+                <div class="text-2xl font-bold font-mono text-yellow-400">--</div>
+                <div class="text-xs text-gray-500 mt-1">Maidenhead grid square</div>
+              </div>
+              <div class="border-t border-gray-700 pt-2">
+                <input type="text" id="mh-grid" placeholder="Grid square (e.g. IO93)"
+                  class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm uppercase"
+                  oninput="mhToLatLon()" maxlength="8">
+                <div id="mh-latlon-result" class="text-xs text-gray-400 mt-2 font-mono text-center"></div>
+              </div>
+            </div>
+            <button onclick="useMHMyLocation()" class="text-xs bg-teal-800 hover:bg-teal-700 px-3 py-1 rounded w-full">📍 Use My Location</button>
+          </div>
+
+          <!-- Beacon Generator -->
+          <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+            <h3 class="font-bold text-teal-300 mb-3 flex items-center space-x-2">
+              <span>📡</span><span>APRS Beacon Generator</span>
+            </h3>
+            <p class="text-xs text-gray-400 mb-3">Build a valid APRS position packet string.</p>
+            <div class="space-y-2 text-sm">
+              <div class="flex space-x-2">
+                <div class="flex-1">
+                  <label class="text-xs text-gray-400">Callsign-SSID</label>
+                  <input type="text" id="bg-call" placeholder="M0ABC-9"
+                    class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm uppercase mt-1"
+                    oninput="genBeacon()">
+                </div>
+                <div class="flex-1">
+                  <label class="text-xs text-gray-400">Symbol</label>
+                  <input type="text" id="bg-sym" value=">-" maxlength="2"
+                    class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm font-mono mt-1"
+                    oninput="genBeacon()">
+                </div>
+              </div>
+              <div class="flex space-x-2">
+                <div class="flex-1">
+                  <label class="text-xs text-gray-400">Latitude</label>
+                  <input type="text" id="bg-lat" placeholder="53.7392"
+                    class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm mt-1"
+                    oninput="genBeacon()">
+                </div>
+                <div class="flex-1">
+                  <label class="text-xs text-gray-400">Longitude</label>
+                  <input type="text" id="bg-lon" placeholder="-1.5992"
+                    class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm mt-1"
+                    oninput="genBeacon()">
+                </div>
+              </div>
+              <div>
+                <label class="text-xs text-gray-400">Comment</label>
+                <input type="text" id="bg-comment" placeholder="My APRS station" maxlength="43"
+                  class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm mt-1"
+                  oninput="genBeacon()">
+              </div>
+              <div>
+                <label class="text-xs text-gray-400">Path</label>
+                <select id="bg-path" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none text-sm mt-1" onchange="genBeacon()">
+                  <option value="APRS,WIDE1-1,WIDE2-1">WIDE1-1,WIDE2-1 (standard mobile)</option>
+                  <option value="APRS,WIDE2-1">WIDE2-1 (fixed station)</option>
+                  <option value="APRS,WIDE1-1">WIDE1-1 (local only)</option>
+                  <option value="APRS">No path (direct only)</option>
+                  <option value="APRS,TCPIP*">TCPIP* (internet inject)</option>
+                </select>
+              </div>
+            </div>
+            <div class="mt-3 bg-gray-900 rounded p-3">
+              <p class="text-[10px] text-gray-500 mb-1">Generated packet:</p>
+              <code id="bg-result" class="block text-green-400 font-mono text-xs break-all">Fill in fields above...</code>
+            </div>
+            <button onclick="copyBeacon()" class="mt-2 text-xs bg-teal-800 hover:bg-teal-700 px-3 py-1.5 rounded w-full font-bold">📋 Copy to Clipboard</button>
+          </div>
+
+          <!-- Symbol Picker -->
+          <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+            <h3 class="font-bold text-teal-300 mb-3 flex items-center space-x-2">
+              <span>🎯</span><span>Symbol Picker</span>
+            </h3>
+            <p class="text-xs text-gray-400 mb-2">Click a symbol to see its code. Use in beacon generator or TNC config.</p>
+            <div class="flex space-x-2 mb-2">
+              <button onclick="showSymTable('/')" id="sym-tab-pri" class="text-xs px-3 py-1 rounded bg-teal-700 text-white font-bold">Primary /</button>
+              <button onclick="showSymTable('\\')" id="sym-tab-alt" class="text-xs px-3 py-1 rounded bg-gray-700 text-gray-300 hover:bg-gray-600">Alternate \</button>
+            </div>
+            <div id="sym-picker-grid" class="grid gap-1 overflow-y-auto max-h-64" style="grid-template-columns: repeat(16, 1fr)"></div>
+            <div id="sym-selected" class="mt-2 bg-gray-900 rounded p-2 text-xs hidden">
+              <div class="flex items-center space-x-3">
+                <div id="sym-sel-icon" class="flex-shrink-0"></div>
+                <div>
+                  <p class="text-white font-bold" id="sym-sel-name"></p>
+                  <p class="text-gray-400 font-mono" id="sym-sel-code"></p>
+                </div>
+                <button onclick="useSymbolInBeacon()" class="ml-auto text-xs bg-teal-800 hover:bg-teal-700 px-2 py-1 rounded">Use in Beacon</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- LEADERBOARD -->
+    <div id="leaderboard-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
+      <div class="max-w-5xl mx-auto space-y-5">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-bold text-rose-400">🏆 Leaderboard &amp; Community</h2>
+          <div class="flex items-center space-x-2">
+            <span id="lb-updated" class="text-xs text-gray-500"></span>
+            <button onclick="renderLeaderboard()" class="text-xs bg-rose-800 hover:bg-rose-700 px-3 py-1 rounded">↻ Refresh</button>
+          </div>
+        </div>
+
+        <!-- Top stats bar -->
+        <div class="grid grid-cols-4 gap-3">
+          <div class="bg-gray-800 rounded border border-gray-700 p-3 text-center">
+            <div class="text-2xl mb-1">📡</div>
+            <div class="text-xs text-gray-400 uppercase font-bold mb-1">Active Stations</div>
+            <div id="lb-total-stations" class="text-xl font-bold text-rose-400">--</div>
+          </div>
+          <div class="bg-gray-800 rounded border border-gray-700 p-3 text-center">
+            <div class="text-2xl mb-1">📦</div>
+            <div class="text-xs text-gray-400 uppercase font-bold mb-1">Packets Today</div>
+            <div id="lb-total-packets" class="text-xl font-bold text-orange-400">--</div>
+          </div>
+          <div class="bg-gray-800 rounded border border-gray-700 p-3 text-center">
+            <div class="text-2xl mb-1">🚗</div>
+            <div class="text-xs text-gray-400 uppercase font-bold mb-1">Mobile Stations</div>
+            <div id="lb-mobile-count" class="text-xl font-bold text-green-400">--</div>
+          </div>
+          <div class="bg-gray-800 rounded border border-gray-700 p-3 text-center">
+            <div class="text-2xl mb-1">🌦</div>
+            <div class="text-xs text-gray-400 uppercase font-bold mb-1">WX Stations</div>
+            <div id="lb-wx-count" class="text-xl font-bold text-sky-400">--</div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+
+          <!-- Most Active (most packets) -->
+          <div class="bg-gray-800 rounded border border-gray-700">
+            <div class="p-3 border-b border-gray-700 font-bold text-xs uppercase tracking-widest text-rose-300">
+              🏅 Most Packets (this session)
+            </div>
+            <table class="w-full text-xs">
+              <thead class="text-gray-500 uppercase border-b border-gray-700">
+                <tr><th class="p-2 text-left">#</th><th class="p-2 text-left">Callsign</th><th class="p-2 text-right">Packets</th><th class="p-2 text-right">Last Heard</th></tr>
+              </thead>
+              <tbody id="lb-most-packets" class="divide-y divide-gray-700 font-mono"></tbody>
+            </table>
+          </div>
+
+          <!-- Farthest stations -->
+          <div class="bg-gray-800 rounded border border-gray-700">
+            <div class="p-3 border-b border-gray-700 font-bold text-xs uppercase tracking-widest text-blue-300">
+              📏 Farthest Stations Heard
+            </div>
+            <table class="w-full text-xs">
+              <thead class="text-gray-500 uppercase border-b border-gray-700">
+                <tr><th class="p-2 text-left">#</th><th class="p-2 text-left">Callsign</th><th class="p-2 text-right">Distance</th><th class="p-2 text-right">Bearing</th></tr>
+              </thead>
+              <tbody id="lb-farthest" class="divide-y divide-gray-700 font-mono"></tbody>
+            </table>
+          </div>
+
+          <!-- Most recently heard -->
+          <div class="bg-gray-800 rounded border border-gray-700">
+            <div class="p-3 border-b border-gray-700 font-bold text-xs uppercase tracking-widest text-green-300">
+              ⚡ Most Recently Heard
+            </div>
+            <table class="w-full text-xs">
+              <thead class="text-gray-500 uppercase border-b border-gray-700">
+                <tr><th class="p-2 text-left">#</th><th class="p-2 text-left">Callsign</th><th class="p-2 text-right">Time</th><th class="p-2 text-right">Type</th></tr>
+              </thead>
+              <tbody id="lb-recent" class="divide-y divide-gray-700 font-mono"></tbody>
+            </table>
+          </div>
+
+          <!-- Fastest moving -->
+          <div class="bg-gray-800 rounded border border-gray-700">
+            <div class="p-3 border-b border-gray-700 font-bold text-xs uppercase tracking-widest text-yellow-300">
+              🚀 Fastest Moving
+            </div>
+            <table class="w-full text-xs">
+              <thead class="text-gray-500 uppercase border-b border-gray-700">
+                <tr><th class="p-2 text-left">#</th><th class="p-2 text-left">Callsign</th><th class="p-2 text-right">Speed</th><th class="p-2 text-right">Course</th></tr>
+              </thead>
+              <tbody id="lb-fastest" class="divide-y divide-gray-700 font-mono"></tbody>
+            </table>
+          </div>
+
+        </div>
+
+        <!-- Active Nets Detection -->
+        <div class="bg-gray-800 rounded border border-gray-700">
+          <div class="p-3 border-b border-gray-700 font-bold text-xs uppercase tracking-widest text-purple-300">
+            📻 Active Nets &amp; Groups Detected
+          </div>
+          <div id="lb-nets" class="p-3 flex flex-wrap gap-2">
+            <p id="lb-nets-empty" class="text-xs text-gray-600">Analysing traffic for NTS nets, tactical groups and message clusters...</p>
+          </div>
+        </div>
+
+        <!-- Message Board -->
+        <div class="bg-gray-800 rounded border border-gray-700">
+          <div class="flex items-center justify-between p-3 border-b border-gray-700">
+            <div class="font-bold text-xs uppercase tracking-widest text-teal-300">📋 Recent APRS Messages</div>
+            <span id="lb-msg-count" class="text-xs text-gray-500"></span>
+          </div>
+          <div id="lb-msg-board" class="divide-y divide-gray-700 max-h-72 overflow-y-auto text-xs font-mono"></div>
+          <p id="lb-msg-empty" class="text-xs text-gray-600 text-center py-4">No messages heard yet</p>
+        </div>
+
       </div>
     </div>
 
@@ -1445,7 +2567,7 @@ function toggleOverlay(type) {
 }
 
 function togglePanel(panel) {
-  ['map','search','messages','status','help','admin','iss','watch','wx','utils'].forEach(p =>
+  ['map','search','messages','status','help','admin','iss','watch','wx','utils','leaderboard'].forEach(p =>
     document.getElementById(p+'-panel').classList.add('hidden'));
   document.getElementById(panel+'-panel').classList.remove('hidden');
   clearInterval(statusInterval);
@@ -1456,6 +2578,7 @@ function togglePanel(panel) {
   if (panel==='iss') { refreshISS(); renderISSLocal(); }
   if (panel==='watch') { renderWatchlist(); }
   if (panel==='wx') { renderWX(); }
+  if (panel==='leaderboard') { renderLeaderboard(); }
   if (panel==='utils') { initUtils(); }
 }
 
@@ -2637,6 +3760,14 @@ function populateConnInfo() {
   if (el) el.innerText = base + '/api/history';
   el = document.getElementById('conn-api-geo');
   if (el) el.innerText = base + '/api/export/geojson';
+  // Help panel
+  var ids = {host:host,'ws':wsProto+'//'+host+'/ws',udp:host+':14580',
+    hist:base+'/api/history',geo:base+'/api/export/geojson',
+    kml:base+'/api/export/kml',obj:base+'/api/objects',
+    metrics:base+'/metrics',ariss:base+'/api/ariss'};
+  Object.keys(ids).forEach(function(k){
+    var e = document.getElementById('help-'+k); if(e) e.innerText=ids[k];
+  });
 }
 
 
@@ -4011,6 +5142,200 @@ function copyNewKey() {
     if (btn) { btn.innerText = 'Copied!'; setTimeout(function(){ btn.innerText = 'Copy'; }, 2000); }
   });
 }
+
+
+// ─── Leaderboard & Community ──────────────────────────────────────────────────
+
+var _stationPacketCounts = {}; // callsign -> packet count this session
+
+// Hook into updateStation to count packets
+var _origUpdateStation2 = updateStation;
+updateStation = function(call, path, lat, lon, phg, ts, raw, sym) {
+  _origUpdateStation2(call, path, lat, lon, phg, ts, raw, sym);
+  _stationPacketCounts[call] = (_stationPacketCounts[call] || 0) + 1;
+};
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  var R = 6371;
+  var dLat = (lat2-lat1) * Math.PI/180;
+  var dLon = (lon2-lon1) * Math.PI/180;
+  var a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+          Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
+          Math.sin(dLon/2)*Math.sin(dLon/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function bearingDeg(lat1, lon1, lat2, lon2) {
+  var dLon = (lon2-lon1) * Math.PI/180;
+  var y = Math.sin(dLon) * Math.cos(lat2*Math.PI/180);
+  var x = Math.cos(lat1*Math.PI/180)*Math.sin(lat2*Math.PI/180) -
+          Math.sin(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.cos(dLon);
+  var b = Math.atan2(y, x) * 180/Math.PI;
+  return ((b + 360) % 360).toFixed(0);
+}
+
+function stationTypeLabel(st) {
+  var t = st.type || '';
+  if (t === 'cwop' || (st.raw && st.raw.match(/t[0-9-]{3}h[0-9]{2}/))) return 'WX';
+  if (t === 'ogn') return 'Glider';
+  var sym = st.sym || '';
+  var code = sym.length >= 2 ? sym[1] : '';
+  var labels = {'>':'Car','k':'Truck','v':'Van','U':'Bus','b':'Bike','<':'Moto',
+    '^':'Aircraft',"'":'Aircraft','X':'Helicopter','_':'WX','W':'NWS',
+    '#':'Digi','&':'iGate','r':'Antenna','-':'House','[':'Jogger'};
+  return labels[code] || 'Station';
+}
+
+function isMoving(st) {
+  return st.positions && st.positions.length >= 2 ||
+    (st.movement && st.movement.spd > 0);
+}
+
+function detectNets(msgStore) {
+  // Group messages by conversation and detect nets/patterns
+  var groups = {};
+  msgStore.forEach(function(m) {
+    // NTS net detection - look for BLN, NTS in callsigns
+    var src = (m.from || '').toUpperCase();
+    var dst = (m.to || '').toUpperCase();
+    if (src.includes('NTS') || dst.includes('NTS')) {
+      groups['NTS Net'] = (groups['NTS Net'] || 0) + 1;
+    }
+    if (src.includes('ARISS') || dst.includes('RS0ISS') || dst.includes('NA1SS')) {
+      groups['ARISS / ISS'] = (groups['ARISS / ISS'] || 0) + 1;
+    }
+    // Detect message clusters - same dest getting many messages
+    if (dst && dst.length >= 3 && !dst.includes('*')) {
+      groups[dst + ' net'] = (groups[dst + ' net'] || 0) + 1;
+    }
+  });
+  // Remove clusters with < 3 messages
+  return Object.entries(groups).filter(function(e){ return e[1] >= 2; })
+    .sort(function(a,b){ return b[1]-a[1]; }).slice(0, 8);
+}
+
+function renderLeaderboard() {
+  if (document.getElementById('leaderboard-panel').classList.contains('hidden')) return;
+
+  var now = Math.floor(Date.now()/1000);
+  document.getElementById('lb-updated').innerText = 'Updated ' + new Date().toLocaleTimeString();
+
+  var allStations = Object.keys(stations).map(function(call) {
+    var st = stations[call];
+    var latest = st.positions.length ? st.positions[st.positions.length-1] : null;
+    return { call:call, st:st, latest:latest,
+      packets: _stationPacketCounts[call] || 1,
+      ago: now - st.lastHeard };
+  });
+
+  var active = allStations.filter(function(s){ return s.ago < 7200; });
+
+  // Summary stats
+  document.getElementById('lb-total-stations').innerText = active.length;
+  document.getElementById('lb-total-packets').innerText =
+    Object.values(_stationPacketCounts).reduce(function(a,b){return a+b;},0);
+  document.getElementById('lb-mobile-count').innerText =
+    active.filter(function(s){ return isMoving(s.st); }).length;
+  document.getElementById('lb-wx-count').innerText =
+    active.filter(function(s){ return parseWXPacket && parseWXPacket(s.st.raw||'') && Object.keys(parseWXPacket(s.st.raw||'')).length > 0; }).length;
+
+  
+
+  // Most packets
+  var byPackets = active.slice().sort(function(a,b){ return b.packets - a.packets; }).slice(0,10);
+  makeRows(byPackets, [
+    { val: function(r){ return '<a class="text-rose-400 hover:underline">' + r.call + '</a>'; } },
+    { val: function(r){ return r.packets; }, cls:'text-right text-orange-400 font-bold' },
+    { val: function(r){ return r.ago < 60 ? r.ago+'s' : Math.floor(r.ago/60)+'m'; }, cls:'text-right text-gray-500' },
+  ], 'lb-most-packets');
+
+  // Farthest - need server geofence centre
+  var cfg = {};
+  try { cfg = JSON.parse(document.getElementById('adm-lat') ? '{}' : '{}'); } catch(e){}
+  var centLat = parseFloat(document.getElementById('adm-lat') ? document.getElementById('adm-lat').value : '0') || 53.7392;
+  var centLon = parseFloat(document.getElementById('adm-lon') ? document.getElementById('adm-lon').value : '0') || -1.5992;
+
+  var withPos = active.filter(function(s){ return s.latest; });
+  withPos.forEach(function(s){
+    s.dist = haversineKm(centLat, centLon, s.latest.lat, s.latest.lon);
+    s.bearing = bearingDeg(centLat, centLon, s.latest.lat, s.latest.lon);
+  });
+  var byDist = withPos.slice().sort(function(a,b){ return b.dist-a.dist; }).slice(0,10);
+  makeRows(byDist, [
+    { val: function(r){ return '<a class="text-blue-400 hover:underline">' + r.call + '</a>'; } },
+    { val: function(r){ return r.dist.toFixed(1) + ' km'; }, cls:'text-right text-blue-300 font-bold' },
+    { val: function(r){ return r.bearing + '° ' + windDirLabel(parseFloat(r.bearing)); }, cls:'text-right text-gray-500' },
+  ], 'lb-farthest');
+
+  // Most recent
+  var byRecent = active.slice().sort(function(a,b){ return a.ago - b.ago; }).slice(0,10);
+  makeRows(byRecent, [
+    { val: function(r){ return '<a class="text-green-400 hover:underline">' + r.call + '</a>'; } },
+    { val: function(r){ return r.ago < 60 ? r.ago+'s ago' : Math.floor(r.ago/60)+'m ago'; }, cls:'text-right text-green-300' },
+    { val: function(r){ return stationTypeLabel(r.st); }, cls:'text-right text-gray-500' },
+  ], 'lb-recent');
+
+  // Fastest
+  var withSpeed = active.filter(function(s){ return s.st.movement && s.st.movement.spd > 0; });
+  var bySpeed = withSpeed.slice().sort(function(a,b){ return b.st.movement.spd - a.st.movement.spd; }).slice(0,10);
+  makeRows(bySpeed, [
+    { val: function(r){ return '<a class="text-yellow-400 hover:underline">' + r.call + '</a>'; } },
+    { val: function(r){ return (r.st.movement.spd*1.852).toFixed(0) + ' km/h'; }, cls:'text-right text-yellow-300 font-bold' },
+    { val: function(r){ return r.st.movement.cse + '° ' + windDirLabel(r.st.movement.cse); }, cls:'text-right text-gray-500' },
+  ], 'lb-fastest');
+
+  // Nets
+  var nets = detectNets(typeof msgStore !== 'undefined' ? msgStore : []);
+  var netsEl = document.getElementById('lb-nets');
+  var netsEmpty = document.getElementById('lb-nets-empty');
+  if (nets.length) {
+    netsEmpty.classList.add('hidden');
+    netsEl.innerHTML = nets.map(function(n){
+      return '<span class="bg-purple-900/40 border border-purple-700 text-purple-300 text-xs px-3 py-1.5 rounded-full font-mono">'
+        + n[0] + ' <span class="text-purple-500">(' + n[1] + ' msgs)</span></span>';
+    }).join('');
+  } else {
+    netsEmpty.classList.remove('hidden');
+    netsEl.innerHTML = '';
+  }
+
+  // Message board
+  var msgs = typeof msgStore !== 'undefined' ? msgStore : [];
+  var msgBoard = document.getElementById('lb-msg-board');
+  var msgEmpty = document.getElementById('lb-msg-empty');
+  var msgCount = document.getElementById('lb-msg-count');
+  if (!msgs.length) {
+    msgBoard.innerHTML = ''; msgEmpty.classList.remove('hidden');
+    msgCount.innerText = '';
+  } else {
+    msgEmpty.classList.add('hidden');
+    msgCount.innerText = msgs.length + ' messages';
+    var recent = msgs.slice().reverse().slice(0, 50);
+    msgBoard.onclick = function(e) {
+      var s = e.target.closest('.lb-from-call');
+      if (s && s.dataset.call) openDetail(s.dataset.call);
+    };
+    msgBoard.innerHTML = recent.map(function(m) {
+      var t = new Date((m.ts||0)*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+      return '<div class="flex items-start p-2 space-x-2 hover:bg-gray-750">'
+        + '<span class="text-gray-600 flex-shrink-0 w-12">' + t + '</span>'
+        + '<span class="text-blue-400 flex-shrink-0 w-24 truncate cursor-pointer hover:underline lb-from-call" data-call="' + (m.from||'') + '">' + (m.from||'') + '</span>'
+        + '<span class="text-gray-500 flex-shrink-0">→</span>'
+        + '<span class="text-gray-300 flex-shrink-0 w-24 truncate">' + (m.to||'') + '</span>'
+        + '<span class="text-gray-400 flex-1 truncate">' + (m.text||'') + '</span>'
+        + (m.id ? '<span class="text-gray-600 flex-shrink-0 text-[10px]">{' + m.id + '}</span>' : '')
+        + '</div>';
+    }).join('');
+  }
+}
+
+// Auto-refresh leaderboard every 30s when open
+setInterval(function() {
+  if (document.getElementById('leaderboard-panel') &&
+      !document.getElementById('leaderboard-panel').classList.contains('hidden')) {
+    renderLeaderboard();
+  }
+}, 30000);
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 connectWS();
