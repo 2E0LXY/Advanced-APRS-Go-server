@@ -10,8 +10,8 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/dudinea/leaflet-maidenhead@master/src/maidenhead.js"></script>
-<script src="https://unpkg.com/@joergdietrich/leaflet.terminator"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-maidenhead@1.0.0/src/maidenhead.js"></script>
+<script src="https://unpkg.com/@joergdietrich/leaflet.terminator@1.0.0/L.Terminator.js"></script>
 <style>
   ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#1f2937}::-webkit-scrollbar-thumb{background:#4b5563;border-radius:3px}
   .aprs-icon{width:20px;height:20px;image-rendering:pixelated}
@@ -2778,19 +2778,61 @@ function changeMapStyle() {
 }
 
 function toggleOverlay(type) {
-  if (type==='grid') {
-    const on = document.getElementById('layer-grid').checked;
+  if (type === 'grid') {
+    var on = document.getElementById('layer-grid').checked;
     if (on && !gridLayer) {
-      try { gridLayer = L.maidenhead({color:'#6366f1',weight:1,opacity:0.6,fillOpacity:0}).addTo(map); }
-      catch(e) { console.warn('Maidenhead grid not available:', e); }
-    } else if (!on && gridLayer) { map.removeLayer(gridLayer); gridLayer=null; }
-  } else if (type==='night') {
-    const on = document.getElementById('layer-night').checked;
-    if (on && !nightLayer) {
-      try { nightLayer = L.terminator({fillColor:'#000',fillOpacity:0.25,color:'#666',weight:1}).addTo(map); }
-      catch(e) { console.warn('Terminator not available:', e); }
-    } else if (!on && nightLayer) { map.removeLayer(nightLayer); nightLayer=null; }
+      if (typeof L.maidenhead === 'function') {
+        gridLayer = L.maidenhead({color:'#6366f1',weight:1,opacity:0.6,fillOpacity:0,fontSize:9}).addTo(map);
+      } else if (typeof L.Maidenhead === 'function') {
+        gridLayer = L.Maidenhead({color:'#6366f1',weight:1,opacity:0.6,fillOpacity:0}).addTo(map);
+      } else {
+        // Fallback: draw grid manually using our own Maidenhead code
+        gridLayer = drawMaidenheadGrid();
+        console.warn('Using built-in Maidenhead grid');
+      }
+    } else if (!on && gridLayer) {
+      if (gridLayer.removeFrom) gridLayer.removeFrom(map);
+      else if (map.hasLayer(gridLayer)) map.removeLayer(gridLayer);
+      gridLayer = null;
+    }
+  } else if (type === 'night') {
+    var on2 = document.getElementById('layer-night').checked;
+    if (on2 && !nightLayer) {
+      if (typeof L.terminator === 'function') {
+        nightLayer = L.terminator({fillColor:'#000',fillOpacity:0.2,color:'#94a3b8',weight:1}).addTo(map);
+      } else if (typeof L.Terminator === 'function') {
+        nightLayer = new L.Terminator({fillColor:'#000',fillOpacity:0.2,color:'#94a3b8',weight:1}).addTo(map);
+      } else {
+        console.warn('Terminator plugin not loaded');
+        document.getElementById('layer-night').checked = false;
+      }
+    } else if (!on2 && nightLayer) {
+      map.removeLayer(nightLayer); nightLayer = null;
+    }
   }
+}
+
+// Built-in Maidenhead grid overlay (fallback when plugin not available)
+function drawMaidenheadGrid() {
+  var layers = [];
+  var letters = 'ABCDEFGHIJKLMNOPQRSTUVWX';
+  // Draw field boundaries (2-char grid)
+  for (var i = 0; i < 18; i++) {
+    for (var j = 0; j < 18; j++) {
+      var lon1 = i*20 - 180, lat1 = j*10 - 90;
+      var rect = L.rectangle([[lat1,lon1],[lat1+10,lon1+20]], {
+        color:'#6366f1', weight:1, opacity:0.5, fill:false
+      }).addTo(map);
+      layers.push(rect);
+      var lbl = L.marker([(lat1+5),(lon1+10)], {
+        icon: L.divIcon({html:'<span style="color:#818cf8;font-size:9px;font-weight:bold;opacity:0.7">'+letters[i]+letters[j]+'</span>',
+          className:'', iconSize:[20,10], iconAnchor:[10,5]})
+      }).addTo(map);
+      layers.push(lbl);
+    }
+  }
+  // Return a fake layer group
+  return { removeFrom: function(m){ layers.forEach(function(l){ m.removeLayer(l); }); }, _layers: layers };
 }
 
 function togglePanel(panel) {
