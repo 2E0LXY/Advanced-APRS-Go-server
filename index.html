@@ -10,7 +10,6 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/leaflet-maidenhead@1.0.0/src/maidenhead.js"></script>
 <script src="https://unpkg.com/@joergdietrich/leaflet.terminator@1.0.0/L.Terminator.js"></script>
 <style>
   ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#1f2937}::-webkit-scrollbar-thumb{background:#4b5563;border-radius:3px}
@@ -86,8 +85,7 @@
         <option value="sat">Satellite</option>
       </select>
       <div class="space-y-1">
-        <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="layer-grid" onchange="toggleOverlay('grid')"><span>Locator Grid</span></label>
-        <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="layer-night" onchange="toggleOverlay('night')"><span>Day/Night</span></label>
+                <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="layer-night" onchange="toggleOverlay('night')"><span>Day/Night</span></label>
       </div>
     </div>
     <div>
@@ -2790,23 +2788,7 @@ function changeMapStyle() {
 }
 
 function toggleOverlay(type) {
-  if (type === 'grid') {
-    var on = document.getElementById('layer-grid').checked;
-    if (on && !gridLayer) {
-      if (typeof L.maidenhead === 'function') {
-        gridLayer = L.maidenhead({color:'#6366f1',weight:1,opacity:0.6,fillOpacity:0,fontSize:9}).addTo(map);
-      } else if (typeof L.Maidenhead === 'function') {
-        gridLayer = L.Maidenhead({color:'#6366f1',weight:1,opacity:0.6,fillOpacity:0}).addTo(map);
-      } else {
-        console.warn('Maidenhead plugin not loaded - grid unavailable');
-        document.getElementById('layer-grid').checked = false;
-        alert('Locator grid requires the leaflet-maidenhead plugin. Check browser console for details.');
-      }
-    } else if (!on && gridLayer) {
-      if (map.hasLayer(gridLayer)) map.removeLayer(gridLayer);
-      gridLayer = null;
-    }
-  } else if (type === 'night') {
+  if (type === 'night') {
     var on2 = document.getElementById('layer-night').checked;
     if (on2 && !nightLayer) {
       if (typeof L.terminator === 'function') {
