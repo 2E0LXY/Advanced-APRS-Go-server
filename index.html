@@ -77,12 +77,18 @@
     <p class="text-gray-600 text-xs">Map will appear automatically when complete</p>
   </div>
 
-  <!-- SIDEBAR + MAP ROW -->
-  <div class="flex flex-1 min-h-0 relative">
-
   <!-- SIDEBAR -->
   <div id="controls-sidebar" style="position:relative" class="w-64 bg-gray-800 border-r border-gray-700 p-3 flex flex-col space-y-4 overflow-y-auto z-20 text-s
     <div>
+    <!-- Collapse tab -->
+    <button id="sidebar-tab" onclick="toggleSidebar()" title="Toggle sidebar"
+      style="position:absolute;right:-14px;top:50%;transform:translateY(-50%);width:14px;height:48px;z-index:30"
+      class="bg-gray-700 hover:bg-gray-600 border border-gray-600 border-l-0
+             rounded-r-md cursor-pointer flex items-center justify-center
+             text-gray-300 select-none shadow-md">
+      <span id="sidebar-arrow" style="font-size:9px">◀</span>
+    </button>
+
       <h3 class="text-xs uppercase text-gray-400 font-bold mb-2">Map Style</h3>
       <select id="map-style" class="w-full bg-gray-700 p-1.5 rounded outline-none mb-2" onchange="changeMapStyle()">
         <option value="osm">Street</option>
@@ -236,10 +242,10 @@
       style="transform:translateY(-50%);width:14px;height:48px;right:-14px">
       <span id="sidebar-arrow" style="font-size:9px">◀</span>
     </button>
-  </div>
+
 
   <!-- PANELS -->
-  <div class="flex-1 relative min-w-0">
+  <div class="flex-1 relative">
 
     <!-- MAP -->
     <div id="map-panel" class="absolute inset-0 z-10">
@@ -5993,7 +5999,6 @@ setInterval(checkForUpdates, 3600000); // re-check every hour
   </div>
 </div>
 
-  </div><!-- end SIDEBAR + MAP ROW -->
 
 </body>
 </html>
