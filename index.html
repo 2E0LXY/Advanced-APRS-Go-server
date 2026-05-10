@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,20 +12,188 @@
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="https://unpkg.com/@joergdietrich/leaflet.terminator@1.0.0/L.Terminator.js"></script>
 <style>
-  ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#1f2937}::-webkit-scrollbar-thumb{background:#4b5563;border-radius:3px}
-  .aprs-icon{width:20px;height:20px;image-rendering:pixelated}
-  .my-station-ring{outline:2px solid #facc15;outline-offset:2px;border-radius:50%}
-  .leaflet-tooltip{background:#1e293b;border:1px solid #334155;color:#e2e8f0;font-size:12px;padding:4px 8px}
-  .leaflet-tooltip-top:before{border-top-color:#334155}
-  #controls-sidebar{transition:width 0.25s ease,opacity 0.25s ease,padding 0.25s ease}
-  /* Cluster icon styles */
-  .marker-cluster-small,.marker-cluster-medium,.marker-cluster-large{background-clip:padding-box;border-radius:20px}
-  .marker-cluster-small{background-color:rgba(29,78,216,0.6)}
-  .marker-cluster-small div{background-color:rgba(29,78,216,0.9);border-radius:15px;color:#fff;font-weight:bold;font-size:12px;line-height:28px;text-align:center}
-  .marker-cluster-medium{background-color:rgba(234,88,12,0.6)}
-  .marker-cluster-medium div{background-color:rgba(234,88,12,0.9);border-radius:15px;color:#fff;font-weight:bold;font-size:12px;line-height:28px;text-align:center}
-  .marker-cluster-large{background-color:rgba(185,28,28,0.6)}
-  .marker-cluster-large div{background-color:rgba(185,28,28,0.9);border-radius:15px;color:#fff;font-weight:bold;font-size:12px;line-height:28px;text-align:center}
+/* ── Theme variables ─────────────────────────────────────────────────────── */
+:root {
+  --bg-base:    #111827;
+  --bg-panel:   #1f2937;
+  --bg-card:    #1e293b;
+  --bg-input:   #374151;
+  --bg-hover:   #374151;
+  --border:     #374151;
+  --border-mid: #4b5563;
+  --text-base:  #f1f5f9;
+  --text-mid:   #d1d5db;
+  --text-muted: #9ca3af;
+  --text-faint: #6b7280;
+  --accent:     #38bdf8;
+  --accent-dim: #0c4a6e;
+  --header-bg:  #1f2937;
+  --sidebar-bg: #1f2937;
+  --tooltip-bg: #1e293b;
+  --tooltip-border: #334155;
+  --tooltip-text:   #e2e8f0;
+  --scrollbar-track: #1f2937;
+  --scrollbar-thumb: #4b5563;
+  --btn-primary: #1d4ed8;
+  --btn-primary-hover: #2563eb;
+}
+[data-theme="light"] {
+  --bg-base:    #f1f5f9;
+  --bg-panel:   #ffffff;
+  --bg-card:    #f8fafc;
+  --bg-input:   #e2e8f0;
+  --bg-hover:   #e2e8f0;
+  --border:     #cbd5e1;
+  --border-mid: #94a3b8;
+  --text-base:  #0f172a;
+  --text-mid:   #1e293b;
+  --text-muted: #334155;
+  --text-faint: #64748b;
+  --accent:     #0284c7;
+  --accent-dim: #e0f2fe;
+  --header-bg:  #1e3a5f;
+  --sidebar-bg: #ffffff;
+  --tooltip-bg: #1e293b;
+  --tooltip-border: #334155;
+  --tooltip-text:   #e2e8f0;
+  --scrollbar-track: #e2e8f0;
+  --scrollbar-thumb: #94a3b8;
+  --btn-primary: #0284c7;
+  --btn-primary-hover: #0369a1;
+}
+
+/* ── Apply theme variables ───────────────────────────────────────────────── */
+body {
+  background: var(--bg-base);
+  color: var(--text-base);
+}
+
+/* Header */
+[data-theme="light"] .bg-gray-800.border-b { background: var(--header-bg) !important; }
+
+/* Sidebar */
+#controls-sidebar {
+  background: var(--sidebar-bg) !important;
+  border-color: var(--border) !important;
+  color: var(--text-base);
+  transition: width 0.25s ease, opacity 0.25s ease, padding 0.25s ease;
+}
+[data-theme="light"] #controls-sidebar * { color: var(--text-muted); }
+[data-theme="light"] #controls-sidebar h3,
+[data-theme="light"] #controls-sidebar .font-bold,
+[data-theme="light"] #controls-sidebar label { color: var(--text-mid) !important; }
+[data-theme="light"] #controls-sidebar select,
+[data-theme="light"] #controls-sidebar input[type=range] {
+  background: var(--bg-input);
+  color: var(--text-base);
+  border-color: var(--border);
+}
+[data-theme="light"] #controls-sidebar .bg-gray-900 {
+  background: var(--bg-card) !important;
+  border-color: var(--border) !important;
+}
+[data-theme="light"] #controls-sidebar button.bg-blue-600,
+[data-theme="light"] #controls-sidebar button.bg-blue-700 {
+  background: var(--btn-primary) !important;
+  color: #fff !important;
+}
+[data-theme="light"] .text-green-400 { color: #15803d !important; }
+[data-theme="light"] .text-blue-400  { color: #0369a1 !important; }
+[data-theme="light"] .text-sky-400   { color: #0284c7 !important; }
+[data-theme="light"] .text-purple-400{ color: #7e22ce !important; }
+[data-theme="light"] .text-amber-400 { color: #b45309 !important; }
+[data-theme="light"] .text-rose-400  { color: #be123c !important; }
+[data-theme="light"] .text-teal-400  { color: #0f766e !important; }
+[data-theme="light"] .text-indigo-400{ color: #4338ca !important; }
+[data-theme="light"] .text-yellow-400{ color: #a16207 !important; }
+[data-theme="light"] .text-orange-400{ color: #c2410c !important; }
+[data-theme="light"] .text-gray-400  { color: #475569 !important; }
+[data-theme="light"] .text-gray-500  { color: #64748b !important; }
+[data-theme="light"] .text-gray-300  { color: #334155 !important; }
+[data-theme="light"] .text-white     { color: #0f172a !important; }
+[data-theme="light"] .text-gray-200  { color: #1e293b !important; }
+[data-theme="light"] .text-gray-600  { color: #64748b !important; }
+
+/* Panels */
+[data-theme="light"] .bg-gray-900 {
+  background: var(--bg-card) !important;
+  color: var(--text-base);
+}
+[data-theme="light"] .bg-gray-800 {
+  background: var(--bg-panel) !important;
+  color: var(--text-base);
+}
+[data-theme="light"] .bg-gray-700 {
+  background: var(--bg-input) !important;
+  color: var(--text-base);
+}
+[data-theme="light"] .border-gray-700,
+[data-theme="light"] .border-gray-600 {
+  border-color: var(--border) !important;
+}
+[data-theme="light"] .border-gray-800 {
+  border-color: var(--border) !important;
+}
+
+/* Input fields */
+[data-theme="light"] input[type=text],
+[data-theme="light"] input[type=password],
+[data-theme="light"] input[type=number],
+[data-theme="light"] textarea,
+[data-theme="light"] select {
+  background: var(--bg-input) !important;
+  color: var(--text-base) !important;
+  border-color: var(--border) !important;
+}
+
+/* Tables */
+[data-theme="light"] .divide-gray-700 > * + * {
+  border-color: var(--border) !important;
+}
+[data-theme="light"] tr:hover { background: var(--bg-hover) !important; }
+
+/* Code / mono */
+[data-theme="light"] code,
+[data-theme="light"] .font-mono { color: var(--text-mid) !important; }
+[data-theme="light"] .text-green-400.font-mono { color: #166534 !important; }
+
+/* Modals */
+[data-theme="light"] #detail-modal > div,
+[data-theme="light"] #wx-detail-modal > div,
+[data-theme="light"] #station-modal > div,
+[data-theme="light"] #msg-auth-modal > div {
+  background: var(--bg-panel) !important;
+  border-color: var(--border) !important;
+}
+[data-theme="light"] .detail-tab { color: var(--text-muted) !important; }
+[data-theme="light"] .detail-tab.border-blue-500 { color: var(--text-base) !important; }
+
+/* Connection info & status */
+[data-theme="light"] .select-all { color: #0369a1 !important; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+
+/* Leaflet tooltip stays dark always */
+.leaflet-tooltip { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; font-size: 12px; padding: 4px 8px; }
+.leaflet-tooltip-top:before { border-top-color: #334155; }
+
+/* Map container never gets light theme - always shows daylight tiles */
+.leaflet-container { background: #aad3df !important; }
+[data-theme="light"] .leaflet-container,
+[data-theme="dark"]  .leaflet-container { background: #aad3df !important; }
+
+/* Other existing styles */
+.aprs-icon { width: 20px; height: 20px; image-rendering: pixelated; }
+.my-station-ring { outline: 2px solid #facc15; outline-offset: 2px; border-radius: 50%; }
+.marker-cluster-small  { background-clip: padding-box; border-radius: 20px; background-color: rgba(29,78,216,0.6); }
+.marker-cluster-small div { background-color: rgba(29,78,216,0.9); border-radius: 15px; color: #fff; font-weight: bold; font-size: 12px; line-height: 28px; text-align: center; }
+.marker-cluster-medium { background-clip: padding-box; border-radius: 20px; background-color: rgba(234,88,12,0.6); }
+.marker-cluster-medium div { background-color: rgba(234,88,12,0.9); border-radius: 15px; color: #fff; font-weight: bold; font-size: 12px; line-height: 28px; text-align: center; }
+.marker-cluster-large  { background-clip: padding-box; border-radius: 20px; background-color: rgba(185,28,28,0.6); }
+.marker-cluster-large div  { background-color: rgba(185,28,28,0.9); border-radius: 15px; color: #fff; font-weight: bold; font-size: 12px; line-height: 28px; text-align: center; }
 </style>
 </head>
 <body class="bg-gray-900 h-screen flex flex-col text-white font-sans overflow-hidden">
@@ -53,6 +221,8 @@
     <button id="update-btn" onclick="triggerUpdateFromHeader()"
        class="hidden px-3 py-1.5 bg-yellow-600 hover:bg-yellow-500 rounded transition-colors font-bold animate-pulse"
        title="">⬆ Update Available</button>
+    <button onclick="toggleTheme()" id="theme-btn" title="Toggle light/dark mode"
+      class="px-2 py-1.5 bg-gray-700 hover:bg-gray-600 rounded transition-colors text-base leading-none">🌙</button>
   </div>
 </div>
 
@@ -60,7 +230,7 @@
 <div class="flex-1 relative flex overflow-hidden">
 
   <!-- Replay Loading Overlay -->
-  <div id="replay-overlay" class="fixed inset-0 z-[100] bg-gray-950/95 flex flex-col items-center justify-center space-y-4">
+  <div id="replay-overlay" class="fixed inset-0 z-[100] flex flex-col items-center justify-center space-y-4" style="background:var(--bg-base,#0f172a);opacity:0.97">
     <div class="text-4xl mb-2">📡</div>
     <h2 class="text-white font-bold text-lg">Loading APRS History</h2>
     <p class="text-gray-400 text-sm">Replaying last hour of activity from server...</p>
@@ -225,9 +395,9 @@
     <button onclick="toggleSidebar()" id="sidebar-tab"
       style="position:absolute;top:50%;right:-18px;transform:translateY(-50%);
              width:18px;height:48px;z-index:25;display:flex;align-items:center;
-             justify-content:center;background:#374151;border:1px solid #4b5563;
+             justify-content:center;background:var(--bg-hover,#374151);border:1px solid var(--border-mid,#4b5563);
              border-left:none;border-radius:0 6px 6px 0;cursor:pointer;
-             color:#d1d5db;font-size:11px;box-shadow:3px 0 6px rgba(0,0,0,0.4)">
+             color:var(--text-muted,#d1d5db);font-size:11px;box-shadow:3px 0 6px rgba(0,0,0,0.3)">
       <span id="sidebar-arrow" style="user-select:none;pointer-events:none">&#9664;</span>
     </button>
 </div>
@@ -5906,8 +6076,40 @@ function toggleSidebar() {
   setTimeout(function(){ if(typeof map!=='undefined') map.invalidateSize(); }, 280);
 }
 
+
+// ─── Light / Dark Theme ───────────────────────────────────────────────────────
+function toggleTheme() {
+  var html  = document.documentElement;
+  var isDark = html.getAttribute('data-theme') === 'dark';
+  var newTheme = isDark ? 'light' : 'dark';
+  html.setAttribute('data-theme', newTheme);
+  localStorage.setItem('aprs-theme', newTheme);
+  var btn = document.getElementById('theme-btn');
+  if (btn) btn.textContent = newTheme === 'dark' ? '🌙' : '☀️';
+  // Swap map tile layer to keep map always daylight
+  if (typeof map !== 'undefined') {
+    updateMapTileTheme(newTheme);
+  }
+}
+
+function updateMapTileTheme(theme) {
+  // Map tiles are always daylight OSM regardless of UI theme
+  // No tile swap needed - OSM street tiles are already daylight
+  // Just ensure no CSS filter is applied to the map
+  var container = document.querySelector('.leaflet-container');
+  if (container) container.style.filter = '';
+}
+
+function initTheme() {
+  var saved = localStorage.getItem('aprs-theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+  var btn = document.getElementById('theme-btn');
+  if (btn) btn.textContent = saved === 'dark' ? '🌙' : '☀️';
+}
+
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 initReplayProgress();
+initTheme();
 connectWS();
 setInterval(redrawMap, 30000);
 populateConnInfo();
