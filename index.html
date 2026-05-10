@@ -1961,7 +1961,7 @@
           <h3 class="text-sm font-bold text-gray-300 uppercase mb-3">APRS-IS Uplink</h3>
           <div class="grid grid-cols-2 gap-3 mb-3">
             <div><label class="block text-gray-500 text-xs mb-1">Callsign</label><input type="text" id="admCall" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-red-500 uppercase text-sm" oninput="autoPasscode(this.value)"></div>
-            <div><label class="block text-gray-500 text-xs mb-1">Passcode</label><form onsubmit="return false;" style="display:contents"><input type="password" id="admPass" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-red-500 text-sm" autocomplete="current-password"></form></div>
+            <div><label class="block text-gray-500 text-xs mb-1">Passcode</label><form onsubmit="return false;" style="display:contents"><input type="text" name="username" autocomplete="username" style="display:none" value="admin"><input type="password" id="admPass" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-red-500 text-sm" autocomplete="current-password"></form></div>
           </div>
           <div class="mb-3">
             <label class="block text-gray-500 text-xs mb-1">Upstream Server</label>
@@ -2183,7 +2183,7 @@
         <!-- Change Password -->
         <div class="bg-gray-800 p-4 rounded border border-yellow-900">
           <h3 class="text-sm font-bold text-yellow-400 uppercase mb-3">Change Admin Password</h3>
-          <form onsubmit="changePassword();return false;">
+          <form onsubmit="changePassword();return false;"><input type="text" name="username" autocomplete="username" style="display:none" value="admin">
           <div class="flex space-x-3">
             <input type="password" id="newPass1" placeholder="New password" class="flex-1 bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-yellow-500 text-sm" autocomplete="new-password">
             <input type="password" id="newPass2" placeholder="Confirm password" class="flex-1 bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-yellow-500 text-sm" autocomplete="new-password">
@@ -5665,22 +5665,30 @@ async function fetchISSPasses(lat, lon) {
     if (!r.ok) throw new Error('TLE fetch failed: ' + r.status);
     var tleText = await r.text();
 
-    // Parse TLE - find ISS (ZARYA) lines
-    var lines = tleText.split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
+    // Parse TLE - robust parser handles \r\n, JSON, and 2-line or 3-line formats
     var line1 = null, line2 = null;
-
+    // Split on any line ending, trim whitespace and \r
+    var lines = tleText.split(/[\r\n]+/).map(function(l){ return l.trim(); }).filter(Boolean);
+    console.log('TLE lines received:', lines.length, lines.slice(0,3));
     for (var i = 0; i < lines.length; i++) {
-      // Name line followed by two TLE lines
-      if (lines[i].charAt(0) === '1' && lines[i].length >= 69) {
-        line1 = lines[i];
-        if (i+1 < lines.length && lines[i+1].charAt(0) === '2') {
-          line2 = lines[i+1];
-          break;
+      var l = lines[i];
+      // TLE line 1: starts with '1 ', 69 chars, checksum digit at end
+      if (l.charAt(0) === '1' && l.charAt(1) === ' ' && l.length >= 68) {
+        // Check next line is line 2
+        if (i+1 < lines.length) {
+          var l2 = lines[i+1];
+          if (l2.charAt(0) === '2' && l2.charAt(1) === ' ' && l2.length >= 68) {
+            line1 = l; line2 = l2;
+            break;
+          }
         }
       }
     }
-
-    if (!line1 || !line2) throw new Error('Could not parse TLE from response');
+    if (!line1 || !line2) {
+      console.error('TLE parse failed. Lines:', lines);
+      throw new Error('Could not parse TLE from response (got ' + lines.length + ' lines)');
+    }
+    console.log('TLE parsed OK:', line1.substring(0,30));
 
     block.innerHTML = '<p class="text-xs text-gray-400 animate-pulse">🛸 Calculating passes using SGP4 orbital mechanics...</p>';
 
