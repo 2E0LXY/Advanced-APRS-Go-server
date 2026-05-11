@@ -258,13 +258,13 @@ func main() {
 	// Public MOTD
 	http.HandleFunc("/api/motd", handlePublicMOTD)
 	// Admin features
-	http.HandleFunc("/api/admin/members", handleAdminMembers)
-	http.HandleFunc("/api/admin/members/", handleAdminMemberRouter)
-	http.HandleFunc("/api/admin/bans", handleAdminBans)
-	http.HandleFunc("/api/admin/motd", handleAdminMOTD)
-	http.HandleFunc("/api/admin/audit", handleAdminAudit)
-	http.HandleFunc("/api/admin/backup", handleAdminBackup)
-	http.HandleFunc("/api/admin/restore", handleAdminRestore)
+	http.HandleFunc("/api/admin/members", basicAuth(handleAdminMembers))
+	http.HandleFunc("/api/admin/members/", basicAuth(handleAdminMemberRouter))
+	http.HandleFunc("/api/admin/bans", basicAuth(handleAdminBans))
+	http.HandleFunc("/api/admin/motd", basicAuth(handleAdminMOTD))
+	http.HandleFunc("/api/admin/audit", basicAuth(handleAdminAudit))
+	http.HandleFunc("/api/admin/backup", basicAuth(handleAdminBackup))
+	http.HandleFunc("/api/admin/restore", basicAuth(handleAdminRestore))
 	http.HandleFunc("/metrics", basicAuth(handleMetrics))
 	http.HandleFunc("/api/webhooks", basicAuth(handleWebhooks))
 	http.HandleFunc("/api/webhooks/", basicAuth(handleWebhookDelete))
@@ -2694,7 +2694,6 @@ func getClientIP(r *http.Request) string {
 
 // GET /api/admin/members
 func handleAdminMembers(w http.ResponseWriter, r *http.Request) {
-	if !checkAdminAuth(r) { w.WriteHeader(401); return }
 	w.Header().Set("Content-Type", "application/json")
 	memberStoreMu.RLock()
 	defer memberStoreMu.RUnlock()
@@ -2732,7 +2731,6 @@ func handleAdminMembers(w http.ResponseWriter, r *http.Request) {
 // PUT /api/admin/members/{id} : update member
 // DELETE /api/admin/members/{id} : delete member
 func handleAdminMember(w http.ResponseWriter, r *http.Request) {
-	if !checkAdminAuth(r) { w.WriteHeader(401); return }
 	ip := getClientIP(r)
 	// Extract ID from path
 	id := strings.TrimPrefix(r.URL.Path, "/api/admin/members/")
@@ -2804,7 +2802,6 @@ func handleAdminMember(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/admin/members/{id}/messages : view member's stored messages
 func handleAdminMemberMessages(w http.ResponseWriter, r *http.Request) {
-	if !checkAdminAuth(r) { w.WriteHeader(401); return }
 	id := strings.TrimPrefix(r.URL.Path, "/api/admin/members/")
 	id = strings.TrimSuffix(id, "/messages")
 	w.Header().Set("Content-Type", "application/json")
@@ -2819,7 +2816,6 @@ func handleAdminMemberMessages(w http.ResponseWriter, r *http.Request) {
 
 // GET/POST /api/admin/bans
 func handleAdminBans(w http.ResponseWriter, r *http.Request) {
-	if !checkAdminAuth(r) { w.WriteHeader(401); return }
 	w.Header().Set("Content-Type", "application/json")
 	ip := getClientIP(r)
 	if r.Method == http.MethodGet {
@@ -2872,7 +2868,6 @@ func handleAdminBans(w http.ResponseWriter, r *http.Request) {
 // GET/POST /api/admin/motd
 // GET /api/motd (public)
 func handleAdminMOTD(w http.ResponseWriter, r *http.Request) {
-	if !checkAdminAuth(r) { w.WriteHeader(401); return }
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method == http.MethodGet {
 		motdMu.RLock()
@@ -2909,7 +2904,6 @@ func handlePublicMOTD(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/admin/audit?limit=100
 func handleAdminAudit(w http.ResponseWriter, r *http.Request) {
-	if !checkAdminAuth(r) { w.WriteHeader(401); return }
 	limit := 100
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if v, err := strconv.Atoi(l); err == nil && v > 0 { limit = v }
@@ -2921,7 +2915,6 @@ func handleAdminAudit(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/admin/backup : returns zip of all state
 func handleAdminBackup(w http.ResponseWriter, r *http.Request) {
-	if !checkAdminAuth(r) { w.WriteHeader(401); return }
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="aprs-backup-%s.json"`, time.Now().Format("2006-01-02-150405")))
 	backup := map[string]interface{}{
@@ -2940,7 +2933,6 @@ func handleAdminBackup(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/admin/restore : upload backup JSON
 func handleAdminRestore(w http.ResponseWriter, r *http.Request) {
-	if !checkAdminAuth(r) { w.WriteHeader(401); return }
 	w.Header().Set("Content-Type", "application/json")
 	body, err := io.ReadAll(r.Body)
 	if err != nil || len(body) == 0 { http.Error(w, "no body", 400); return }
