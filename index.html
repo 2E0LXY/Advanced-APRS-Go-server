@@ -925,133 +925,402 @@ body { background: var(--bg-base); color: var(--text-base); }
 
     <!-- HELP -->
     <div id="help-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
-      <div class="max-w-4xl mx-auto space-y-4 pb-8">
-        <div class="flex items-center justify-between">
-          <h2 class="text-xl font-bold text-green-400">📖 User Guide &amp; API Reference</h2>
-          <span class="text-xs text-gray-500">Advanced APRS Go Server · 2E0LXY</span>
-        </div>
+  <div class="max-w-5xl mx-auto space-y-4 pb-12">
 
-        <div class="bg-gray-800 rounded border border-gray-700 p-4">
-          <h3 class="font-bold text-green-300 mb-3">🚀 Quick Start — All Panels</h3>
-          <div class="grid grid-cols-2 gap-2 text-xs text-gray-300">
-            <div><span class="text-white font-bold">Map</span> — Live stations. Click marker for detail. Clusters expand on zoom.</div>
-            <div><span class="text-white font-bold">Stations</span> — Sortable list with icons, path, raw packet.</div>
-            <div><span class="text-white font-bold">Messages</span> — Send/receive APRS-IS messages with your callsign.</div>
-            <div><span class="text-white font-bold">Status</span> — Server health, export buttons, Prometheus link.</div>
-            <div><span class="text-white font-bold">🌦 Weather</span> — All WX/CWOP stations with gauges. Click 📈 for graphs.</div>
-            <div><span class="text-white font-bold">🏆 Board</span> — Leaderboard: packets, distance, speed, messages, nets.</div>
-            <div><span class="text-white font-bold">👁 Watch</span> — Watchlist with browser push notifications.</div>
-            <div><span class="text-white font-bold">🛸 ISS</span> — Live ISS position and ARISS/RS0ISS packets.</div>
-            <div><span class="text-white font-bold">🔧 Utils</span> — Passcode, Maidenhead, beacon generator, symbol picker.</div>
-            <div><span class="text-white font-bold">Admin</span> — Config, filters, webhooks, API keys, update.</div>
-          </div>
-        </div>
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+      <h2 class="text-2xl font-bold text-green-400">📚 APRS Net Help &amp; Documentation</h2>
+      <button onclick="togglePanel('help')" class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-sm">✕ Close</button>
+    </div>
 
-        <div class="bg-gray-800 rounded border border-gray-700 p-4">
-          <h3 class="font-bold text-green-300 mb-3">🗺 Map Features</h3>
-          <div class="space-y-1 text-xs text-gray-300">
-            <div><span class="text-white font-bold">Click station</span> — Station Detail modal: Overview, History, Packets, Path tabs.</div>
-            <div><span class="text-white font-bold">Show Path</span> — Draws digi hop chain: yellow=source, green=used, blue=other. Auto-clears 30s.</div>
-            <div><span class="text-white font-bold">History tab</span> — Speed graph + all positions with timestamps.</div>
-            <div><span class="text-white font-bold">Packets tab</span> — Last 50 raw packets for callsign.</div>
-            <div><span class="text-white font-bold">Path tab</span> — Visual hop chain with plain-English explanation (WIDE, Q-construct, digi, iGate).</div>
-            <div><span class="text-white font-bold">Clusters</span> — Blue/orange/red badges. Click to zoom. Individual icons at zoom 13+.</div>
-            <div><span class="text-white font-bold">Age fading</span> — Stations fade as they age: fresh=100%, 20min=75%, 80min=45% greyscale.</div>
-            <div><span class="text-white font-bold">Objects/Items</span> — Amber outline. APRS objects (storms, events, etc). Toggle in sidebar.</div>
-            <div><span class="text-white font-bold">Path visualiser</span> — Purple indicator in sidebar shows active path. ✕ to clear.</div>
-          </div>
-        </div>
-
-        <div class="bg-gray-800 rounded border border-gray-700 p-4">
-          <h3 class="font-bold text-green-300 mb-3">🔌 Connecting to this Server</h3>
-          <div class="space-y-3 text-xs">
-            <div>
-              <p class="text-white font-bold mb-1">APRS-IS TCP (APRSDroid · YAAC · Direwolf · APRSIS32)</p>
-              <div class="bg-gray-900 rounded p-2 font-mono text-gray-400">
-                Host: <span class="text-green-400" id="help-host"></span> &nbsp;·&nbsp; Port: 14580 &nbsp;·&nbsp; No TLS
-              </div>
-            </div>
-            <div>
-              <p class="text-white font-bold mb-1">WebSocket (Browser / Custom)</p>
-              <div class="bg-gray-900 rounded p-2 font-mono text-gray-400">
-                <span class="text-blue-400" id="help-ws"></span>
-              </div>
-              <p class="text-gray-500 mt-1">Receives JSON frames on connect. Types: <code>rx</code> (position) · <code>obj</code> (object) · <code>msg_history</code> · <code>replay_done</code>. Last hour replayed automatically on connect.</p>
-            </div>
-            <div>
-              <p class="text-white font-bold mb-1">UDP Hardware Trackers (TinyTrak · OpenTracker)</p>
-              <div class="bg-gray-900 rounded p-2 font-mono text-gray-400">
-                <span class="text-purple-400" id="help-udp"></span> — no login, raw APRS datagrams
-              </div>
-            </div>
-            <div>
-              <p class="text-white font-bold mb-1">REST API (Grafana · Node-RED · scripts)</p>
-              <div class="bg-gray-900 rounded p-2 font-mono text-[10px] text-gray-400 space-y-0.5">
-                <div>GET <span class="text-green-400" id="help-hist"></span></div>
-                <div>GET <span class="text-green-400" id="help-geo"></span></div>
-                <div>GET <span class="text-green-400" id="help-kml"></span></div>
-                <div>GET <span class="text-green-400" id="help-obj"></span></div>
-                <div>GET <span class="text-green-400" id="help-ariss"></span></div>
-                <div>GET <span class="text-green-400" id="help-metrics"></span> <span class="text-gray-600">(admin auth)</span></div>
-              </div>
-              <p class="text-gray-500 mt-1">Auth: <code>X-API-Key: aprs_xxx</code> header or <code>?api_key=aprs_xxx</code> · Generate in Admin → API Keys</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="bg-gray-800 rounded border border-gray-700 p-4">
-          <h3 class="font-bold text-green-300 mb-3">🔗 Webhooks</h3>
-          <div class="space-y-1 text-xs text-gray-300">
-            <div>Configure in <strong>Admin → Webhooks</strong>. Server POSTs JSON to your URL on each event.</div>
-            <div><span class="text-white font-bold">Events:</span> <code>position</code> (every position packet) · <code>message</code> (APRS messages)</div>
-            <div><span class="text-white font-bold">Filters:</span> callsign, event type, or blank for all traffic</div>
-            <div><span class="text-white font-bold">Secret:</span> sent as <code>X-APRS-Secret</code> header for HMAC verification</div>
-            <div class="bg-gray-900 rounded p-2 font-mono text-[10px] text-gray-400 mt-1">
-              POST your-url &nbsp;·&nbsp; X-APRS-Event: position &nbsp;·&nbsp; X-APRS-Callsign: M0ABC-9<br>
-              {"event":"position","timestamp":1234567890,"callsign":"M0ABC-9","data":{...}}
-            </div>
-            <div class="text-gray-500">Works with: Node-RED · Home Assistant · n8n · IFTTT · Zapier · custom scripts</div>
-          </div>
-        </div>
-
-        <div class="bg-gray-800 rounded border border-gray-700 p-4">
-          <h3 class="font-bold text-green-300 mb-3">👁 Watchlist · 🗝 API Keys · 🔧 Utils · 👁 Demo</h3>
-          <div class="grid grid-cols-2 gap-3 text-xs text-gray-300">
-            <div><span class="text-white font-bold">Watchlist</span> — Add callsign or wildcard (G* = all G-prefix). SSID-agnostic. Browser push notifications. Persists in localStorage.</div>
-            <div><span class="text-white font-bold">API Keys</span> — Generate in Admin. Prefix <code>aprs_</code>. Use as header or query param. Last-used tracked. Read-only option.</div>
-            <div><span class="text-white font-bold">Passcode Calc</span> — Enter callsign → APRS-IS passcode. Standard XOR algorithm.</div>
-            <div><span class="text-white font-bold">Maidenhead</span> — Lat/lon ↔ grid square (8 char). Use My Location button.</div>
-            <div><span class="text-white font-bold">Beacon Generator</span> — Build valid APRS packet. Symbol, path presets, copy to clipboard.</div>
-            <div><span class="text-white font-bold">Demo Mode</span> — Visit <code>/demo</code>. Full dashboard, admin visible, all writes blocked. Share with others.</div>
-          </div>
-        </div>
-
-        <div class="bg-gray-800 rounded border border-gray-700 p-4">
-          <h3 class="font-bold text-green-300 mb-3">📡 API Reference</h3>
-          <div class="text-xs font-mono space-y-0.5">
-            <div class="grid grid-cols-3 gap-2 text-gray-500 uppercase text-[10px] font-sans border-b border-gray-700 pb-1 mb-1"><span>Endpoint</span><span>Auth</span><span>Description</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/status</span><span class="text-gray-500">None</span><span class="text-gray-300">Server metrics + upstream status</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/history</span><span class="text-gray-500">API Key</span><span class="text-gray-300">Last hour position packets</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/objects</span><span class="text-gray-500">None</span><span class="text-gray-300">Active APRS objects/items</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/messages</span><span class="text-gray-500">None</span><span class="text-gray-300">Last hour APRS messages</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/ariss</span><span class="text-gray-500">None</span><span class="text-gray-300">Recent ARISS/ISS packets</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/version</span><span class="text-gray-500">None</span><span class="text-gray-300">Running version</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/export/geojson</span><span class="text-gray-500">None</span><span class="text-gray-300">GeoJSON download</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/export/kml</span><span class="text-gray-500">None</span><span class="text-gray-300">KML download (Google Earth)</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /metrics</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Prometheus metrics</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-yellow-400">GET/POST /api/config</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Read/update server config</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-yellow-400">POST /api/password</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Change admin password</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-yellow-400">POST /api/update</span><span class="text-gray-500">Admin</span><span class="text-gray-300">git pull + rebuild + restart</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-purple-400">GET/POST /api/webhooks</span><span class="text-gray-500">Admin</span><span class="text-gray-300">List / create webhooks</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-purple-400">DELETE /api/webhooks/{id}</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Delete webhook</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-purple-400">GET/POST /api/keys</span><span class="text-gray-500">Admin</span><span class="text-gray-300">List / generate API keys</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-purple-400">DELETE /api/keys/{id}</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Revoke API key</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-sky-400">GET /demo</span><span class="text-gray-500">None</span><span class="text-gray-300">Read-only demo mode</span></div>
-          </div>
-        </div>
-
+    <!-- Quick Navigation -->
+    <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+      <h3 class="text-sm font-bold text-gray-300 uppercase tracking-wider mb-3">Quick Navigation</h3>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+        <a href="#h-getting-started" class="bg-gray-700 hover:bg-gray-600 rounded p-2 text-center">🚀 Getting Started</a>
+        <a href="#h-map"             class="bg-gray-700 hover:bg-gray-600 rounded p-2 text-center">🗺 Map &amp; Stations</a>
+        <a href="#h-members"         class="bg-gray-700 hover:bg-gray-600 rounded p-2 text-center">👤 Member Accounts</a>
+        <a href="#h-messaging"       class="bg-gray-700 hover:bg-gray-600 rounded p-2 text-center">📨 Messaging</a>
+        <a href="#h-tracking"        class="bg-gray-700 hover:bg-gray-600 rounded p-2 text-center">📡 Station Tracking</a>
+        <a href="#h-features"        class="bg-gray-700 hover:bg-gray-600 rounded p-2 text-center">✨ Features Tour</a>
+        <a href="#h-connect"         class="bg-gray-700 hover:bg-gray-600 rounded p-2 text-center">🔌 Connect Clients</a>
+        <a href="#h-api"             class="bg-gray-700 hover:bg-gray-600 rounded p-2 text-center">⚙ REST API</a>
+        <a href="#h-webhooks"        class="bg-gray-700 hover:bg-gray-600 rounded p-2 text-center">🪝 Webhooks</a>
+        <a href="#h-admin"           class="bg-gray-700 hover:bg-gray-600 rounded p-2 text-center">🛠 Admin Guide</a>
+        <a href="#h-utilities"       class="bg-gray-700 hover:bg-gray-600 rounded p-2 text-center">🔧 Utilities</a>
+        <a href="#h-troubleshooting" class="bg-gray-700 hover:bg-gray-600 rounded p-2 text-center">❓ Troubleshooting</a>
       </div>
     </div>
+
+    <!-- ─── GETTING STARTED ─── -->
+    <div id="h-getting-started" class="bg-gray-800 rounded-lg border border-blue-700 p-4">
+      <h3 class="text-lg font-bold text-blue-400 mb-3">🚀 Getting Started</h3>
+      <div class="space-y-3 text-sm text-gray-300">
+        <p>APRS Net is a real-time APRS-IS gateway that shows live amateur radio packet activity on an interactive map. You can use it as a guest (read-only) or create a free account to unlock messaging, watchlists, and offline message storage.</p>
+        <div class="bg-gray-900 rounded p-3">
+          <p class="font-bold text-white mb-2">Three ways to use this site:</p>
+          <ol class="list-decimal list-inside space-y-1 text-gray-400">
+            <li><b class="text-white">Browse anonymously</b> — view the live map, station details and weather data without logging in</li>
+            <li><b class="text-white">Create a member account</b> — click 👤 Login in the header, then "Create a new account". Saves your watchlist across devices and stores APRS messages while you're offline</li>
+            <li><b class="text-white">Connect an APRS client</b> — point APRSDroid, YAAC, Direwolf or your radio to <code class="text-cyan-400">www.aprsnet.uk:14580</code> using your callsign and APRS-IS passcode</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── MAP & STATIONS ─── -->
+    <div id="h-map" class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+      <h3 class="text-lg font-bold text-sky-400 mb-3">🗺 Map &amp; Stations</h3>
+      <div class="space-y-3 text-sm text-gray-300">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <h4 class="font-bold text-white mb-1">Sidebar controls</h4>
+            <ul class="space-y-1 text-xs text-gray-400">
+              <li><b>Map Style</b>: switch between Street, Satellite, Topo and Dark themes</li>
+              <li><b>Day/Night</b>: overlay the daylight terminator on the map</li>
+              <li><b>Trail Length</b>: how far back to show station movement trails</li>
+              <li><b>Station Filters</b>: toggle Ham APRS, CWOP Weather, OGN Gliders, Objects/Items, Pi-Star/MMDVM</li>
+              <li><b>Hide Static</b>: hide stations that haven't moved for &gt; 5 min</li>
+              <li><b>PHG Circles</b>: show coverage circles for stations broadcasting PHG data</li>
+              <li><b>Cluster Markers</b>: groups dense areas into numbered clusters</li>
+            </ul>
+          </div>
+          <div>
+            <h4 class="font-bold text-white mb-1">Map interactions</h4>
+            <ul class="space-y-1 text-xs text-gray-400">
+              <li><b>Click station</b>: opens Station Detail with full info</li>
+              <li><b>Hover station</b>: callsign tooltip with type</li>
+              <li><b>📍 My Location</b>: centres map on your browser location</li>
+              <li><b>◀ Sidebar tab</b>: collapses the left sidebar to maximise map space</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── MEMBER ACCOUNTS ─── -->
+    <div id="h-members" class="bg-gray-800 rounded-lg border border-cyan-700 p-4">
+      <h3 class="text-lg font-bold text-cyan-400 mb-3">👤 Member Accounts</h3>
+      <div class="space-y-3 text-sm text-gray-300">
+        <p>Members get persistent watchlists across devices, server-side storage for APRS messages received while offline, and quick access to their callsign passcodes.</p>
+
+        <div class="bg-gray-900 rounded p-3">
+          <h4 class="font-bold text-white mb-2">Create an account</h4>
+          <ol class="list-decimal list-inside space-y-1 text-xs text-gray-400">
+            <li>Click <b class="text-cyan-400">👤 Login</b> in the header (top right)</li>
+            <li>Choose "Create a new account"</li>
+            <li>Enter your callsign — your APRS-IS passcode is calculated automatically and shown live</li>
+            <li>Set a password (6+ characters), optionally add your name and email</li>
+            <li>Click Create Account — you're logged in</li>
+          </ol>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div class="bg-gray-900 rounded p-3">
+            <h4 class="font-bold text-white mb-2">👁 Watchlist tab</h4>
+            <p class="text-xs text-gray-400">Add callsigns to watch. Wildcards supported (<code class="text-cyan-400">G*</code>, <code class="text-cyan-400">M0ABC*</code>). When a watched station appears on map you get a desktop notification. Watchlist syncs to the server — works on any device you log in from.</p>
+          </div>
+          <div class="bg-gray-900 rounded p-3">
+            <h4 class="font-bold text-white mb-2">📨 Messages tab</h4>
+            <p class="text-xs text-gray-400">Any APRS message sent to your callsign while you're offline is stored here (up to 500 messages). Unread messages show with a blue left border. Mark all read once you've reviewed them.</p>
+          </div>
+          <div class="bg-gray-900 rounded p-3">
+            <h4 class="font-bold text-white mb-2">📡 Callsigns tab</h4>
+            <p class="text-xs text-gray-400">Add additional callsigns you own (e.g. M0ABC-9, M0ABC-10). Each one's APRS-IS passcode is shown. Messages to any of your callsigns are stored for offline delivery.</p>
+          </div>
+          <div class="bg-gray-900 rounded p-3">
+            <h4 class="font-bold text-white mb-2">⚙ Settings tab</h4>
+            <p class="text-xs text-gray-400">Change your display name, email, or password (requires current password). Your callsign cannot be changed after registration.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── MESSAGING ─── -->
+    <div id="h-messaging" class="bg-gray-800 rounded-lg border border-green-700 p-4">
+      <h3 class="text-lg font-bold text-green-400 mb-3">📨 Messaging</h3>
+      <div class="space-y-3 text-sm text-gray-300">
+        <p>Send APRS messages directly through the web interface. Messages are sent through the APRS-IS network with your callsign and passcode.</p>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="bg-gray-900 rounded p-3">
+            <h4 class="font-bold text-white mb-2">From Messages panel</h4>
+            <ol class="list-decimal list-inside space-y-1 text-xs text-gray-400">
+              <li>Click <b>Messages</b> in the header</li>
+              <li>Enter your callsign and APRS-IS passcode</li>
+              <li>Type the destination callsign and message</li>
+              <li>Click Send</li>
+            </ol>
+          </div>
+          <div class="bg-gray-900 rounded p-3">
+            <h4 class="font-bold text-white mb-2">From Station Detail</h4>
+            <ol class="list-decimal list-inside space-y-1 text-xs text-gray-400">
+              <li>Click any station on the map</li>
+              <li>Click <b>✉ Send Message</b> in the footer</li>
+              <li>Destination is pre-filled, type your message</li>
+              <li>Click Send</li>
+            </ol>
+          </div>
+        </div>
+        <p class="text-xs text-amber-400">⚠ Don't know your passcode? Use the <b>🔧 Utils</b> panel → Passcode Calculator, or check your member dashboard.</p>
+      </div>
+    </div>
+
+    <!-- ─── STATION TRACKING ─── -->
+    <div id="h-tracking" class="bg-gray-800 rounded-lg border border-cyan-700 p-4">
+      <h3 class="text-lg font-bold text-cyan-400 mb-3">📡 Station Tracking</h3>
+      <div class="space-y-3 text-sm text-gray-300">
+        <p>Follow a moving station in real-time with full position history displayed as a cyan trail on the map.</p>
+        <div class="bg-gray-900 rounded p-3">
+          <ol class="list-decimal list-inside space-y-1 text-xs text-gray-400">
+            <li>Click a station on the map to open Station Detail</li>
+            <li>Click <b class="text-cyan-300">📡 Track</b> in the footer</li>
+            <li>Map centres on the station, draws cyan polyline trail with ▲ arrows showing direction of travel</li>
+            <li>Tooltip on trail shows position count, distance covered and average speed</li>
+            <li>Map auto-follows — re-centres every 3 seconds on new positions</li>
+            <li>Drag the map to temporarily pause auto-follow (resumes after 30s)</li>
+            <li>Click <b class="text-cyan-300">📡 G1ABC ✕</b> in header (or ⛔ Stop Tracking in detail modal) to stop</li>
+          </ol>
+        </div>
+        <p class="text-xs text-gray-500">Static stations can also be tracked — useful for watching when a vehicle starts moving.</p>
+      </div>
+    </div>
+
+    <!-- ─── FEATURES TOUR ─── -->
+    <div id="h-features" class="bg-gray-800 rounded-lg border border-amber-700 p-4">
+      <h3 class="text-lg font-bold text-amber-400 mb-3">✨ Features Tour</h3>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div class="bg-gray-900 rounded p-3">
+          <h4 class="font-bold text-white mb-1">🌦 Weather Panel</h4>
+          <p class="text-xs text-gray-400">Live weather dashboard pulling from CWOP stations. Gauges for temperature, wind, pressure, humidity, rainfall. Click a station for historical graphs over the last hour.</p>
+        </div>
+        <div class="bg-gray-900 rounded p-3">
+          <h4 class="font-bold text-white mb-1">👁 Watch Panel</h4>
+          <p class="text-xs text-gray-400">List of stations you're watching. Add via the input or from any station detail modal. Notifications appear when watched stations transmit.</p>
+        </div>
+        <div class="bg-gray-900 rounded p-3">
+          <h4 class="font-bold text-white mb-1">🛸 ISS Panel</h4>
+          <p class="text-xs text-gray-400">Live ISS position (TLE proxied through aprsnet.uk). Pass prediction using SGP4 orbital mechanics shows when ISS will be overhead at your location. ARISS announcements pulled from aprs.fi.</p>
+        </div>
+        <div class="bg-gray-900 rounded p-3">
+          <h4 class="font-bold text-white mb-1">🔧 Utilities Panel</h4>
+          <p class="text-xs text-gray-400">Passcode calculator, Maidenhead locator converter, beacon generator (build a position packet), APRS symbol picker.</p>
+        </div>
+        <div class="bg-gray-900 rounded p-3">
+          <h4 class="font-bold text-white mb-1">🏆 Leaderboard</h4>
+          <p class="text-xs text-gray-400">Live rankings: most active stations, fastest moving (vehicles only — WX excluded), longest path traversed, most-recently-heard. Active nets &amp; groups detected from message traffic.</p>
+        </div>
+        <div class="bg-gray-900 rounded p-3">
+          <h4 class="font-bold text-white mb-1">🌙 / ☀ Theme Toggle</h4>
+          <p class="text-xs text-gray-400">Switch between dark and light mode (top right). Map tiles always stay daylight regardless of theme. Preference saved across sessions.</p>
+        </div>
+        <div class="bg-gray-900 rounded p-3">
+          <h4 class="font-bold text-white mb-1">🔗 Packet Path Visualiser</h4>
+          <p class="text-xs text-gray-400">In Station Detail, click <b>Show Path</b> to draw lines on the map showing the digipeater hops a packet took to reach the gateway.</p>
+        </div>
+        <div class="bg-gray-900 rounded p-3">
+          <h4 class="font-bold text-white mb-1">📢 MOTD Banner</h4>
+          <p class="text-xs text-gray-400">Server announcements appear at the top of the page. Dismissable banners stay dismissed across reloads. Also shows unread APRS message count for logged-in members.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── CONNECT CLIENTS ─── -->
+    <div id="h-connect" class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+      <h3 class="text-lg font-bold text-purple-400 mb-3">🔌 Connect APRS Clients</h3>
+      <div class="space-y-3 text-sm text-gray-300">
+        <p>Connect any APRS-IS compatible client to this server:</p>
+        <div class="bg-gray-900 rounded p-3 font-mono text-xs">
+          <div class="grid grid-cols-2 gap-1">
+            <span class="text-gray-500">Host:</span><span class="text-cyan-300 select-all">www.aprsnet.uk</span>
+            <span class="text-gray-500">TCP Port:</span><span class="text-cyan-300 select-all">14580</span>
+            <span class="text-gray-500">UDP Port (hardware):</span><span class="text-cyan-300 select-all">14580</span>
+            <span class="text-gray-500">Protocol:</span><span>APRS-IS</span>
+            <span class="text-gray-500">TLS:</span><span class="text-amber-400">None</span>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <h4 class="font-bold text-white mb-1">Compatible clients</h4>
+            <ul class="space-y-1 text-xs text-gray-400">
+              <li>APRSDroid (Android)</li>
+              <li>YAAC (Yet Another APRS Client)</li>
+              <li>Direwolf (sound card TNC)</li>
+              <li>APRSIS32 (Windows)</li>
+              <li>Xastir (Linux)</li>
+              <li>APRS Client (this server's own desktop app — Windows/Linux)</li>
+            </ul>
+          </div>
+          <div>
+            <h4 class="font-bold text-white mb-1">WebSocket API</h4>
+            <p class="text-xs text-gray-400 mb-1">Direct browser/code access:</p>
+            <div class="bg-gray-900 rounded p-2 font-mono text-xs text-cyan-300 select-all">wss://www.aprsnet.uk/ws</div>
+            <p class="text-xs text-gray-500 mt-1">JSON auth: <code>{"type":"auth"}</code>. Last hour of packets replayed on connect.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── REST API ─── -->
+    <div id="h-api" class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+      <h3 class="text-lg font-bold text-indigo-400 mb-3">⚙ REST API</h3>
+      <div class="space-y-2 text-xs">
+        <p class="text-gray-300 mb-2">Base URL: <code class="text-cyan-300">https://www.aprsnet.uk/api</code></p>
+        <table class="w-full font-mono text-xs">
+          <thead><tr class="text-gray-500 border-b border-gray-700"><th class="text-left py-1">Endpoint</th><th class="text-left">Auth</th><th class="text-left">Description</th></tr></thead>
+          <tbody class="divide-y divide-gray-800">
+            <tr><td class="py-1 text-sky-400">GET /api/status</td><td class="text-gray-500">None</td><td class="text-gray-300">Server stats, upstream connection, packet counts</td></tr>
+            <tr><td class="py-1 text-sky-400">GET /api/history</td><td class="text-amber-400">API Key</td><td class="text-gray-300">Last hour of positions (JSON array)</td></tr>
+            <tr><td class="py-1 text-sky-400">GET /api/objects</td><td class="text-gray-500">None</td><td class="text-gray-300">Currently active APRS objects/items</td></tr>
+            <tr><td class="py-1 text-sky-400">GET /api/messages</td><td class="text-gray-500">None</td><td class="text-gray-300">Last hour of APRS messages</td></tr>
+            <tr><td class="py-1 text-sky-400">GET /api/ariss</td><td class="text-gray-500">None</td><td class="text-gray-300">ARISS info proxied from aprs.fi</td></tr>
+            <tr><td class="py-1 text-sky-400">GET /api/tle</td><td class="text-gray-500">None</td><td class="text-gray-300">ISS TLE elements (cached 6h)</td></tr>
+            <tr><td class="py-1 text-sky-400">GET /api/version</td><td class="text-gray-500">None</td><td class="text-gray-300">Server version &amp; build info</td></tr>
+            <tr><td class="py-1 text-sky-400">GET /api/motd</td><td class="text-gray-500">None</td><td class="text-gray-300">Public message of the day</td></tr>
+            <tr><td class="py-1 text-sky-400">GET /api/export/geojson</td><td class="text-gray-500">None</td><td class="text-gray-300">All stations + objects as GeoJSON</td></tr>
+            <tr><td class="py-1 text-sky-400">GET /api/export/kml</td><td class="text-gray-500">None</td><td class="text-gray-300">All stations + objects as KML (Google Earth)</td></tr>
+            <tr><td class="py-1 text-purple-400">POST /api/member/register</td><td class="text-gray-500">None</td><td class="text-gray-300">Create member account</td></tr>
+            <tr><td class="py-1 text-purple-400">POST /api/member/login</td><td class="text-gray-500">None</td><td class="text-gray-300">Returns session token</td></tr>
+            <tr><td class="py-1 text-purple-400">GET /api/member/profile</td><td class="text-amber-400">Token</td><td class="text-gray-300">Member profile, watchlist, callsigns</td></tr>
+            <tr><td class="py-1 text-purple-400">GET /api/member/messages</td><td class="text-amber-400">Token</td><td class="text-gray-300">Stored offline APRS messages</td></tr>
+            <tr><td class="py-1 text-rose-400">GET /metrics</td><td class="text-red-400">Admin</td><td class="text-gray-300">Prometheus metrics endpoint</td></tr>
+            <tr><td class="py-1 text-gray-400">GET /demo</td><td class="text-gray-500">None</td><td class="text-gray-300">Read-only demo mode (sets cookie)</td></tr>
+          </tbody>
+        </table>
+        <p class="text-xs text-gray-500 mt-2"><b>API Keys:</b> generate via Admin → API Keys. Send as <code>X-API-Key: ...</code> header. <b>Member Tokens:</b> after login, send as <code>X-Member-Token: ...</code> header.</p>
+      </div>
+    </div>
+
+    <!-- ─── WEBHOOKS ─── -->
+    <div id="h-webhooks" class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+      <h3 class="text-lg font-bold text-rose-400 mb-3">🪝 Webhooks</h3>
+      <div class="space-y-2 text-sm text-gray-300">
+        <p>Get notified when watched events happen. Configure in Admin → Webhooks.</p>
+        <div class="bg-gray-900 rounded p-3 text-xs">
+          <p class="font-bold text-white mb-1">Event types:</p>
+          <ul class="space-y-1 text-gray-400">
+            <li><code class="text-amber-300">message</code> — every APRS message received (filter by callsign)</li>
+            <li><code class="text-amber-300">watched</code> — a callsign on the server-wide watchlist transmits</li>
+            <li><code class="text-amber-300">object</code> — a new APRS object appears</li>
+            <li><code class="text-amber-300">upstream</code> — upstream APRS-IS connection state changes</li>
+          </ul>
+          <p class="font-bold text-white mt-2 mb-1">Payload (POST JSON):</p>
+          <pre class="text-gray-400">{
+  "event": "message",
+  "from": "G1ABC", "to": "M0XYZ",
+  "text": "Hello", "ts": 1715000000,
+  "callsign": "G1ABC"
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── ADMIN GUIDE ─── -->
+    <div id="h-admin" class="bg-gray-800 rounded-lg border border-red-700 p-4">
+      <h3 class="text-lg font-bold text-red-400 mb-3">🛠 Admin Guide</h3>
+      <div class="space-y-3 text-sm text-gray-300">
+        <p class="text-xs text-amber-400">⚠ This section requires admin login. Click Admin in the header.</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div class="bg-gray-900 rounded p-3">
+            <h4 class="font-bold text-cyan-400 mb-1">👥 Member Management</h4>
+            <p class="text-xs text-gray-400">View all members, search by callsign or name. Per-member actions:</p>
+            <ul class="list-disc list-inside text-xs text-gray-500 mt-1 space-y-0.5">
+              <li><b>Edit</b> — update name, email, callsigns</li>
+              <li><b>Msgs</b> — view their stored APRS messages</li>
+              <li><b>Pass</b> — set a new password (forces re-login)</li>
+              <li><b>Logout</b> — kill all sessions across devices</li>
+              <li><b>Delete</b> — permanently remove account &amp; data</li>
+            </ul>
+          </div>
+          <div class="bg-gray-900 rounded p-3">
+            <h4 class="font-bold text-red-300 mb-1">🚫 Ban List</h4>
+            <p class="text-xs text-gray-400">Block specific callsigns from being broadcast. Wildcards supported (e.g. <code class="text-cyan-300">SPAM*</code>). Banned packets are silently dropped from WebSocket and TCP client streams.</p>
+          </div>
+          <div class="bg-gray-900 rounded p-3">
+            <h4 class="font-bold text-amber-300 mb-1">📢 MOTD</h4>
+            <p class="text-xs text-gray-400">Banner shown at top of every page. Four levels: info / success / warning / error. Optionally user-dismissable.</p>
+          </div>
+          <div class="bg-gray-900 rounded p-3">
+            <h4 class="font-bold text-purple-300 mb-1">💾 Backup &amp; Restore</h4>
+            <p class="text-xs text-gray-400">Download a single JSON file containing all members, bans, MOTD, webhooks, API keys and config. Restore by uploading. <b>Recommended weekly backup.</b></p>
+          </div>
+          <div class="bg-gray-900 rounded p-3">
+            <h4 class="font-bold text-gray-300 mb-1">📋 Audit Log</h4>
+            <p class="text-xs text-gray-400">Every admin action logged: who, what, when, target, IP. Member registrations also logged. Last 100 entries shown by default.</p>
+          </div>
+          <div class="bg-gray-900 rounded p-3">
+            <h4 class="font-bold text-yellow-300 mb-1">⚡ Hot Reload Config</h4>
+            <p class="text-xs text-gray-400">Change APRS-IS filter, upstream server, server name etc. without restarting. Changes apply immediately to the upstream connection.</p>
+          </div>
+          <div class="bg-gray-900 rounded p-3">
+            <h4 class="font-bold text-blue-300 mb-1">🔑 API Keys</h4>
+            <p class="text-xs text-gray-400">Generate keys for /api/history access (Grafana, dashboards, scripts). Each key can be revoked individually.</p>
+          </div>
+          <div class="bg-gray-900 rounded p-3">
+            <h4 class="font-bold text-rose-300 mb-1">⬆ Self-Update</h4>
+            <p class="text-xs text-gray-400">If a new GitHub release is available, the ⬆ button appears in the header. Pulls, rebuilds and restarts via systemd. Audit-logged.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── UTILITIES ─── -->
+    <div id="h-utilities" class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+      <h3 class="text-lg font-bold text-yellow-400 mb-3">🔧 Utilities (the 🔧 Utils panel)</h3>
+      <div class="grid grid-cols-2 gap-3 text-xs text-gray-300">
+        <div class="bg-gray-900 rounded p-3">
+          <h4 class="font-bold text-white mb-1">Passcode Calculator</h4>
+          <p class="text-gray-400">Enter a callsign → get the APRS-IS passcode. Same algorithm used by all APRS-IS servers.</p>
+        </div>
+        <div class="bg-gray-900 rounded p-3">
+          <h4 class="font-bold text-white mb-1">Maidenhead Locator</h4>
+          <p class="text-gray-400">Convert between latitude/longitude and Maidenhead grid (e.g. <code class="text-cyan-300">IO83qe</code>). Supports field/square/subsquare precision.</p>
+        </div>
+        <div class="bg-gray-900 rounded p-3">
+          <h4 class="font-bold text-white mb-1">Beacon Generator</h4>
+          <p class="text-gray-400">Build a complete APRS position packet from lat/lon, symbol, comment and PHG fields. Copy-paste straight into your TNC.</p>
+        </div>
+        <div class="bg-gray-900 rounded p-3">
+          <h4 class="font-bold text-white mb-1">Symbol Picker</h4>
+          <p class="text-gray-400">Visual browser of all APRS symbols. Click any to copy its symbol code (e.g. <code class="text-cyan-300">/&gt;</code> for a car).</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── TROUBLESHOOTING ─── -->
+    <div id="h-troubleshooting" class="bg-gray-800 rounded-lg border border-orange-700 p-4">
+      <h3 class="text-lg font-bold text-orange-400 mb-3">❓ Troubleshooting</h3>
+      <div class="space-y-2 text-sm text-gray-300">
+        <details class="bg-gray-900 rounded p-3 cursor-pointer">
+          <summary class="font-bold text-white">Connection indicator is orange / "Upstream: None"</summary>
+          <p class="text-xs text-gray-400 mt-2">The WebSocket is connected but the upstream APRS-IS connection is reconnecting. Usually clears within 30 seconds. If persistent, check the admin panel → Status tab.</p>
+        </details>
+        <details class="bg-gray-900 rounded p-3 cursor-pointer">
+          <summary class="font-bold text-white">"ERR_TOO_MANY_REDIRECTS" in console</summary>
+          <p class="text-xs text-gray-400 mt-2">Chrome HSTS cache issue. Go to <code class="text-cyan-300">chrome://net-internals/#hsts</code>, scroll to "Delete domain security policies", enter <code>aprsnet.uk</code> and delete. Repeat for <code>www.aprsnet.uk</code>.</p>
+        </details>
+        <details class="bg-gray-900 rounded p-3 cursor-pointer">
+          <summary class="font-bold text-white">Messages aren't sending</summary>
+          <p class="text-xs text-gray-400 mt-2">Check your APRS-IS passcode is correct. Get it from the Utils panel or your member dashboard. Each callsign has a unique passcode — using the wrong one silently fails.</p>
+        </details>
+        <details class="bg-gray-900 rounded p-3 cursor-pointer">
+          <summary class="font-bold text-white">Map shows no stations</summary>
+          <p class="text-xs text-gray-400 mt-2">Check that filter checkboxes in the sidebar are ticked. By default Ham APRS, CWOP, OGN and Objects are on. Pi-Star/MMDVM is off by default — tick it if you want digital voice gateways. If still empty, refresh the page — replay should fill the map within 5 seconds.</p>
+        </details>
+        <details class="bg-gray-900 rounded p-3 cursor-pointer">
+          <summary class="font-bold text-white">Light mode text hard to read</summary>
+          <p class="text-xs text-gray-400 mt-2">Report it via the GitHub issue tracker. Each panel has been tested but new components might have contrast issues.</p>
+        </details>
+      </div>
+    </div>
+
+    <!-- ─── FOOTER ─── -->
+    <div class="text-center text-xs text-gray-600 pt-4 pb-8">
+      <p>Advanced APRS Go Server · <span id="help-version"></span> · GNU GPL v3</p>
+      <p class="mt-1">© 2026 Daren Loxley 2E0LXY · <a href="https://github.com/2E0LXY/Advanced-APRS-Go-server" target="_blank" class="text-blue-400 hover:underline">Source on GitHub</a></p>
+    </div>
+
+  </div>
+</div>
 
     <!-- UTILITIES -->
     <div id="utils-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
@@ -1379,202 +1648,7 @@ body { background: var(--bg-base); color: var(--text-base); }
     </div>
 
     <!-- HELP -->
-    <div id="help-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
-      <div class="max-w-4xl mx-auto space-y-4 pb-8">
-        <div class="flex items-center justify-between">
-          <h2 class="text-xl font-bold text-green-400">📖 User Guide &amp; API Reference</h2>
-          <span class="text-xs text-gray-500">Advanced APRS Go Server · 2E0LXY</span>
-        </div>
-
-        <!-- Quick start -->
-        <div class="bg-gray-800 rounded border border-gray-700 p-4">
-          <h3 class="font-bold text-green-300 mb-3">🚀 Quick Start</h3>
-          <div class="grid grid-cols-2 gap-3 text-xs text-gray-300">
-            <div><span class="text-white font-bold">Map</span> — Live APRS stations. Click any marker for full station detail. Cluster badges expand on zoom.</div>
-            <div><span class="text-white font-bold">Stations</span> — Sortable list of all heard stations with icons, path and raw packet.</div>
-            <div><span class="text-white font-bold">Messages</span> — Send and receive APRS-IS messages. Login with your callsign and passcode.</div>
-            <div><span class="text-white font-bold">Status</span> — Server health, upstream connection, data export and Prometheus metrics.</div>
-            <div><span class="text-white font-bold">🌦 Weather</span> — All WX/CWOP stations with live gauges. Click 📈 for historical graphs.</div>
-            <div><span class="text-white font-bold">🏆 Board</span> — Leaderboard: most packets, farthest, fastest, message board, net detection.</div>
-            <div><span class="text-white font-bold">👁 Watch</span> — Watchlist with browser push notifications for any callsign or wildcard.</div>
-            <div><span class="text-white font-bold">🛸 ISS</span> — Live ISS position and recent ARISS/RS0ISS packets.</div>
-            <div><span class="text-white font-bold">🔧 Utils</span> — Passcode calculator, Maidenhead converter, beacon generator, symbol picker.</div>
-            <div><span class="text-white font-bold">Admin</span> — Server config, filter builder, webhooks, API keys, software update.</div>
-          </div>
-        </div>
-
-        <!-- Map features -->
-        <div class="bg-gray-800 rounded border border-gray-700 p-4">
-          <h3 class="font-bold text-green-300 mb-3">🗺 Map Features</h3>
-          <div class="space-y-2 text-xs text-gray-300">
-            <div><span class="text-white font-bold">Click station</span> — Opens Station Detail modal with 4 tabs: Overview, History, Packets, Path.</div>
-            <div><span class="text-white font-bold">Station Detail → Show Path</span> — Draws the digipeater hop chain on the map with coloured lines. Yellow=source, green=used hop, blue=other. Auto-clears after 30s.</div>
-            <div><span class="text-white font-bold">Station Detail → History tab</span> — Speed graph over time + all position history with timestamps.</div>
-            <div><span class="text-white font-bold">Station Detail → Packets tab</span> — Last 50 raw packets for that callsign, timestamped.</div>
-            <div><span class="text-white font-bold">Station Detail → Path tab</span> — Visual hop chain with plain-English explanation of each element (WIDE, Q-construct, digi, iGate).</div>
-            <div><span class="text-white font-bold">Cluster markers</span> — Blue/orange/red badges at low zoom. Click to zoom in, expand at zoom 13+. Toggle via sidebar checkbox.</div>
-            <div><span class="text-white font-bold">Age fading</span> — Stations fade and greyscale as they age: fresh=100%, 20min=75%, 80min=45%.</div>
-            <div><span class="text-white font-bold">Objects/Items</span> — APRS objects shown with amber outline. Click for detail. Toggle via sidebar.</div>
-            <div><span class="text-white font-bold">Trail length</span> — Set how far back position trails are drawn (sidebar dropdown).</div>
-            <div><span class="text-white font-bold">PHG circles</span> — Show/hide coverage circles for digipeaters with PHG data.</div>
-            <div><span class="text-white font-bold">Locator grid</span> — Overlay Maidenhead grid squares on the map.</div>
-            <div><span class="text-white font-bold">Day/Night</span> — Toggle the solar terminator overlay.</div>
-            <div><span class="text-white font-bold">Map styles</span> — Switch between Street, Satellite, Topo and Dark basemaps.</div>
-          </div>
-        </div>
-
-        <!-- Connecting -->
-        <div class="bg-gray-800 rounded border border-gray-700 p-4">
-          <h3 class="font-bold text-green-300 mb-3">🔌 Connecting to this Server</h3>
-          <div class="space-y-3 text-xs">
-            <div>
-              <p class="text-white font-bold mb-1">APRS-IS TCP Clients (APRSDroid, YAAC, Direwolf, APRSIS32)</p>
-              <div class="bg-gray-900 rounded p-2 font-mono text-gray-400">
-                Host: <span class="text-green-400" id="help-host"></span> &nbsp;·&nbsp; Port: <span class="text-green-400">14580</span> &nbsp;·&nbsp; Protocol: APRS-IS &nbsp;·&nbsp; TLS: None
-              </div>
-              <p class="text-gray-500 mt-1">Use your callsign and APRS-IS passcode. The server acts as a full APRS-IS feed server.</p>
-            </div>
-            <div>
-              <p class="text-white font-bold mb-1">WebSocket API (Browser / Custom clients)</p>
-              <div class="bg-gray-900 rounded p-2 font-mono text-gray-400">
-                URL: <span class="text-blue-400" id="help-ws"></span>
-              </div>
-              <p class="text-gray-500 mt-1">Connect and receive JSON frames. Types: <code class="text-gray-300">rx</code> (position), <code class="text-gray-300">obj</code> (object/item), <code class="text-gray-300">msg_history</code> (message), <code class="text-gray-300">replay_done</code>. On connect, server replays the last hour of packets automatically.</p>
-              <div class="bg-gray-900 rounded p-2 font-mono text-[10px] text-gray-500 mt-1">
-                {"type":"rx","packet":"M0ABC>APRS,WIDE2-1:!5322.40N/00127.30W-","data":{...}}
-              </div>
-            </div>
-            <div>
-              <p class="text-white font-bold mb-1">UDP (Hardware Trackers — TinyTrak, OpenTracker)</p>
-              <div class="bg-gray-900 rounded p-2 font-mono text-gray-400">
-                Host: <span class="text-purple-400" id="help-udp"></span> &nbsp;·&nbsp; Port: <span class="text-purple-400">14580</span>
-              </div>
-              <p class="text-gray-500 mt-1">Send raw APRS packets as UDP datagrams. No login or handshake required.</p>
-            </div>
-            <div>
-              <p class="text-white font-bold mb-1">REST API (Grafana, Node-RED, scripts)</p>
-              <div class="bg-gray-900 rounded p-2 font-mono text-[10px] text-gray-400 space-y-1">
-                <div>GET <span class="text-green-400" id="help-hist"></span> — Last hour of position packets (JSON)</div>
-                <div>GET <span class="text-green-400" id="help-geo"></span> — All stations as GeoJSON FeatureCollection</div>
-                <div>GET <span class="text-green-400" id="help-kml"></span> — All stations as KML (Google Earth)</div>
-                <div>GET <span class="text-green-400" id="help-obj"></span> — Active APRS objects/items (JSON)</div>
-                <div>GET <span class="text-green-400" id="help-metrics"></span> — Prometheus metrics (admin auth)</div>
-                <div>GET <span class="text-green-400" id="help-ariss"></span> — Recent ARISS/ISS packets proxied from aprs.fi</div>
-              </div>
-              <p class="text-gray-500 mt-1">Auth: <code class="text-gray-300">X-API-Key: aprs_xxx</code> header, or <code class="text-gray-300">?api_key=aprs_xxx</code> query param. Generate keys in Admin → API Keys.</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Watchlist -->
-        <div class="bg-gray-800 rounded border border-gray-700 p-4">
-          <h3 class="font-bold text-green-300 mb-3">👁 Watchlist &amp; Notifications</h3>
-          <div class="space-y-1 text-xs text-gray-300">
-            <div>Add any callsign to the watchlist — you get a <strong class="text-white">browser push notification</strong> and map highlight when it's heard.</div>
-            <div><span class="text-white font-bold">SSID-agnostic</span> — watching <code class="text-gray-300">M0ABC</code> alerts for M0ABC, M0ABC-9, M0ABC-10 etc.</div>
-            <div><span class="text-white font-bold">Wildcards</span> — <code class="text-gray-300">G*</code> matches all G-prefix callsigns. <code class="text-gray-300">MB7*</code> matches all MB7 repeaters.</div>
-            <div><span class="text-white font-bold">Persists</span> — watchlist saved to browser localStorage, survives page reloads.</div>
-            <div><span class="text-white font-bold">📍 Map button</span> — centres map on station's last known position.</div>
-            <div><span class="text-white font-bold">Alert log</span> — last 50 alerts with time, callsign and packet snippet.</div>
-          </div>
-        </div>
-
-        <!-- Webhooks -->
-        <div class="bg-gray-800 rounded border border-gray-700 p-4">
-          <h3 class="font-bold text-green-300 mb-3">🔗 Webhooks</h3>
-          <div class="space-y-1 text-xs text-gray-300">
-            <div>Configure in <strong class="text-white">Admin → Webhooks</strong>. Server POSTs JSON to your URL on each APRS event.</div>
-            <div><span class="text-white font-bold">Events:</span> <code class="text-gray-300">position</code> (every position packet), <code class="text-gray-300">message</code> (APRS messages)</div>
-            <div><span class="text-white font-bold">Filters:</span> callsign (exact or base), event type, or leave blank for all</div>
-            <div><span class="text-white font-bold">Secret:</span> sent as <code class="text-gray-300">X-APRS-Secret</code> header for HMAC verification</div>
-            <div class="bg-gray-900 rounded p-2 font-mono text-[10px] text-gray-400 mt-1">
-              POST https://your-server/hook<br>
-              X-APRS-Event: position<br>
-              X-APRS-Callsign: M0ABC-9<br><br>
-              {"event":"position","timestamp":1234567890,"callsign":"M0ABC-9","data":{"lat":53.74,"lon":-1.59,...}}
-            </div>
-            <div class="text-gray-500">Works with: Node-RED · Home Assistant · n8n · IFTTT · Zapier · custom scripts</div>
-          </div>
-        </div>
-
-        <!-- API Keys -->
-        <div class="bg-gray-800 rounded border border-gray-700 p-4">
-          <h3 class="font-bold text-green-300 mb-3">🗝 API Keys</h3>
-          <div class="space-y-1 text-xs text-gray-300">
-            <div>Generate in <strong class="text-white">Admin → API Keys</strong>. Keys are prefixed <code class="text-gray-300">aprs_</code> and shown once on creation.</div>
-            <div><span class="text-white font-bold">Usage:</span> <code class="text-gray-300">curl -H "X-API-Key: aprs_abc123" /api/history</code></div>
-            <div><span class="text-white font-bold">Or:</span> <code class="text-gray-300">curl "/api/history?api_key=aprs_abc123"</code></div>
-            <div><span class="text-white font-bold">Read-only keys</span> — access /api/history, /api/objects, /api/export/* without admin credentials</div>
-            <div><span class="text-white font-bold">Last used</span> — timestamp tracked per key so you can audit usage</div>
-          </div>
-        </div>
-
-        <!-- Utilities -->
-        <div class="bg-gray-800 rounded border border-gray-700 p-4">
-          <h3 class="font-bold text-green-300 mb-3">🔧 Utilities</h3>
-          <div class="grid grid-cols-2 gap-3 text-xs text-gray-300">
-            <div><span class="text-white font-bold">Passcode Calculator</span> — Enter any callsign, get the APRS-IS numeric passcode instantly. Based on standard XOR algorithm.</div>
-            <div><span class="text-white font-bold">Maidenhead Converter</span> — Lat/lon → grid square (up to 8 chars) or grid square → lat/lon. Use My Location button.</div>
-            <div><span class="text-white font-bold">Beacon Generator</span> — Build a valid APRS position packet. Choose symbol, path preset, add comment. Copy to clipboard.</div>
-            <div><span class="text-white font-bold">Symbol Picker</span> — Visual grid of all 94 primary + 94 alternate APRS symbols. Click to see code, use in beacon generator.</div>
-          </div>
-        </div>
-
-        <!-- Filters -->
-        <div class="bg-gray-800 rounded border border-gray-700 p-4">
-          <h3 class="font-bold text-green-300 mb-3">⚙ APRS-IS Filter Builder (Admin)</h3>
-          <div class="space-y-1 text-xs text-gray-300">
-            <div><code class="text-yellow-300">auto</code> — Expands to a range filter centred on your geofence coordinates</div>
-            <div><code class="text-yellow-300">r/lat/lon/km</code> — Range filter: packets within km of lat/lon</div>
-            <div><code class="text-yellow-300">p/prefix</code> — Prefix filter: only callsigns starting with prefix (e.g. G, M, 2)</div>
-            <div><code class="text-yellow-300">b/call1/call2</code> — Buddy list: only packets from listed callsigns</div>
-            <div><code class="text-yellow-300">t/type</code> — Type filter: p=position, w=weather, o=object, m=message</div>
-            <div><code class="text-yellow-300">f/call/km</code> — Friend range: packets within km of a specific callsign</div>
-          </div>
-        </div>
-
-        <!-- Demo mode -->
-        <div class="bg-gray-800 rounded border border-gray-700 p-4">
-          <h3 class="font-bold text-green-300 mb-3">👁 Demo Mode</h3>
-          <div class="text-xs text-gray-300 space-y-1">
-            <div>Visit <code class="text-amber-400">/demo</code> to see the full dashboard in read-only mode — no login required.</div>
-            <div>Admin panel accessible in demo mode with passcode hidden. All write actions blocked with toast notification.</div>
-            <div>Share <code class="text-amber-400">https://your-domain/demo</code> with others to show off the gateway.</div>
-          </div>
-        </div>
-
-        <!-- API reference -->
-        <div class="bg-gray-800 rounded border border-gray-700 p-4">
-          <h3 class="font-bold text-green-300 mb-3">📡 Full API Reference</h3>
-          <div class="space-y-1 text-xs font-mono">
-            <div class="grid grid-cols-3 gap-2 text-gray-500 uppercase text-[10px] font-sans border-b border-gray-700 pb-1 mb-1">
-              <span>Endpoint</span><span>Auth</span><span>Description</span>
-            </div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/status</span><span class="text-gray-500">None</span><span class="text-gray-300">Server metrics and upstream status</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/history</span><span class="text-gray-500">API Key</span><span class="text-gray-300">Last hour of position packets</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/objects</span><span class="text-gray-500">None</span><span class="text-gray-300">Active APRS objects/items</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/messages</span><span class="text-gray-500">None</span><span class="text-gray-300">Last hour of APRS messages</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/ariss</span><span class="text-gray-500">None</span><span class="text-gray-300">Recent ARISS/ISS packets</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/version</span><span class="text-gray-500">None</span><span class="text-gray-300">Running version string</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/export/geojson</span><span class="text-gray-500">None</span><span class="text-gray-300">All stations as GeoJSON download</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /api/export/kml</span><span class="text-gray-500">None</span><span class="text-gray-300">All stations as KML download</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-green-400">GET /metrics</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Prometheus metrics endpoint</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-yellow-400">GET /api/config</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Full server configuration</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-yellow-400">POST /api/config</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Update config + hot reload</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-yellow-400">POST /api/password</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Change admin password</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-yellow-400">POST /api/update</span><span class="text-gray-500">Admin</span><span class="text-gray-300">git pull + rebuild + restart (SSE)</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-purple-400">GET /api/webhooks</span><span class="text-gray-500">Admin</span><span class="text-gray-300">List webhooks</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-purple-400">POST /api/webhooks</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Create webhook</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-purple-400">DELETE /api/webhooks/{id}</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Delete webhook</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-purple-400">GET /api/keys</span><span class="text-gray-500">Admin</span><span class="text-gray-300">List API keys (masked)</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-purple-400">POST /api/keys</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Generate new API key</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-purple-400">DELETE /api/keys/{id}</span><span class="text-gray-500">Admin</span><span class="text-gray-300">Revoke API key</span></div>
-            <div class="grid grid-cols-3 gap-2"><span class="text-sky-400">GET /demo</span><span class="text-gray-500">None</span><span class="text-gray-300">Read-only demo mode</span></div>
-          </div>
-        </div>
-
-      </div>
-    </div>
+    
     <!-- WEATHER DASHBOARD -->
     <div id="wx-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
       <div class="max-w-5xl mx-auto space-y-4">
@@ -1945,143 +2019,7 @@ body { background: var(--bg-base); color: var(--text-base); }
     </div>
 
     <!-- HELP -->
-    <div id="help-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
-      <div class="max-w-3xl mx-auto space-y-4 pb-8">
-        <div class="flex items-center justify-between">
-          <h2 class="text-xl font-bold text-green-400">📖 User Guide & API Reference</h2>
-          <span class="text-xs text-gray-500">Advanced APRS Go Server</span>
-        </div>
-
-        <!-- Dashboard overview -->
-        <div class="bg-gray-800 p-4 rounded border border-gray-700">
-          <h3 class="font-bold text-white mb-3 text-sm uppercase tracking-wide">🗺 Dashboard Panels</h3>
-          <div class="space-y-2 text-xs text-gray-300">
-            <div class="grid grid-cols-5 gap-2">
-              <div class="bg-gray-700 rounded p-2 text-center"><div class="font-bold text-blue-400 mb-1">Map</div>Live station map with trails, symbols and PHG circles</div>
-              <div class="bg-gray-700 rounded p-2 text-center"><div class="font-bold text-blue-400 mb-1">Stations</div>Sortable list of all heard stations with QRZ links</div>
-              <div class="bg-gray-700 rounded p-2 text-center"><div class="font-bold text-blue-400 mb-1">Messages</div>Send &amp; receive APRS messages as an authenticated client</div>
-              <div class="bg-gray-700 rounded p-2 text-center"><div class="font-bold text-blue-400 mb-1">Status</div>Live server health, upstream connection and client list</div>
-              <div class="bg-gray-700 rounded p-2 text-center"><div class="font-bold text-red-400 mb-1">Admin</div>Full server configuration and one-click updates</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Map controls -->
-        <div class="bg-gray-800 p-4 rounded border border-gray-700">
-          <h3 class="font-bold text-white mb-3 text-sm uppercase tracking-wide">🗺 Map Features</h3>
-          <div class="grid grid-cols-2 gap-3 text-xs text-gray-300">
-            <div><span class="font-bold text-gray-200">Map Styles</span> — Street (OSM), Terrain (OpenTopo) or Satellite (ESRI)</div>
-            <div><span class="font-bold text-gray-200">Locator Grid</span> — Maidenhead grid square overlay</div>
-            <div><span class="font-bold text-gray-200">Day/Night</span> — Real-time solar terminator overlay</div>
-            <div><span class="font-bold text-gray-200">Trail Length</span> — 5 min to 6 hours of position history</div>
-            <div><span class="font-bold text-gray-200">Station Filters</span> — Toggle Ham APRS, CWOP weather, OGN gliders</div>
-            <div><span class="font-bold text-gray-200">Hide Static</span> — Hide stations not heard for &gt;5 min</div>
-            <div><span class="font-bold text-gray-200">PHG Circles</span> — Transmitter range circles from PHG data</div>
-            <div><span class="font-bold text-gray-200">APRS Icons</span> — 40+ symbol types with correct glyphs per packet</div>
-            <div><span class="font-bold text-gray-200">QRZ Links</span> — Click any callsign or marker to open QRZ.com profile</div>
-            <div><span class="font-bold text-gray-200">My Location</span> — Centre map on your browser location</div>
-          </div>
-        </div>
-
-        <!-- Status indicators -->
-        <div class="bg-gray-800 p-4 rounded border border-gray-700">
-          <h3 class="font-bold text-white mb-3 text-sm uppercase tracking-wide">🔴 Connection Status Dot</h3>
-          <div class="space-y-1 text-xs text-gray-300">
-            <div class="flex items-center space-x-3"><span class="w-3 h-3 rounded-full bg-red-500 inline-block flex-shrink-0"></span><span><strong class="text-white">Red</strong> — WebSocket disconnected from server</span></div>
-            <div class="flex items-center space-x-3"><span class="w-3 h-3 rounded-full bg-yellow-500 inline-block flex-shrink-0"></span><span><strong class="text-white">Yellow</strong> — WebSocket connected, APRS-IS upstream still authenticating</span></div>
-            <div class="flex items-center space-x-3"><span class="w-3 h-3 rounded-full bg-green-500 inline-block flex-shrink-0"></span><span><strong class="text-white">Green</strong> — Fully connected and verified with APRS-IS upstream</span></div>
-          </div>
-        </div>
-
-        <!-- Connecting clients -->
-        <div class="bg-gray-800 p-4 rounded border border-gray-700">
-          <h3 class="font-bold text-white mb-3 text-sm uppercase tracking-wide">📱 Connecting APRS Clients</h3>
-          <p class="text-xs text-gray-400 mb-3">The gateway accepts standard APRS-IS TCP connections on port 14580 from any compatible software:</p>
-          <div class="grid grid-cols-2 gap-3 text-xs mb-3">
-            <div class="bg-gray-700 p-2 rounded"><div class="font-bold text-blue-300 mb-1">APRSDroid (Android)</div><div class="text-gray-400">Connection: APRS-IS (TCP/IP)<br>Server: your-domain.com, Port: 14580<br>SSL/TLS: OFF</div></div>
-            <div class="bg-gray-700 p-2 rounded"><div class="font-bold text-blue-300 mb-1">YAAC / APRSIS32</div><div class="text-gray-400">Network → Add APRS-IS connection<br>Host: your-domain.com, Port: 14580</div></div>
-            <div class="bg-gray-700 p-2 rounded"><div class="font-bold text-blue-300 mb-1">Direwolf iGate</div><div class="text-gray-400">IGSERVER your-domain.com<br>IGPORT 14580<br>IGLOGIN CALLSIGN passcode</div></div>
-            <div class="bg-gray-700 p-2 rounded"><div class="font-bold text-blue-300 mb-1">UDP Hardware Trackers</div><div class="text-gray-400">Send raw APRS packets to UDP port 14580 — no login needed</div></div>
-          </div>
-          <code class="block bg-gray-900 p-2 rounded text-green-300 font-mono text-xs border border-gray-700">echo "M0XYZ>APRS,TCPIP*:=5342.10N/00130.50W-UDP Test" | nc -u -w1 YOUR-IP 14580</code>
-        </div>
-
-        <!-- Admin features -->
-        <div class="bg-gray-800 p-4 rounded border border-gray-700">
-          <h3 class="font-bold text-white mb-3 text-sm uppercase tracking-wide">⚙️ Admin Panel Features</h3>
-          <div class="space-y-2 text-xs text-gray-300">
-            <div><span class="font-bold text-gray-200">First-run Setup</span> — On first boot, /setup page creates admin credentials stored in creds.json</div>
-            <div><span class="font-bold text-gray-200">Server Identity</span> — Set your server name (shown in APRS-IS network) and software version string</div>
-            <div><span class="font-bold text-gray-200">APRS-IS Uplink</span> — Callsign + passcode (auto-computed as you type), upstream server dropdown with all major servers</div>
-            <div><span class="font-bold text-gray-200">Filter Builder</span> — Visual builder for all 8 APRS-IS filter types: range, my-range, friend, prefix, budlist, type, area, digipeater. Exclude mode available.</div>
-            <div><span class="font-bold text-gray-200">Drop Filters</span> — Server-side drop of Pi-Star, D-STAR and APDESK traffic</div>
-            <div><span class="font-bold text-gray-200">Geofence</span> — Optional server-side geographic boundary; packets outside radius are dropped</div>
-            <div><span class="font-bold text-gray-200">Hot Reload</span> — Apply all config changes live without restarting the service; config saved to server_config.json</div>
-            <div><span class="font-bold text-gray-200">Change Password</span> — Update admin password at runtime; persisted to creds.json</div>
-            <div><span class="font-bold text-gray-200">One-click Update</span> — When a new release is available, Install Update button runs git pull + go build + restart with live progress log</div>
-          </div>
-        </div>
-
-        <!-- Filters reference -->
-        <div class="bg-gray-800 p-4 rounded border border-gray-700">
-          <h3 class="font-bold text-white mb-3 text-sm uppercase tracking-wide">🔧 APRS-IS Filter Reference</h3>
-          <p class="text-xs text-gray-400 mb-2">Filters control what data the upstream server sends to your gateway. Multiple filters are OR'd together. Prefix with <code class="text-yellow-400">-</code> to exclude.</p>
-          <table class="w-full text-xs text-gray-300 font-mono">
-            <thead><tr class="text-gray-500 border-b border-gray-700"><th class="text-left py-1 pr-4">Filter</th><th class="text-left py-1">Description</th></tr></thead>
-            <tbody class="divide-y divide-gray-700">
-              <tr><td class="py-1 pr-4 text-blue-400">r/lat/lon/dist</td><td class="font-sans">Positions within dist km of a point (up to 9)</td></tr>
-              <tr><td class="py-1 pr-4 text-blue-400">m/dist</td><td class="font-sans">Range centred on your own last position</td></tr>
-              <tr><td class="py-1 pr-4 text-blue-400">f/call/dist</td><td class="font-sans">Range centred on another station (up to 9)</td></tr>
-              <tr><td class="py-1 pr-4 text-blue-400">p/G/M0/2E</td><td class="font-sans">Callsigns starting with these prefixes</td></tr>
-              <tr><td class="py-1 pr-4 text-blue-400">b/call*</td><td class="font-sans">Exact callsigns, wildcard * supported</td></tr>
-              <tr><td class="py-1 pr-4 text-blue-400">t/pwm</td><td class="font-sans">Packet types: p=pos o=obj i=item m=msg q=query s=status t=telem u=user w=wx n=NWS</td></tr>
-              <tr><td class="py-1 pr-4 text-blue-400">a/N/W/S/E</td><td class="font-sans">Bounding box (up to 9)</td></tr>
-              <tr><td class="py-1 pr-4 text-blue-400">d/MB7UH*</td><td class="font-sans">Packets digipeated through these stations</td></tr>
-            </tbody>
-          </table>
-          <p class="text-xs text-gray-600 mt-2">Full reference: <a href="https://www.aprs-is.net/javAPRSFilter.aspx" target="_blank" class="text-blue-500 hover:underline">aprs-is.net/javAPRSFilter.aspx ↗</a></p>
-        </div>
-
-        <!-- WebSocket API -->
-        <div class="bg-gray-800 p-4 rounded border border-gray-700">
-          <h3 class="font-bold text-white mb-3 text-sm uppercase tracking-wide">🔌 WebSocket JSON API — /ws</h3>
-          <code class="block bg-gray-900 p-2 rounded text-green-300 font-mono text-xs border border-gray-700 whitespace-pre mb-2">// Authenticate as a TX client:
-{"type":"auth","callsign":"M0XYZ","passcode":"12345","software":"MyApp 1.0"}
-
-// Transmit a packet (must be authenticated, callsign must match):
-{"type":"tx","packet":"M0XYZ>APRS,TCPIP*:=5342.10N/00130.50W-My status"}
-
-// Receive — server pushes to all connected clients:
-{"type":"rx","packet":"...raw APRS string...","data":{"call":"M0XYZ","lat":53.7,"lon":-1.5,"sym":"/-","ts":1714136400}}</code>
-          <p class="text-xs text-gray-500">Unverified passcode (-1) allows receive-only access. Rate limit: 1 TX packet/second per client.</p>
-        </div>
-
-        <!-- REST API -->
-        <div class="bg-gray-800 p-4 rounded border border-gray-700">
-          <h3 class="font-bold text-white mb-3 text-sm uppercase tracking-wide">🌐 REST API Endpoints</h3>
-          <table class="w-full text-xs text-gray-300">
-            <tbody class="divide-y divide-gray-700">
-              <tr><td class="py-1.5 pr-4 font-mono text-green-400 w-56">GET /api/status</td><td>Live metrics: uptime, RX/TX counts, bytes, dropped, upstream address &amp; verified status, connected clients</td></tr>
-              <tr><td class="py-1.5 pr-4 font-mono text-green-400">GET /api/history</td><td>JSON array of last 10,000 decoded position packets with lat/lon/symbol/timestamp</td></tr>
-              <tr><td class="py-1.5 pr-4 font-mono text-green-400">GET /api/version</td><td>Running server version string {"version":"1.3.0"}</td></tr>
-              <tr><td class="py-1.5 pr-4 font-mono text-green-400">GET /api/config</td><td>Full server config JSON — requires admin auth</td></tr>
-              <tr><td class="py-1.5 pr-4 font-mono text-green-400">POST /api/config</td><td>Update and hot-reload config — requires admin auth</td></tr>
-              <tr><td class="py-1.5 pr-4 font-mono text-green-400">POST /api/password</td><td>Change admin password {"new_password":"..."} — requires auth</td></tr>
-              <tr><td class="py-1.5 pr-4 font-mono text-green-400">GET /api/whoami</td><td>Verify admin credentials {"ok":true,"user":"..."}</td></tr>
-              <tr><td class="py-1.5 pr-4 font-mono text-green-400">POST /api/update</td><td>Run git pull + go build + restart — SSE stream of progress — requires auth</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Passcode info -->
-        <div class="bg-gray-800 p-4 rounded border border-gray-700">
-          <h3 class="font-bold text-white mb-2 text-sm uppercase tracking-wide">🔑 APRS-IS Passcode</h3>
-          <p class="text-xs text-gray-300">Your APRS-IS passcode is a numeric hash of your base callsign (no SSID). It is the same everywhere on the APRS-IS network. The Admin panel auto-computes it when you type your callsign. Use <code class="text-yellow-400">-1</code> for receive-only (unverified) access.</p>
-        </div>
-
-        <p class="text-xs text-gray-600 text-center">Advanced APRS Go Server · <a href="https://github.com/2E0LXY/Advanced-APRS-Go-server" target="_blank" class="text-blue-600 hover:underline">GitHub ↗</a></p>
-      </div>
-    </div>
+    
 
 
     <!-- ADMIN -->
@@ -7185,6 +7123,20 @@ populateConnInfo();
 // Small delay before version check so page is fully loaded
 setTimeout(checkForUpdates, 2000);
 setInterval(checkForUpdates, 3600000); // re-check every hour
+
+// Help panel: populate version number when opened
+(function(){
+  var orig = togglePanel;
+  togglePanel = function(name) {
+    orig(name);
+    if (name === 'help') {
+      fetch(location.origin + '/api/version').then(function(r){return r.json();}).then(function(d){
+        var el = document.getElementById('help-version');
+        if (el && d) el.textContent = 'v' + (d.version || d.AppVersion || '?');
+      }).catch(function(){});
+    }
+  };
+})();
 </script>
 <!-- WX Station Detail Modal -->
 <div id="wx-detail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-2 bg-black/70" onclick="if(event.target===this)closeWXDetail()">
