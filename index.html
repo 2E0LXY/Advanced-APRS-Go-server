@@ -206,6 +206,17 @@ body { background: var(--bg-base); color: var(--text-base); }
   </div>
 </div>
 
+<!-- MOTD Banner -->
+<div id="motd-banner" class="hidden flex-none border-b" style="padding:8px 16px;font-size:13px;display:none">
+  <div class="flex items-center justify-between max-w-7xl mx-auto">
+    <div class="flex items-center space-x-3">
+      <span id="motd-icon" class="text-xl">ℹ</span>
+      <span id="motd-text"></span>
+    </div>
+    <button id="motd-dismiss" onclick="dismissMOTD()" class="text-xl opacity-60 hover:opacity-100 ml-4">✕</button>
+  </div>
+</div>
+
 <!-- MAIN -->
 <div class="flex-1 relative flex overflow-hidden">
 
@@ -2417,6 +2428,82 @@ body { background: var(--bg-base); color: var(--text-base); }
           <p class="text-xs text-gray-600 mt-2">Downloads latest release, rebuilds binary and restarts service (~30s). Page will reconnect automatically.</p>
         </div>
 
+
+        <!-- ═══ MEMBER MANAGEMENT ═══ -->
+        <div class="bg-gray-800 rounded-lg border border-cyan-900 p-4 mt-6">
+          <h3 class="text-sm font-bold text-cyan-400 mb-3">👥 MEMBER MANAGEMENT</h3>
+          <div class="flex space-x-2 mb-3">
+            <input type="text" id="adm-mem-search" placeholder="Search by callsign or name..." 
+              class="flex-1 bg-gray-700 border border-gray-600 rounded p-2 text-white text-sm" 
+              oninput="renderAdminMembers()">
+            <button onclick="loadAdminMembers()" class="bg-cyan-700 hover:bg-cyan-600 px-3 py-2 rounded text-sm text-white">🔄 Refresh</button>
+          </div>
+          <div id="adm-members-table" class="text-xs"></div>
+          <p id="adm-members-empty" class="text-gray-500 text-center py-4 text-xs">Click Refresh to load members</p>
+        </div>
+
+        <!-- ═══ BAN LIST ═══ -->
+        <div class="bg-gray-800 rounded-lg border border-red-900 p-4 mt-4">
+          <h3 class="text-sm font-bold text-red-400 mb-3">🚫 BAN LIST</h3>
+          <p class="text-xs text-gray-400 mb-3">Banned callsigns are dropped from APRS-IS broadcast. Wildcards allowed (e.g. SPAM*)</p>
+          <div class="grid grid-cols-3 gap-2 mb-3">
+            <input type="text" id="adm-ban-call" placeholder="CALLSIGN or PATTERN*" 
+              class="bg-gray-700 border border-gray-600 rounded p-2 text-white text-sm uppercase"
+              oninput="this.value=this.value.toUpperCase()">
+            <input type="text" id="adm-ban-reason" placeholder="Reason (optional)" 
+              class="bg-gray-700 border border-gray-600 rounded p-2 text-white text-sm col-span-1">
+            <button onclick="addBan()" class="bg-red-700 hover:bg-red-600 px-3 py-2 rounded text-sm text-white font-bold">Add Ban</button>
+          </div>
+          <div id="adm-bans-list" class="space-y-1"></div>
+        </div>
+
+        <!-- ═══ MOTD ═══ -->
+        <div class="bg-gray-800 rounded-lg border border-amber-900 p-4 mt-4">
+          <h3 class="text-sm font-bold text-amber-400 mb-3">📢 MESSAGE OF THE DAY</h3>
+          <p class="text-xs text-gray-400 mb-3">Banner displayed at the top of every page. Also shows unread message count to logged-in members.</p>
+          <label class="flex items-center space-x-2 mb-2 cursor-pointer">
+            <input type="checkbox" id="adm-motd-enabled"><span class="text-sm">Enable MOTD</span>
+          </label>
+          <div class="grid grid-cols-4 gap-2 mb-2">
+            <select id="adm-motd-level" class="bg-gray-700 border border-gray-600 rounded p-2 text-white text-sm">
+              <option value="info">ℹ Info (blue)</option>
+              <option value="success">✓ Success (green)</option>
+              <option value="warning">⚠ Warning (amber)</option>
+              <option value="error">✕ Error (red)</option>
+            </select>
+            <label class="flex items-center space-x-2 cursor-pointer col-span-3">
+              <input type="checkbox" id="adm-motd-dismissable" checked><span class="text-sm">User can dismiss</span>
+            </label>
+          </div>
+          <textarea id="adm-motd-msg" rows="3" placeholder="Server maintenance Friday 18:00 UTC..."
+            class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white text-sm font-mono"></textarea>
+          <button onclick="saveMOTD()" class="bg-amber-700 hover:bg-amber-600 px-4 py-2 rounded text-sm text-white font-bold mt-2">Save MOTD</button>
+          <span id="adm-motd-saved" class="hidden ml-2 text-green-400 text-xs">✓ Saved</span>
+        </div>
+
+        <!-- ═══ BACKUP / RESTORE ═══ -->
+        <div class="bg-gray-800 rounded-lg border border-purple-900 p-4 mt-4">
+          <h3 class="text-sm font-bold text-purple-400 mb-3">💾 BACKUP &amp; RESTORE</h3>
+          <p class="text-xs text-gray-400 mb-3">Download all server state (members, bans, MOTD, webhooks, API keys, config) as a single JSON file. Restore by uploading a previously downloaded backup.</p>
+          <div class="grid grid-cols-2 gap-3">
+            <button onclick="downloadBackup()" class="bg-purple-700 hover:bg-purple-600 px-4 py-3 rounded text-sm text-white font-bold">⬇ Download Backup</button>
+            <label class="bg-orange-700 hover:bg-orange-600 px-4 py-3 rounded text-sm text-white font-bold text-center cursor-pointer">
+              ⬆ Restore from File
+              <input type="file" accept="application/json" onchange="restoreBackup(event)" class="hidden">
+            </label>
+          </div>
+          <p id="adm-backup-msg" class="hidden mt-2 text-xs"></p>
+        </div>
+
+        <!-- ═══ AUDIT LOG ═══ -->
+        <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 mt-4">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-bold text-gray-300">📋 AUDIT LOG</h3>
+            <button onclick="loadAudit()" class="bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded text-xs">🔄 Refresh</button>
+          </div>
+          <div id="adm-audit-table" class="text-xs font-mono space-y-1 max-h-64 overflow-y-auto"></div>
+        </div>
+
         <button onclick="saveAdmin()" class="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded font-bold w-full uppercase tracking-widest text-sm active:scale-95 transition-all">
           ⚡ Hot Reload Config
         </button>
@@ -3080,6 +3167,11 @@ async function loadStatus() {
 
 // ─── WebSocket ───────────────────────────────────────────────────────────────
 function logMsgHistory(m) {
+  if (m && m.from) {
+    var exists = msgStore.some(function(x){ return x.from===m.from && x.ts===m.ts && x.text===m.text; });
+    if (!exists) msgStore.push(m);
+    if (msgStore.length > 200) msgStore.shift();
+  }
   const log = document.getElementById('chat-log'); if (!log) return;
   const t = new Date(m.ts*1000).toLocaleTimeString();
   const el = document.createElement('div');
@@ -5589,6 +5681,7 @@ function copyNewKey() {
 
 // ─── Leaderboard & Community ──────────────────────────────────────────────────
 
+var msgStore = []; // global message store for leaderboard
 var _stationPacketCounts = {}; // callsign -> packet count this session
 
 // Hook into updateStation to count packets
@@ -6748,10 +6841,344 @@ function updatePasscodePreview() {
   }
 }
 
+
+// ─── MOTD Banner ──────────────────────────────────────────────────────────────
+async function loadMOTDBanner() {
+  try {
+    var r = await fetch(location.origin + '/api/motd');
+    var d = await r.json();
+    showMOTDBanner(d);
+  } catch(e) {}
+}
+
+function showMOTDBanner(d) {
+  var banner  = document.getElementById('motd-banner');
+  if (!banner) return;
+
+  // Check for dismissed state
+  var dismissedKey = 'aprs-motd-dismissed';
+  var dismissedTs  = parseInt(localStorage.getItem(dismissedKey) || '0');
+
+  // Build display content
+  var motdEnabled = d && d.enabled && d.message;
+  var unread      = (_memberSession && _memberSession.unread) || 0;
+
+  if (!motdEnabled && unread === 0) { banner.style.display = 'none'; return; }
+
+  // If MOTD is dismissable and has been dismissed since last update, hide MOTD part
+  var showMotd = motdEnabled && (!d.dismissable || dismissedTs < (d.updated || 0));
+
+  if (!showMotd && unread === 0) { banner.style.display = 'none'; return; }
+
+  var parts = [];
+  var level = (d && d.level) || 'info';
+  var iconMap = { info: 'ℹ', success: '✓', warning: '⚠', error: '✕' };
+  var bgMap   = {
+    info:    'background:#1e3a8a;color:#bfdbfe;border-color:#2563eb',
+    success: 'background:#14532d;color:#bbf7d0;border-color:#16a34a',
+    warning: 'background:#78350f;color:#fde68a;border-color:#d97706',
+    error:   'background:#7f1d1d;color:#fecaca;border-color:#dc2626'
+  };
+
+  if (showMotd) parts.push(d.message);
+  if (unread > 0) {
+    var msgPart = '<span style="background:rgba(255,255,255,0.15);padding:2px 8px;border-radius:12px;font-weight:bold;cursor:pointer" onclick="openMemberPanel();mmTab(\'messages\')">📨 You have ' + unread + ' unread APRS message' + (unread===1?'':'s') + ' — click to view</span>';
+    parts.push(msgPart);
+  }
+
+  document.getElementById('motd-icon').innerText = unread > 0 && !showMotd ? '📨' : iconMap[level];
+  document.getElementById('motd-text').innerHTML  = parts.join('  •  ');
+  document.getElementById('motd-dismiss').style.display = (showMotd && d.dismissable) ? 'inline' : 'none';
+  banner.setAttribute('style', 'padding:8px 16px;font-size:13px;display:block;' + bgMap[level]);
+}
+
+function dismissMOTD() {
+  localStorage.setItem('aprs-motd-dismissed', Math.floor(Date.now()/1000));
+  loadMOTDBanner();
+}
+
+// Reload banner periodically to catch new MOTDs and unread message count
+setInterval(loadMOTDBanner, 30000);
+
+// ─── Admin: Member Management ─────────────────────────────────────────────────
+var _adminMembers = [];
+
+async function loadAdminMembers() {
+  try {
+    var r = await fetch(location.origin + '/api/admin/members', {
+      headers: { 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) }
+    });
+    if (!r.ok) { alert('Failed to load members: ' + r.status); return; }
+    _adminMembers = await r.json();
+    renderAdminMembers();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+function renderAdminMembers() {
+  var search = (document.getElementById('adm-mem-search').value || '').toUpperCase();
+  var filtered = _adminMembers.filter(function(m) {
+    if (!search) return true;
+    return m.callsign.includes(search) || (m.name||'').toUpperCase().includes(search);
+  });
+  var el = document.getElementById('adm-members-table');
+  var empty = document.getElementById('adm-members-empty');
+  if (!filtered.length) {
+    el.innerHTML = '';
+    empty.style.display = 'block';
+    empty.innerText = _adminMembers.length === 0 ? 'No members registered yet' : 'No members match search';
+    return;
+  }
+  empty.style.display = 'none';
+
+  el.innerHTML = '<table class="w-full"><thead><tr class="text-gray-500 text-left border-b border-gray-700">'
+    + '<th class="py-1">Callsign</th><th>Name</th><th>Callsigns</th><th>Msgs</th><th>Last Login</th><th>Sessions</th><th>Actions</th>'
+    + '</tr></thead><tbody>'
+    + filtered.map(function(m) {
+      var lastLogin = m.last_login ? new Date(m.last_login*1000).toLocaleDateString() : 'Never';
+      var unreadBadge = m.unread > 0 ? ' <span class="bg-amber-700 text-white px-1 rounded text-xs">' + m.unread + '</span>' : '';
+      return '<tr class="border-b border-gray-800 hover:bg-gray-900">'
+        + '<td class="py-2 font-mono font-bold text-cyan-300">' + m.callsign + '</td>'
+        + '<td>' + (m.name || '-') + '</td>'
+        + '<td class="text-xs">' + (m.callsigns||[]).length + '</td>'
+        + '<td>' + m.msg_count + unreadBadge + '</td>'
+        + '<td class="text-xs text-gray-400">' + lastLogin + '</td>'
+        + '<td>' + (m.sessions > 0 ? '<span class="text-green-400">●</span> ' + m.sessions : '-') + '</td>'
+        + '<td>'
+        + '<button onclick="editMember(\''+m.id+'\')" class="text-xs bg-blue-700 hover:bg-blue-600 px-2 py-0.5 rounded mr-1">Edit</button>'
+        + '<button onclick="viewMemberMsgs(\''+m.id+'\')" class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-0.5 rounded mr-1">Msgs</button>'
+        + '<button onclick="resetMemberPass(\''+m.id+'\')" class="text-xs bg-amber-700 hover:bg-amber-600 px-2 py-0.5 rounded mr-1">Pass</button>'
+        + '<button onclick="forceMemberLogout(\''+m.id+'\')" class="text-xs bg-orange-700 hover:bg-orange-600 px-2 py-0.5 rounded mr-1">Logout</button>'
+        + '<button onclick="deleteMember(\''+m.id+'\')" class="text-xs bg-red-700 hover:bg-red-600 px-2 py-0.5 rounded">Delete</button>'
+        + '</td></tr>';
+    }).join('') + '</tbody></table>';
+}
+
+function editMember(id) {
+  var m = _adminMembers.find(function(x){return x.id===id;});
+  if (!m) return;
+  var name      = prompt('Name:', m.name || '');
+  if (name === null) return;
+  var email     = prompt('Email:', m.email || '');
+  if (email === null) return;
+  var callsigns = prompt('Callsigns (comma separated):', (m.callsigns||[]).join(','));
+  if (callsigns === null) return;
+  fetch(location.origin + '/api/admin/members/' + id, {
+    method: 'PUT',
+    headers: { 'Content-Type':'application/json', 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) },
+    body: JSON.stringify({ name: name, email: email, callsigns: callsigns.split(',').map(function(s){return s.trim().toUpperCase();}).filter(Boolean) })
+  }).then(function(r){ if (r.ok) loadAdminMembers(); });
+}
+
+async function viewMemberMsgs(id) {
+  var r = await fetch(location.origin + '/api/admin/members/' + id + '/messages', {
+    headers: { 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) }
+  });
+  var msgs = await r.json();
+  if (!msgs.length) { alert('No stored messages for this member'); return; }
+  var text = msgs.slice().reverse().slice(0,50).map(function(m){
+    return new Date(m.ts*1000).toLocaleString() + ' ' + m.from + ' -> ' + m.to + ': ' + m.text;
+  }).join('\n');
+  alert('Last 50 messages:\n\n' + text);
+}
+
+function resetMemberPass(id) {
+  var newPass = prompt('New password (6+ chars). Member will be forced to log in again:');
+  if (!newPass || newPass.length < 6) { if(newPass) alert('Must be 6+ chars'); return; }
+  fetch(location.origin + '/api/admin/members/' + id, {
+    method: 'PUT',
+    headers: { 'Content-Type':'application/json', 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) },
+    body: JSON.stringify({ reset_password: newPass })
+  }).then(function(r){ if (r.ok) { alert('Password reset for member'); loadAdminMembers(); } });
+}
+
+function forceMemberLogout(id) {
+  if (!confirm('Force logout this member from all devices?')) return;
+  fetch(location.origin + '/api/admin/members/' + id, {
+    method: 'PUT',
+    headers: { 'Content-Type':'application/json', 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) },
+    body: JSON.stringify({ force_logout: true })
+  }).then(function(r){ if (r.ok) loadAdminMembers(); });
+}
+
+function deleteMember(id) {
+  var m = _adminMembers.find(function(x){return x.id===id;});
+  if (!confirm('PERMANENTLY DELETE member ' + (m?m.callsign:id) + '? This deletes all stored messages and watchlist data. Cannot be undone.')) return;
+  fetch(location.origin + '/api/admin/members/' + id, {
+    method: 'DELETE',
+    headers: { 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) }
+  }).then(function(r){ if (r.ok) loadAdminMembers(); });
+}
+
+// ─── Admin: Ban List ──────────────────────────────────────────────────────────
+async function loadBans() {
+  var r = await fetch(location.origin + '/api/admin/bans', {
+    headers: { 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) }
+  });
+  if (!r.ok) return;
+  var bans = await r.json();
+  var el = document.getElementById('adm-bans-list');
+  if (!bans.length) { el.innerHTML = '<p class="text-gray-500 text-xs text-center py-2">No bans active</p>'; return; }
+  el.innerHTML = bans.map(function(b) {
+    return '<div class="flex items-center justify-between bg-gray-700 rounded px-3 py-2 text-xs">'
+      + '<div><span class="font-mono font-bold text-red-300">' + b.callsign + '</span>'
+      + (b.reason ? '<span class="text-gray-400 ml-2">— ' + b.reason + '</span>' : '')
+      + '<span class="text-gray-500 text-xs ml-3">' + new Date(b.added*1000).toLocaleDateString() + '</span></div>'
+      + '<button onclick="removeBan(\''+b.callsign+'\')" class="text-red-400 hover:text-red-300">✕</button>'
+      + '</div>';
+  }).join('');
+}
+
+function addBan() {
+  var call   = (document.getElementById('adm-ban-call').value || '').toUpperCase().trim();
+  var reason = document.getElementById('adm-ban-reason').value.trim();
+  if (!call) return;
+  fetch(location.origin + '/api/admin/bans', {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json', 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) },
+    body: JSON.stringify({ callsign: call, reason: reason })
+  }).then(function(r){
+    if (r.ok) {
+      document.getElementById('adm-ban-call').value = '';
+      document.getElementById('adm-ban-reason').value = '';
+      loadBans();
+    }
+  });
+}
+
+function removeBan(call) {
+  fetch(location.origin + '/api/admin/bans?callsign=' + encodeURIComponent(call), {
+    method: 'DELETE',
+    headers: { 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) }
+  }).then(function(r){ if (r.ok) loadBans(); });
+}
+
+// ─── Admin: MOTD ──────────────────────────────────────────────────────────────
+async function loadAdminMOTD() {
+  var r = await fetch(location.origin + '/api/admin/motd', {
+    headers: { 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) }
+  });
+  if (!r.ok) return;
+  var m = await r.json();
+  document.getElementById('adm-motd-enabled').checked    = !!m.enabled;
+  document.getElementById('adm-motd-level').value        = m.level || 'info';
+  document.getElementById('adm-motd-dismissable').checked = m.dismissable !== false;
+  document.getElementById('adm-motd-msg').value           = m.message || '';
+}
+
+function saveMOTD() {
+  var body = {
+    enabled:     document.getElementById('adm-motd-enabled').checked,
+    level:       document.getElementById('adm-motd-level').value,
+    message:     document.getElementById('adm-motd-msg').value,
+    dismissable: document.getElementById('adm-motd-dismissable').checked
+  };
+  fetch(location.origin + '/api/admin/motd', {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json', 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) },
+    body: JSON.stringify(body)
+  }).then(function(r){
+    if (r.ok) {
+      var saved = document.getElementById('adm-motd-saved');
+      saved.classList.remove('hidden');
+      setTimeout(function(){ saved.classList.add('hidden'); }, 2000);
+      loadMOTDBanner();
+    }
+  });
+}
+
+// ─── Admin: Backup / Restore ──────────────────────────────────────────────────
+async function downloadBackup() {
+  try {
+    var r = await fetch(location.origin + '/api/admin/backup', {
+      headers: { 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) }
+    });
+    if (!r.ok) { alert('Backup failed: ' + r.status); return; }
+    var blob = await r.blob();
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'aprs-backup-' + new Date().toISOString().slice(0,10) + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch(e) { alert('Backup error: ' + e.message); }
+}
+
+async function restoreBackup(event) {
+  var file = event.target.files[0];
+  if (!file) return;
+  if (!confirm('Restore from this backup? This will OVERWRITE current members, bans, MOTD, webhooks and API keys. Continue?')) {
+    event.target.value = ''; return;
+  }
+  try {
+    var text = await file.text();
+    var r = await fetch(location.origin + '/api/admin/restore', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) },
+      body: text
+    });
+    var d = await r.json();
+    var msg = document.getElementById('adm-backup-msg');
+    msg.classList.remove('hidden');
+    if (r.ok) {
+      msg.className = 'mt-2 text-xs text-green-400';
+      msg.innerText = '✓ Restored: ' + (d.restored || []).join(', ');
+    } else {
+      msg.className = 'mt-2 text-xs text-red-400';
+      msg.innerText = '✕ Failed: ' + (d.error || 'unknown error');
+    }
+  } catch(e) {
+    alert('Restore error: ' + e.message);
+  }
+  event.target.value = '';
+}
+
+// ─── Admin: Audit Log ─────────────────────────────────────────────────────────
+async function loadAudit() {
+  var r = await fetch(location.origin + '/api/admin/audit?limit=100', {
+    headers: { 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) }
+  });
+  if (!r.ok) return;
+  var entries = await r.json();
+  var el = document.getElementById('adm-audit-table');
+  if (!entries.length) { el.innerHTML = '<p class="text-gray-500 text-center py-4">No audit entries yet</p>'; return; }
+  el.innerHTML = entries.map(function(e) {
+    var t = new Date(e.ts*1000).toLocaleString();
+    var actionColor = e.action.startsWith('member.') ? 'text-cyan-400'
+      : e.action.startsWith('ban.') ? 'text-red-400'
+      : e.action.startsWith('backup.') ? 'text-purple-400'
+      : e.action.startsWith('motd.') ? 'text-amber-400'
+      : 'text-gray-300';
+    return '<div class="flex items-start space-x-3 py-1 border-b border-gray-800">'
+      + '<span class="text-gray-500" style="min-width:130px">' + t + '</span>'
+      + '<span class="' + actionColor + ' font-bold" style="min-width:140px">' + e.action + '</span>'
+      + '<span class="text-gray-300" style="min-width:80px">' + (e.target || '-') + '</span>'
+      + '<span class="text-gray-500 flex-1">' + (e.details || '') + '</span>'
+      + (e.ip ? '<span class="text-gray-600">' + e.ip + '</span>' : '')
+      + '</div>';
+  }).join('');
+}
+
+// Auto-load admin sections when admin panel opens
+var _origTogglePanel = togglePanel;
+togglePanel = function(name) {
+  _origTogglePanel(name);
+  if (name === 'admin' && !document.getElementById('admin-panel').classList.contains('hidden')) {
+    // Only load if admin login already done (we have _adminCreds)
+    if (window._adminCreds) {
+      setTimeout(function(){ loadAdminMembers(); loadBans(); loadAdminMOTD(); loadAudit(); }, 300);
+    }
+  }
+};
+
+// Hook into existing admin login so we know when it succeeds
+// _adminCreds will be set when admin auth completes
+// Store creds globally (already exists in original code via tryAdminLogin)
+
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 initReplayProgress();
 initTheme();
 initMemberSession();
+loadMOTDBanner();
 connectWS();
 setInterval(redrawMap, 30000);
 populateConnInfo();

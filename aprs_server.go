@@ -225,6 +225,8 @@ func main() {
 	apiKeys    = make(map[string]APIKey)
 	loadWebhooksAndKeys()
 	loadMemberStore()
+	loadBanList()
+	loadMOTD()
 	go cleanExpiredSessions()
 
 	go cleanDuplicateCache()
@@ -253,6 +255,16 @@ func main() {
 	http.HandleFunc("/api/member/profile",  handleMemberProfile)
 	http.HandleFunc("/api/member/messages", handleMemberMessages)
 	http.HandleFunc("/api/member/password", handleMemberPassword)
+	// Public MOTD
+	http.HandleFunc("/api/motd", handlePublicMOTD)
+	// Admin features
+	http.HandleFunc("/api/admin/members", handleAdminMembers)
+	http.HandleFunc("/api/admin/members/", handleAdminMemberRouter)
+	http.HandleFunc("/api/admin/bans", handleAdminBans)
+	http.HandleFunc("/api/admin/motd", handleAdminMOTD)
+	http.HandleFunc("/api/admin/audit", handleAdminAudit)
+	http.HandleFunc("/api/admin/backup", handleAdminBackup)
+	http.HandleFunc("/api/admin/restore", handleAdminRestore)
 	http.HandleFunc("/metrics", basicAuth(handleMetrics))
 	http.HandleFunc("/api/webhooks", basicAuth(handleWebhooks))
 	http.HandleFunc("/api/webhooks/", basicAuth(handleWebhookDelete))
@@ -702,6 +714,13 @@ func handleBroadcasts() {
 		}
 
 		// Parse and store APRS messages
+		// Check ban list - drop packets from banned callsigns
+		if gtIdx := strings.Index(packet, ">"); gtIdx > 0 {
+			src := packet[:gtIdx]
+			if reason := isCallsignBanned(src); reason != "" {
+				continue
+			}
+		}
 		if msg := parseAPRSMessage(packet); msg != nil {
 			go fireWebhooks("message", msg.From, msg)
 			go storeMessageForMember(msg.To, msg.From, msg.Text, packet, time.Now().Unix())
@@ -2320,6 +2339,7 @@ func handleMemberRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	memberStore.Members[member.ID] = member
 	saveMemberStore()
+	go auditLog("system", "member.register", member.Callsign, "", getClientIP(r))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"ok": true, "callsign": member.Callsign, "passcode": member.Passcode,
@@ -2520,4 +2540,455 @@ func storeMessageForMember(to, from, text, raw string, ts int64) {
 		memberStore.Messages[targetCall] = memberStore.Messages[targetCall][len(memberStore.Messages[targetCall])-500:]
 	}
 	saveMemberStore()
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ADMIN FEATURES: Member Mgmt, Ban List, Backup/Restore, MOTD, Audit Log
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const banFile     = "bans.json"
+const motdFile    = "motd.json"
+const auditFile   = "audit.log"
+
+// ── Ban list ────────────────────────────────────────────────────────────────
+
+type BanEntry struct {
+	Callsign  string `json:"callsign"`   // exact or with wildcard *
+	Reason    string `json:"reason"`
+	Added     int64  `json:"added"`
+	AddedBy   string `json:"added_by"`
+}
+
+var (
+	banList   []BanEntry
+	banListMu sync.RWMutex
+)
+
+func loadBanList() {
+	banListMu.Lock()
+	defer banListMu.Unlock()
+	banList = []BanEntry{}
+	data, err := os.ReadFile(banFile)
+	if err != nil { return }
+	json.Unmarshal(data, &banList)
+	log.Printf("Loaded %d ban entries", len(banList))
+}
+
+func saveBanList() {
+	data, _ := json.MarshalIndent(banList, "", "  ")
+	os.WriteFile(banFile, data, 0644)
+}
+
+// isCallsignBanned: returns reason if banned, empty string if not
+func isCallsignBanned(call string) string {
+	call = strings.ToUpper(strings.TrimSpace(call))
+	banListMu.RLock()
+	defer banListMu.RUnlock()
+	for _, b := range banList {
+		pat := strings.ToUpper(b.Callsign)
+		if pat == call { return b.Reason }
+		if strings.HasSuffix(pat, "*") {
+			prefix := strings.TrimSuffix(pat, "*")
+			if strings.HasPrefix(call, prefix) { return b.Reason }
+		}
+	}
+	return ""
+}
+
+// ── MOTD ───────────────────────────────────────────────────────────────────
+
+type MOTD struct {
+	Enabled  bool   `json:"enabled"`
+	Message  string `json:"message"`
+	Level    string `json:"level"`     // info, warning, success, error
+	Dismissable bool `json:"dismissable"`
+	Updated  int64  `json:"updated"`
+}
+
+var (
+	motd   MOTD
+	motdMu sync.RWMutex
+)
+
+func loadMOTD() {
+	motdMu.Lock()
+	defer motdMu.Unlock()
+	data, err := os.ReadFile(motdFile)
+	if err != nil { motd = MOTD{}; return }
+	json.Unmarshal(data, &motd)
+}
+
+func saveMOTD() {
+	data, _ := json.MarshalIndent(motd, "", "  ")
+	os.WriteFile(motdFile, data, 0644)
+}
+
+// ── Audit log ──────────────────────────────────────────────────────────────
+
+type AuditEntry struct {
+	Ts      int64  `json:"ts"`
+	Actor   string `json:"actor"`   // who did it (admin or "system")
+	Action  string `json:"action"`  // e.g. "member.delete", "ban.add"
+	Target  string `json:"target"`  // affected entity
+	Details string `json:"details,omitempty"`
+	IP      string `json:"ip,omitempty"`
+}
+
+var auditMu sync.Mutex
+
+
+// Router for /api/admin/members/{id} and /api/admin/members/{id}/messages
+func handleAdminMemberRouter(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/admin/members/")
+	if path == "" { http.Error(w, "no id", 400); return }
+	if strings.HasSuffix(path, "/messages") {
+		handleAdminMemberMessages(w, r)
+		return
+	}
+	handleAdminMember(w, r)
+}
+
+func auditLog(actor, action, target, details, ip string) {
+	auditMu.Lock()
+	defer auditMu.Unlock()
+	entry := AuditEntry{
+		Ts: time.Now().Unix(), Actor: actor, Action: action,
+		Target: target, Details: details, IP: ip,
+	}
+	data, _ := json.Marshal(entry)
+	f, err := os.OpenFile(auditFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil { return }
+	defer f.Close()
+	f.Write(append(data, '\n'))
+}
+
+func readAuditLog(lines int) []AuditEntry {
+	data, err := os.ReadFile(auditFile)
+	if err != nil { return []AuditEntry{} }
+	parts := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if lines > 0 && len(parts) > lines { parts = parts[len(parts)-lines:] }
+	entries := []AuditEntry{}
+	for _, line := range parts {
+		if line == "" { continue }
+		var e AuditEntry
+		if err := json.Unmarshal([]byte(line), &e); err == nil {
+			entries = append(entries, e)
+		}
+	}
+	// Reverse so newest first
+	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
+		entries[i], entries[j] = entries[j], entries[i]
+	}
+	return entries
+}
+
+// ── HTTP Handlers ──────────────────────────────────────────────────────────
+
+func getClientIP(r *http.Request) string {
+	if xf := r.Header.Get("X-Forwarded-For"); xf != "" {
+		return strings.SplitN(xf, ",", 2)[0]
+	}
+	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	return host
+}
+
+// GET /api/admin/members
+func handleAdminMembers(w http.ResponseWriter, r *http.Request) {
+	if !checkAdminAuth(r) { w.WriteHeader(401); return }
+	w.Header().Set("Content-Type", "application/json")
+	memberStoreMu.RLock()
+	defer memberStoreMu.RUnlock()
+	type publicMember struct {
+		ID         string   `json:"id"`
+		Callsign   string   `json:"callsign"`
+		Name       string   `json:"name"`
+		Email      string   `json:"email"`
+		Callsigns  []string `json:"callsigns"`
+		Passcode   int      `json:"passcode"`
+		WatchCount int      `json:"watch_count"`
+		MsgCount   int      `json:"msg_count"`
+		Unread     int      `json:"unread"`
+		Created    int64    `json:"created"`
+		LastLogin  int64    `json:"last_login"`
+		Sessions   int      `json:"sessions"`
+	}
+	list := []publicMember{}
+	for _, m := range memberStore.Members {
+		msgs := memberStore.Messages[strings.ToUpper(m.Callsign)]
+		unread := 0
+		for _, mg := range msgs { if !mg.Read { unread++ } }
+		sessions := 0
+		for _, s := range memberStore.Sessions { if s.MemberID == m.ID { sessions++ } }
+		list = append(list, publicMember{
+			ID: m.ID, Callsign: m.Callsign, Name: m.Name, Email: m.Email,
+			Callsigns: m.Callsigns, Passcode: m.Passcode,
+			WatchCount: len(m.Watchlist), MsgCount: len(msgs), Unread: unread,
+			Created: m.Created, LastLogin: m.LastLogin, Sessions: sessions,
+		})
+	}
+	json.NewEncoder(w).Encode(list)
+}
+
+// PUT /api/admin/members/{id} : update member
+// DELETE /api/admin/members/{id} : delete member
+func handleAdminMember(w http.ResponseWriter, r *http.Request) {
+	if !checkAdminAuth(r) { w.WriteHeader(401); return }
+	ip := getClientIP(r)
+	// Extract ID from path
+	id := strings.TrimPrefix(r.URL.Path, "/api/admin/members/")
+	id = strings.SplitN(id, "/", 2)[0]
+	if id == "" { http.Error(w, "no id", 400); return }
+	w.Header().Set("Content-Type", "application/json")
+
+	memberStoreMu.Lock()
+	defer memberStoreMu.Unlock()
+	mem, ok := memberStore.Members[id]
+	if !ok { w.WriteHeader(404); json.NewEncoder(w).Encode(map[string]string{"error":"not found"}); return }
+
+	if r.Method == http.MethodDelete {
+		delete(memberStore.Members, id)
+		delete(memberStore.Messages, strings.ToUpper(mem.Callsign))
+		// Kill all sessions for this member
+		for tok, s := range memberStore.Sessions {
+			if s.MemberID == id { delete(memberStore.Sessions, tok) }
+		}
+		saveMemberStore()
+		auditLog("admin", "member.delete", mem.Callsign, mem.ID, ip)
+		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+		return
+	}
+
+	if r.Method == http.MethodPut {
+		var req struct {
+			Name      string   `json:"name"`
+			Email     string   `json:"email"`
+			Callsigns []string `json:"callsigns"`
+			Watchlist []string `json:"watchlist"`
+			ResetPassword string `json:"reset_password"` // new password if set
+			ForceLogout   bool   `json:"force_logout"`
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+		changes := []string{}
+		if req.Name != "" && req.Name != mem.Name {
+			mem.Name = req.Name; changes = append(changes, "name")
+		}
+		if req.Email != mem.Email {
+			mem.Email = req.Email; changes = append(changes, "email")
+		}
+		if req.Callsigns != nil {
+			mem.Callsigns = req.Callsigns; changes = append(changes, "callsigns")
+		}
+		if req.Watchlist != nil {
+			mem.Watchlist = req.Watchlist; changes = append(changes, "watchlist")
+		}
+		if req.ResetPassword != "" && len(req.ResetPassword) >= 6 {
+			mem.Password = hashPassword(req.ResetPassword, mem.Salt)
+			changes = append(changes, "password")
+			// Force logout when password changes
+			req.ForceLogout = true
+		}
+		if req.ForceLogout {
+			for tok, s := range memberStore.Sessions {
+				if s.MemberID == id { delete(memberStore.Sessions, tok) }
+			}
+			changes = append(changes, "sessions cleared")
+		}
+		saveMemberStore()
+		auditLog("admin", "member.update", mem.Callsign, strings.Join(changes,","), ip)
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "changes": changes})
+		return
+	}
+
+	http.Error(w, "method not allowed", 405)
+}
+
+// GET /api/admin/members/{id}/messages : view member's stored messages
+func handleAdminMemberMessages(w http.ResponseWriter, r *http.Request) {
+	if !checkAdminAuth(r) { w.WriteHeader(401); return }
+	id := strings.TrimPrefix(r.URL.Path, "/api/admin/members/")
+	id = strings.TrimSuffix(id, "/messages")
+	w.Header().Set("Content-Type", "application/json")
+	memberStoreMu.RLock()
+	defer memberStoreMu.RUnlock()
+	mem, ok := memberStore.Members[id]
+	if !ok { w.WriteHeader(404); return }
+	msgs := memberStore.Messages[strings.ToUpper(mem.Callsign)]
+	if msgs == nil { msgs = []StoredMessage{} }
+	json.NewEncoder(w).Encode(msgs)
+}
+
+// GET/POST /api/admin/bans
+func handleAdminBans(w http.ResponseWriter, r *http.Request) {
+	if !checkAdminAuth(r) { w.WriteHeader(401); return }
+	w.Header().Set("Content-Type", "application/json")
+	ip := getClientIP(r)
+	if r.Method == http.MethodGet {
+		banListMu.RLock()
+		defer banListMu.RUnlock()
+		json.NewEncoder(w).Encode(banList)
+		return
+	}
+	if r.Method == http.MethodPost {
+		var req BanEntry
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid json", 400); return
+		}
+		req.Callsign = strings.ToUpper(strings.TrimSpace(req.Callsign))
+		req.Added = time.Now().Unix()
+		req.AddedBy = "admin"
+		banListMu.Lock()
+		// Update if exists, else append
+		updated := false
+		for i, b := range banList {
+			if strings.ToUpper(b.Callsign) == req.Callsign {
+				banList[i] = req; updated = true; break
+			}
+		}
+		if !updated { banList = append(banList, req) }
+		saveBanList()
+		banListMu.Unlock()
+		auditLog("admin", "ban.add", req.Callsign, req.Reason, ip)
+		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+		return
+	}
+	if r.Method == http.MethodDelete {
+		call := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("callsign")))
+		if call == "" { http.Error(w, "no callsign", 400); return }
+		banListMu.Lock()
+		newList := []BanEntry{}
+		for _, b := range banList {
+			if strings.ToUpper(b.Callsign) != call { newList = append(newList, b) }
+		}
+		banList = newList
+		saveBanList()
+		banListMu.Unlock()
+		auditLog("admin", "ban.remove", call, "", ip)
+		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+		return
+	}
+	http.Error(w, "method not allowed", 405)
+}
+
+// GET/POST /api/admin/motd
+// GET /api/motd (public)
+func handleAdminMOTD(w http.ResponseWriter, r *http.Request) {
+	if !checkAdminAuth(r) { w.WriteHeader(401); return }
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodGet {
+		motdMu.RLock()
+		defer motdMu.RUnlock()
+		json.NewEncoder(w).Encode(motd)
+		return
+	}
+	if r.Method == http.MethodPost {
+		var req MOTD
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid json", 400); return
+		}
+		motdMu.Lock()
+		motd = req; motd.Updated = time.Now().Unix()
+		saveMOTD()
+		motdMu.Unlock()
+		auditLog("admin", "motd.update", "", req.Message[:minLen(req.Message,50)], getClientIP(r))
+		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+		return
+	}
+	http.Error(w, "method not allowed", 405)
+}
+
+func handlePublicMOTD(w http.ResponseWriter, r *http.Request) {
+	motdMu.RLock()
+	defer motdMu.RUnlock()
+	w.Header().Set("Content-Type", "application/json")
+	if !motd.Enabled || motd.Message == "" {
+		json.NewEncoder(w).Encode(map[string]bool{"enabled": false})
+		return
+	}
+	json.NewEncoder(w).Encode(motd)
+}
+
+// GET /api/admin/audit?limit=100
+func handleAdminAudit(w http.ResponseWriter, r *http.Request) {
+	if !checkAdminAuth(r) { w.WriteHeader(401); return }
+	limit := 100
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 { limit = v }
+	}
+	entries := readAuditLog(limit)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(entries)
+}
+
+// GET /api/admin/backup : returns zip of all state
+func handleAdminBackup(w http.ResponseWriter, r *http.Request) {
+	if !checkAdminAuth(r) { w.WriteHeader(401); return }
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="aprs-backup-%s.json"`, time.Now().Format("2006-01-02-150405")))
+	backup := map[string]interface{}{
+		"version": AppVersion,
+		"timestamp": time.Now().Unix(),
+		"server_config": loadConfigFromFile(),
+		"members": memberStore,
+		"bans": banList,
+		"motd": motd,
+		"webhooks": webhooks,
+		"api_keys": apiKeys,
+	}
+	json.NewEncoder(w).Encode(backup)
+	auditLog("admin", "backup.download", "", "", getClientIP(r))
+}
+
+// POST /api/admin/restore : upload backup JSON
+func handleAdminRestore(w http.ResponseWriter, r *http.Request) {
+	if !checkAdminAuth(r) { w.WriteHeader(401); return }
+	w.Header().Set("Content-Type", "application/json")
+	body, err := io.ReadAll(r.Body)
+	if err != nil || len(body) == 0 { http.Error(w, "no body", 400); return }
+	var backup map[string]json.RawMessage
+	if err := json.Unmarshal(body, &backup); err != nil {
+		http.Error(w, "invalid json", 400); return
+	}
+	restored := []string{}
+	if mb, ok := backup["members"]; ok {
+		var ms MemberStore
+		if json.Unmarshal(mb, &ms) == nil {
+			memberStoreMu.Lock()
+			memberStore = &ms
+			saveMemberStore()
+			memberStoreMu.Unlock()
+			restored = append(restored, "members")
+		}
+	}
+	if bb, ok := backup["bans"]; ok {
+		var bl []BanEntry
+		if json.Unmarshal(bb, &bl) == nil {
+			banListMu.Lock()
+			banList = bl
+			saveBanList()
+			banListMu.Unlock()
+			restored = append(restored, "bans")
+		}
+	}
+	if mm, ok := backup["motd"]; ok {
+		var m MOTD
+		if json.Unmarshal(mm, &m) == nil {
+			motdMu.Lock()
+			motd = m
+			saveMOTD()
+			motdMu.Unlock()
+			restored = append(restored, "motd")
+		}
+	}
+	auditLog("admin", "backup.restore", "", strings.Join(restored,","), getClientIP(r))
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "restored": restored})
+}
+
+// Helpers
+func minLen(s string, n int) int { if len(s) < n { return len(s) }; return n }
+func loadConfigFromFile() interface{} {
+	data, err := os.ReadFile("server_config.json")
+	if err != nil { return nil }
+	var c interface{}
+	json.Unmarshal(data, &c)
+	return c
 }
