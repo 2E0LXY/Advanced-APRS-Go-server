@@ -7097,16 +7097,17 @@ async function loadAudit() {
 }
 
 // Auto-load admin sections when admin panel opens
-var _origTogglePanel = togglePanel;
-togglePanel = function(name) {
-  _origTogglePanel(name);
-  if (name === 'admin' && !document.getElementById('admin-panel').classList.contains('hidden')) {
-    // Only load if admin login already done (we have _adminCreds)
-    if (window._adminCreds) {
-      setTimeout(function(){ loadAdminMembers(); loadBans(); loadAdminMOTD(); loadAudit(); }, 300);
+(function(){
+  var _prevTogglePanel = togglePanel;
+  togglePanel = function(name) {
+    _prevTogglePanel(name);
+    if (name === 'admin' && !document.getElementById('admin-panel').classList.contains('hidden')) {
+      if (window._adminCreds) {
+        setTimeout(function(){ loadAdminMembers(); loadBans(); loadAdminMOTD(); loadAudit(); }, 300);
+      }
     }
-  }
-};
+  };
+})();
 
 // Hook into existing admin login so we know when it succeeds
 // _adminCreds will be set when admin auth completes
