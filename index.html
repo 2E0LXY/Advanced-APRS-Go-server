@@ -257,6 +257,7 @@ body { background: var(--bg-base); color: var(--text-base); }
 
   <!-- Replay Loading Overlay -->
   <div id="replay-overlay" class="fixed inset-0 flex flex-col items-center justify-center space-y-4" style="background:var(--bg-base,#0f172a);opacity:0.97;z-index:100001">
+    <button onclick="finishReplay()" style="position:absolute;top:20px;right:20px;background:#374151;border:1px solid #4b5563;color:#d1d5db;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px">Skip ✕</button>
     <div class="text-4xl mb-2">📡</div>
     <h2 class="text-white font-bold text-lg">Loading APRS History</h2>
     <p class="text-gray-400 text-sm">Replaying last hour of activity from server...</p>
@@ -5902,6 +5903,25 @@ async function initReplayProgress() {
     var el = document.getElementById('replay-elapsed');
     if (el) el.innerText = ((Date.now()-_replayStart)/1000).toFixed(0) + 's';
   }, 500);
+  // SAFETY: force hide overlay after 30 seconds no matter what
+  // Stops the page being stuck if replay_done message never arrives
+  setTimeout(function() {
+    if (_replayActive) {
+      console.warn('Replay timeout - force closing overlay');
+      finishReplay();
+    }
+  }, 30000);
+  // ALSO: force hide if no progress for 5 seconds (likely done but no replay_done)
+  var lastCount = 0;
+  var stallTimer = setInterval(function() {
+    if (!_replayActive) { clearInterval(stallTimer); return; }
+    if (_replayPackets === lastCount && _replayPackets > 0) {
+      console.warn('Replay stalled - force closing overlay');
+      clearInterval(stallTimer);
+      finishReplay();
+    }
+    lastCount = _replayPackets;
+  }, 5000);
 }
 
 function updateReplayProgress() {
