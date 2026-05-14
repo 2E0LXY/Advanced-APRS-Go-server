@@ -315,7 +315,17 @@ body { background: var(--bg-base); color: var(--text-base); }
         </div>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="cluster-enable" checked onchange="toggleClustering()"><span>Cluster Markers</span></label>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-pistar" onchange="redrawMap()"><span class="text-gray-500">●</span><span class="text-gray-400">Pi-Star / MMDVM</span></label>
-        <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-lora" onchange="toggleLoRa()"><span class="text-purple-400">●</span><span>LoRa Network</span><span class="text-gray-500 text-[10px]">(iGates &amp; Trackers)</span></label>
+        <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-lora" onchange="toggleLoRa()"><span class="text-purple-400">●</span><span>LoRa Network</span></label>
+        <div id="lora-sub-filters" class="hidden ml-5 space-y-1 mt-1 border-l-2 border-purple-900 pl-3">
+          <label class="flex items-center space-x-2 cursor-pointer text-xs"><input type="checkbox" id="lora-show-igates"    checked onchange="renderLoRaData(_loraLatest)"><span class="text-purple-400">📡</span><span class="text-gray-400">iGates</span></label>
+          <label class="flex items-center space-x-2 cursor-pointer text-xs"><input type="checkbox" id="lora-show-digis"     checked onchange="renderLoRaData(_loraLatest)"><span class="text-amber-400">🔄</span><span class="text-gray-400">Digipeaters</span></label>
+          <label class="flex items-center space-x-2 cursor-pointer text-xs"><input type="checkbox" id="lora-show-trackers"  checked onchange="renderLoRaData(_loraLatest)"><span class="text-emerald-400">🛰</span><span class="text-gray-400">Trackers</span></label>
+          <hr class="border-purple-900/50 my-1">
+          <label class="flex items-center space-x-2 cursor-pointer text-xs"><input type="checkbox" id="lora-show-direct"    checked onchange="renderLoRaData(_loraLatest)"><span class="text-green-400">━</span><span class="text-gray-400">Direct (RF)</span></label>
+          <label class="flex items-center space-x-2 cursor-pointer text-xs"><input type="checkbox" id="lora-show-digipeated"checked onchange="renderLoRaData(_loraLatest)"><span class="text-gray-400">┄</span><span class="text-gray-400">Digipeated</span></label>
+          <hr class="border-purple-900/50 my-1">
+          <label class="flex items-center space-x-2 cursor-pointer text-xs"><input type="checkbox" id="lora-only-moving"           onchange="renderLoRaData(_loraLatest)"><span class="text-cyan-400">→</span><span class="text-gray-400">Moving only</span></label>
+        </div>
       </div>
     </div>
     <div class="mt-auto pt-3 border-t border-gray-700 space-y-2">
@@ -7224,187 +7234,275 @@ async function loadAudit() {
 
 
 // ─── LoRa-APRS Integration ────────────────────────────────────────────────────
-// Fetches LoRa-APRS network data from lora.link9.net
-// Shows iGates, Digipeaters and Trackers as separate markers with signal-quality
-// lines between them. Toggled via the "LoRa Network" checkbox in the sidebar.
+// Global LoRa-APRS network overlay using lora-aprs.live API
+// Markers and signal-quality lines colour-coded by SNR
 
 var _loraEnabled       = false;
-var _loraIgates        = {};     // rx_callsign -> { lat, lon, lastSeen, marker, ... }
-var _loraTrackers      = {};     // tx_callsign -> { lat, lon, lastSeen, marker, ... }
-var _loraLinks         = [];     // L.Polyline list of iGate <-> Tracker links
 var _loraLayerGroup    = null;
 var _loraRefreshTimer  = null;
-var _loraSeenTrackers  = {};     // tx -> last known position from any iGate
+var _loraLatest        = [];   // last fetched records (for re-rendering on filter change)
+var _loraTrackerPaths  = {};   // tx_callsign -> array of {lat,lon,ts} for movement detection
 
 function toggleLoRa() {
   _loraEnabled = document.getElementById('show-lora').checked;
-  if (_loraEnabled) {
-    startLoRaUpdates();
-  } else {
-    stopLoRaUpdates();
-  }
+  var sub = document.getElementById('lora-sub-filters');
+  if (sub) sub.classList.toggle('hidden', !_loraEnabled);
+  if (_loraEnabled) startLoRaUpdates(); else stopLoRaUpdates();
 }
 
 function startLoRaUpdates() {
-  if (!_loraLayerGroup) {
-    _loraLayerGroup = L.layerGroup().addTo(map);
-  }
+  if (!_loraLayerGroup) _loraLayerGroup = L.layerGroup().addTo(map);
   fetchLoRaData();
   if (_loraRefreshTimer) clearInterval(_loraRefreshTimer);
-  _loraRefreshTimer = setInterval(fetchLoRaData, 60000); // refresh every 60s
+  _loraRefreshTimer = setInterval(fetchLoRaData, 60000);
 }
 
 function stopLoRaUpdates() {
   if (_loraRefreshTimer) { clearInterval(_loraRefreshTimer); _loraRefreshTimer = null; }
   if (_loraLayerGroup) { map.removeLayer(_loraLayerGroup); _loraLayerGroup = null; }
-  _loraIgates = {}; _loraTrackers = {}; _loraLinks = [];
+  _loraLatest = [];
+  _loraTrackerPaths = {};
 }
 
 async function fetchLoRaData() {
   if (!_loraEnabled) return;
   try {
-    // Fetch the most recent 200 messages - covers last ~30-60 minutes globally
-    var r = await fetch('https://lora.link9.net/api/messages?limit=100&page=1');
-    if (!r.ok) {
-      console.warn('LoRa fetch failed:', r.status);
-      return;
+    // Fetch all available records (up to 1000) via pagination
+    // Use 10 pages of 100 each for full network view
+    var allResults = [];
+    var pages = 10;
+    var promises = [];
+    for (var p = 1; p <= pages; p++) {
+      promises.push(
+        fetch('https://lora.link9.net/api/messages?limit=100&page=' + p)
+          .then(function(r) { return r.ok ? r.json() : null; })
+          .catch(function() { return null; })
+      );
     }
-    var d = await r.json();
-    if (!d.results || !Array.isArray(d.results)) return;
-    renderLoRaData(d.results);
+    var responses = await Promise.all(promises);
+    responses.forEach(function(d) {
+      if (d && d.results) allResults = allResults.concat(d.results);
+    });
+    if (!allResults.length) return;
+    _loraLatest = allResults;
+    renderLoRaData(allResults);
   } catch(e) {
     console.warn('LoRa fetch error:', e);
   }
 }
 
 function loraSignalColor(snr) {
-  if (snr == null || snr === 0) return '#6b7280'; // grey - unknown/digipeated
-  if (snr > -3)  return '#22c55e';  // green - excellent
-  if (snr > -12) return '#eab308';  // yellow - good
-  if (snr > -18) return '#f97316';  // orange - weak
-  return '#ef4444';                  // red - poor
+  if (snr == null || isNaN(snr) || snr === 0) return '#9ca3af';
+  if (snr > -3)  return '#22c55e';
+  if (snr > -12) return '#eab308';
+  if (snr > -18) return '#f97316';
+  return '#ef4444';
+}
+
+// Determine node type from packet characteristics
+function classifyNode(rxCall, packetsAsRx, packetsAsTx) {
+  // iGates appear as rx_callsign; if it ALSO appears as tx_callsign (digipeated by something)
+  // and has many rx records, it's likely a digi too
+  // For now: a node that has appeared as rx_callsign for OTHER callsigns is an iGate
+  // A node where path contains WIDE2-1 or destination has * may indicate digipeater role
+  if (packetsAsRx > 0) {
+    // Has received others - it's an iGate (possibly also a digi)
+    return 'igate';
+  }
+  return 'tracker';
 }
 
 function renderLoRaData(results) {
-  if (!_loraLayerGroup) return;
+  if (!_loraLayerGroup || !results || !results.length) return;
   _loraLayerGroup.clearLayers();
 
-  // Group by callsign to get latest position
-  var igates   = {};
-  var trackers = {};
-  var links    = [];
+  // Read filter state
+  var showIgates    = (document.getElementById('lora-show-igates')   ||{checked:true}).checked;
+  var showDigis     = (document.getElementById('lora-show-digis')    ||{checked:true}).checked;
+  var showTrackers  = (document.getElementById('lora-show-trackers') ||{checked:true}).checked;
+  var showDirect    = (document.getElementById('lora-show-direct')   ||{checked:true}).checked;
+  var showDigipeated= (document.getElementById('lora-show-digipeated')||{checked:true}).checked;
+  var onlyMoving    = (document.getElementById('lora-only-moving')   ||{checked:false}).checked;
+
+  // First pass: classify nodes by their role
+  // - rx_callsign appearing for OTHER tx_callsigns => iGate
+  // - rx_callsign == tx_callsign with no other rx role => Tracker (self beacon)
+  // - destination contains "*" or path has digipeater => Digipeater
+  var rxCounts = {};  // call -> how many records they appear as rx for OTHERS
+  var txOnlyCalls = {}; // call -> seen only as tx
+  var nodeData = {};  // call -> latest record info
+  var trackerPositions = {}; // tx -> latest position via direct receive
+  var links = [];
 
   results.forEach(function(m) {
+    var rx = (m.rx_callsign || '').trim();
+    var tx = (m.tx_callsign || '').trim();
     var lat = parseFloat(m.latitude);
     var lon = parseFloat(m.longitude);
-    if (isNaN(lat) || isNaN(lon)) return;
+    if (!rx || !tx || isNaN(lat) || isNaN(lon)) return;
 
-    // Each record is rx_callsign (iGate) receiving from tx_callsign (Tracker)
-    // The lat/lon in record is the iGate location
-    var rxCall = (m.rx_callsign || '').trim();
-    var txCall = (m.tx_callsign || '').trim();
-    if (!rxCall) return;
+    var isDigipeated = (m.destination || '').includes('*');
 
-    // Determine if this is a Digipeater (destination contains digi indicator)
-    var isDigi = (m.destination || '').includes('*') || (m.path || '').includes('WIDE2');
+    if (rx !== tx) {
+      rxCounts[rx] = (rxCounts[rx] || 0) + 1;
+    }
 
-    // Self-beacon (rx == tx) means it's the iGate's own position beacon
-    if (rxCall === txCall) {
-      igates[rxCall] = {
-        call: rxCall, lat: lat, lon: lon,
-        elevation: m.elevation, ts: m.received_at,
-        battery: m.battery, isDigi: isDigi
-      };
-    } else {
-      // It's a tracker heard by this iGate
-      // Tracker's actual lat/lon isn't given - but the iGate's is.
-      // Without separate tx position, store the iGate location for reference
-      if (!igates[rxCall]) {
-        igates[rxCall] = { call: rxCall, lat: lat, lon: lon, elevation: m.elevation, ts: m.received_at };
+    // Always record latest position from each callsign
+    var ts = new Date(m.received_at).getTime();
+    if (!nodeData[rx] || nodeData[rx].ts < ts) {
+      nodeData[rx] = { call: rx, lat: lat, lon: lon, ts: ts,
+        elevation: m.elevation, battery: m.battery,
+        receivedAt: m.received_at, role: 'igate' };
+    }
+
+    // If self-beacon (rx==tx), it's the iGate's own position - already captured above
+    // If different, this is a tracker's packet relayed via iGate
+    if (rx !== tx) {
+      // The lat/lon in the record is the iGate location (rx) NOT the tracker
+      // Tracker actual position is unknown from this API unless tx is also an iGate
+      // We'll track tx as a tracker without precise position
+      if (!nodeData[tx]) {
+        nodeData[tx] = { call: tx, lat: lat, lon: lon, ts: ts,
+          elevation: m.elevation, battery: m.battery,
+          receivedAt: m.received_at, role: 'tracker',
+          viaGate: rx, approximate: true };
       }
-      // Track trackers - store last known via this iGate
-      if (!trackers[txCall]) {
-        trackers[txCall] = { call: txCall, lat: lat, lon: lon, viaGate: rxCall };
-      }
-      // Create link
+      // Build link
+      var snr = parseFloat(m.signal_quality);
       links.push({
-        from: { lat: igates[rxCall].lat, lon: igates[rxCall].lon },
+        from: { lat: nodeData[rx] ? nodeData[rx].lat : lat,
+                lon: nodeData[rx] ? nodeData[rx].lon : lon },
         to:   { lat: lat, lon: lon },
-        snr:  parseFloat(m.signal_quality),
+        rxCall: rx, txCall: tx,
+        snr: snr,
         rssi: parseFloat(m.signal_strength),
         dist: parseFloat(m.distance),
-        rxCall: rxCall, txCall: txCall,
+        digipeated: isDigipeated,
         ts: m.received_at
       });
     }
-  });
 
-  // Render iGates - blue/purple square markers
-  Object.keys(igates).forEach(function(call) {
-    var g = igates[call];
-    var icon = L.divIcon({
-      html: '<div style="background:#7c3aed;color:#fff;border:2px solid #fff;border-radius:3px;padding:2px 5px;font-size:10px;font-weight:bold;font-family:monospace;box-shadow:0 2px 4px rgba(0,0,0,0.4);white-space:nowrap">📡 ' + call + '</div>',
-      className: '', iconSize: null, iconAnchor: [0, 0]
-    });
-    var m = L.marker([g.lat, g.lon], { icon: icon })
-      .bindPopup('<div style="font-family:monospace;font-size:12px">'
-        + '<div style="color:#a78bfa;font-weight:bold;font-size:14px;margin-bottom:4px">📡 ' + call + '</div>'
-        + '<div style="color:#9ca3af;margin-bottom:2px">' + (g.isDigi ? 'LoRa Digipeater' : 'LoRa iGate') + '</div>'
-        + (g.elevation ? '<div>Elev: ' + Math.round(g.elevation*3.28084) + ' ft (' + g.elevation + 'm)</div>' : '')
-        + (g.battery ? '<div>Battery: ' + g.battery + 'V</div>' : '')
-        + '<div style="color:#6b7280;font-size:10px;margin-top:4px">Last: ' + (g.ts||'').replace('T',' ').replace('+00:00','Z') + '</div>'
-        + '<div style="color:#6b7280;font-size:10px"><a href="https://lora-aprs.live/?call=' + encodeURIComponent(call) + '" target="_blank" style="color:#60a5fa">View on lora-aprs.live ↗</a></div>'
-        + '</div>');
-    m.addTo(_loraLayerGroup);
-  });
-
-  // Render Trackers - small green dots
-  Object.keys(trackers).forEach(function(call) {
-    var t = trackers[call];
-    var icon = L.divIcon({
-      html: '<div style="background:#10b981;color:#fff;border:2px solid #fff;border-radius:50%;padding:1px 4px;font-size:9px;font-weight:bold;font-family:monospace;box-shadow:0 2px 4px rgba(0,0,0,0.4);white-space:nowrap">🛰 ' + call + '</div>',
-      className: '', iconSize: null, iconAnchor: [0, 0]
-    });
-    var m = L.marker([t.lat, t.lon], { icon: icon })
-      .bindPopup('<div style="font-family:monospace;font-size:12px">'
-        + '<div style="color:#34d399;font-weight:bold;font-size:14px;margin-bottom:4px">🛰 ' + call + '</div>'
-        + '<div style="color:#9ca3af;margin-bottom:2px">LoRa Tracker</div>'
-        + '<div>Heard by: <span style="color:#a78bfa">' + t.viaGate + '</span></div>'
-        + '<div style="color:#6b7280;font-size:10px;margin-top:4px"><a href="https://lora-aprs.live/?call=' + encodeURIComponent(call) + '" target="_blank" style="color:#60a5fa">View on lora-aprs.live ↗</a></div>'
-        + '</div>');
-    m.addTo(_loraLayerGroup);
-  });
-
-  // Render signal-quality lines (iGate <-> Tracker)
-  links.forEach(function(link) {
-    var color = loraSignalColor(link.snr);
-    var dashed = isNaN(link.snr) || link.snr === 0;
-    var line = L.polyline(
-      [[link.from.lat, link.from.lon], [link.to.lat, link.to.lon]],
-      {
-        color: color, weight: 2, opacity: 0.7,
-        dashArray: dashed ? '4,4' : null
+    // Track positions over time for movement detection
+    if (rx === tx) {
+      // Self-beacon - we have an authoritative position
+      if (!_loraTrackerPaths[rx]) _loraTrackerPaths[rx] = [];
+      var path = _loraTrackerPaths[rx];
+      // Only add if position changed
+      var lastP = path[path.length-1];
+      if (!lastP || lastP.lat !== lat || lastP.lon !== lon) {
+        path.push({ lat: lat, lon: lon, ts: ts });
+        if (path.length > 50) path.shift();
       }
+    }
+  });
+
+  // Now classify - iGate = has been rx for others; otherwise Tracker
+  Object.keys(nodeData).forEach(function(call) {
+    var n = nodeData[call];
+    if (rxCounts[call] && rxCounts[call] > 0) {
+      n.role = 'igate';
+      // Check if it's also a digipeater: appeared in any digipeated path
+      results.forEach(function(m) {
+        if ((m.destination || '').includes(call + '*') ||
+            (m.path || '').includes(call + '*')) {
+          n.role = 'digipeater';
+        }
+      });
+    } else {
+      n.role = 'tracker';
+    }
+  });
+
+  // Detect moving trackers from path history
+  Object.keys(_loraTrackerPaths).forEach(function(call) {
+    var path = _loraTrackerPaths[call];
+    if (path.length < 2 || !nodeData[call]) return;
+    var first = path[0], last = path[path.length-1];
+    var distMoved = haversineKm(first.lat, first.lon, last.lat, last.lon);
+    nodeData[call].moving = distMoved > 0.1; // moved >100m
+    nodeData[call].pathLength = path.length;
+  });
+
+  // Now render markers
+  var rendered = { igates: 0, digis: 0, trackers: 0 };
+  Object.keys(nodeData).forEach(function(call) {
+    var n = nodeData[call];
+
+    // Apply role filter
+    if (n.role === 'igate'      && !showIgates)   return;
+    if (n.role === 'digipeater' && !showDigis)    return;
+    if (n.role === 'tracker'    && !showTrackers) return;
+
+    // Apply moving filter
+    if (onlyMoving && !n.moving) return;
+
+    rendered[n.role === 'igate' ? 'igates' : (n.role === 'digipeater' ? 'digis' : 'trackers')]++;
+
+    var iconHtml, anchor = [0, 0];
+    if (n.role === 'igate') {
+      iconHtml = '<div style="background:#7c3aed;color:#fff;border:2px solid #fff;border-radius:3px;padding:2px 5px;font-size:10px;font-weight:bold;font-family:monospace;box-shadow:0 2px 4px rgba(0,0,0,0.4);white-space:nowrap">📡 ' + call + '</div>';
+    } else if (n.role === 'digipeater') {
+      iconHtml = '<div style="background:#d97706;color:#fff;border:2px solid #fff;border-radius:3px;padding:2px 5px;font-size:10px;font-weight:bold;font-family:monospace;box-shadow:0 2px 4px rgba(0,0,0,0.4);white-space:nowrap">🔄 ' + call + '</div>';
+    } else {
+      iconHtml = '<div style="background:#10b981;color:#fff;border:2px solid #fff;border-radius:50%;padding:1px 4px;font-size:9px;font-weight:bold;font-family:monospace;box-shadow:0 2px 4px rgba(0,0,0,0.4);white-space:nowrap' + (n.moving ? ';outline:2px solid #06b6d4;outline-offset:2px' : '') + '">🛰 ' + call + (n.moving ? ' →' : '') + '</div>';
+    }
+    var icon = L.divIcon({ html: iconHtml, className: '', iconSize: null, iconAnchor: anchor });
+
+    var popup = '<div style="font-family:monospace;font-size:12px;min-width:200px">'
+      + '<div style="color:' + (n.role==='igate'?'#a78bfa':n.role==='digipeater'?'#fbbf24':'#34d399') + ';font-weight:bold;font-size:14px;margin-bottom:4px">'
+      + (n.role==='igate'?'📡 ':n.role==='digipeater'?'🔄 ':'🛰 ') + call + '</div>'
+      + '<div style="color:#9ca3af;margin-bottom:4px">LoRa ' + (n.role==='digipeater'?'Digipeater':n.role==='igate'?'iGate':'Tracker') + (n.moving?' · <span style="color:#06b6d4">Moving</span>':'') + '</div>'
+      + (n.elevation ? '<div>Elev: ' + Math.round(n.elevation*3.28084) + ' ft (' + n.elevation + ' m)</div>' : '')
+      + (n.battery ? '<div>Battery: ' + n.battery + ' V</div>' : '')
+      + (n.viaGate ? '<div>Heard by: <span style="color:#a78bfa">' + n.viaGate + '</span></div>' : '')
+      + (n.pathLength ? '<div>Position history: ' + n.pathLength + ' fixes</div>' : '')
+      + (n.approximate ? '<div style="color:#fbbf24;font-size:10px">⚠ Position approximate (iGate location)</div>' : '')
+      + '<div style="color:#6b7280;font-size:10px;margin-top:4px">' + (n.receivedAt||'').replace('T',' ').replace('+00:00','Z') + '</div>'
+      + '<div style="margin-top:4px"><a href="https://lora-aprs.live/?call=' + encodeURIComponent(call) + '" target="_blank" style="color:#60a5fa;font-size:11px">View on lora-aprs.live ↗</a></div>'
+      + '</div>';
+
+    L.marker([n.lat, n.lon], { icon: icon }).bindPopup(popup).addTo(_loraLayerGroup);
+
+    // Draw movement trail for moving trackers
+    if (n.moving && _loraTrackerPaths[call] && _loraTrackerPaths[call].length >= 2) {
+      var pathPts = _loraTrackerPaths[call].map(function(p){ return [p.lat, p.lon]; });
+      L.polyline(pathPts, { color: '#06b6d4', weight: 2, opacity: 0.6, dashArray: '4,3' }).addTo(_loraLayerGroup);
+    }
+  });
+
+  // Render links with filter
+  var linksRendered = 0;
+  links.forEach(function(link) {
+    if (link.digipeated && !showDigipeated) return;
+    if (!link.digipeated && !showDirect) return;
+    // Hide links to/from filtered-out nodes
+    var rxNode = nodeData[link.rxCall];
+    var txNode = nodeData[link.txCall];
+    if (!rxNode || !txNode) return;
+    if (rxNode.role === 'igate'      && !showIgates)   return;
+    if (rxNode.role === 'digipeater' && !showDigis)    return;
+    if (txNode.role === 'tracker'    && !showTrackers) return;
+    if (onlyMoving && !txNode.moving) return;
+
+    var color = loraSignalColor(link.snr);
+    var dashed = link.digipeated || isNaN(link.snr) || link.snr === 0;
+
+    L.polyline(
+      [[link.from.lat, link.from.lon], [link.to.lat, link.to.lon]],
+      { color: color, weight: 2, opacity: 0.6, dashArray: dashed ? '4,4' : null }
     ).bindTooltip(
       '<b>' + link.txCall + '</b> → <b>' + link.rxCall + '</b><br>'
-      + (isNaN(link.snr) ? 'SNR: unknown (digipeated)' : 'SNR: ' + link.snr.toFixed(1) + ' dB')
-      + (isNaN(link.rssi) ? '' : '<br>RSSI: ' + link.rssi.toFixed(0) + ' dBm')
-      + (isNaN(link.dist) ? '' : '<br>Distance: ' + (link.dist*0.621371).toFixed(1) + ' mi (' + link.dist.toFixed(1) + ' km)'),
+      + (link.digipeated ? '<span style="color:#9ca3af">Digipeated</span><br>' : '<span style="color:#22c55e">Direct RF</span><br>')
+      + (isNaN(link.snr) || link.snr === 0 ? 'SNR: unknown' : 'SNR: ' + link.snr.toFixed(1) + ' dB')
+      + (isNaN(link.rssi) || link.rssi === 0 ? '' : '<br>RSSI: ' + link.rssi.toFixed(0) + ' dBm')
+      + (isNaN(link.dist) || link.dist === 0 ? '' : '<br>Distance: ' + (link.dist*0.621371).toFixed(1) + ' mi (' + link.dist.toFixed(1) + ' km)'),
       { sticky: true }
-    );
-    line.addTo(_loraLayerGroup);
+    ).addTo(_loraLayerGroup);
+    linksRendered++;
   });
 
-  // Save state for click handlers
-  _loraIgates = igates;
-  _loraTrackers = trackers;
-  _loraLinks = links;
-
-  // Update status indicator
-  var n = Object.keys(igates).length + Object.keys(trackers).length;
-  console.log('LoRa: rendered ' + Object.keys(igates).length + ' iGates, ' + Object.keys(trackers).length + ' trackers, ' + links.length + ' links');
+  console.log('LoRa: ' + rendered.igates + ' iGates, ' + rendered.digis + ' digis, ' + rendered.trackers + ' trackers, ' + linksRendered + ' links rendered');
 }
-
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 initReplayProgress();
