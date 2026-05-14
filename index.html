@@ -432,17 +432,18 @@ body { background: var(--bg-base); color: var(--text-base); }
 
       </div>
     </div>
-  
-    <!-- Sidebar collapse tab - sits on right edge of sidebar -->
+</div>
+
+    <!-- Sidebar collapse tab - positioned at left edge of map area, fixed to viewport -->
     <button onclick="toggleSidebar()" id="sidebar-tab"
-      style="position:absolute;top:50%;right:-18px;transform:translateY(-50%);
-             width:18px;height:48px;z-index:25;display:flex;align-items:center;
+      style="position:fixed;top:50%;left:256px;transform:translateY(-50%);
+             width:20px;height:56px;z-index:1000;display:flex;align-items:center;
              justify-content:center;background:var(--bg-hover,#374151);border:1px solid var(--border-mid,#4b5563);
-             border-left:none;border-radius:0 6px 6px 0;cursor:pointer;
-             color:var(--text-muted,#d1d5db);font-size:11px;box-shadow:3px 0 6px rgba(0,0,0,0.3)">
+             border-left:none;border-radius:0 8px 8px 0;cursor:pointer;
+             color:var(--text-muted,#d1d5db);font-size:12px;box-shadow:3px 0 8px rgba(0,0,0,0.4);
+             transition:left 0.2s">
       <span id="sidebar-arrow" style="user-select:none;pointer-events:none">&#9664;</span>
     </button>
-</div>
 
   <!-- PANELS -->
   <div class="flex-1 relative">
@@ -6279,7 +6280,10 @@ function toggleSidebar() {
     sb.style.overflow = '';
     sb.style.opacity  = '1';
     if (arrow) arrow.innerText = '◀';
-    if (tab) tab.style.left = '';
+    // Position button at sidebar's right edge (measured dynamically after layout settles)
+    setTimeout(function(){
+      if (tab && sb) tab.style.left = sb.getBoundingClientRect().right + 'px';
+    }, 50);
   } else {
     sb.style.width    = '0';
     sb.style.minWidth = '0';
@@ -6291,6 +6295,20 @@ function toggleSidebar() {
   }
   setTimeout(function(){ if(typeof map!=='undefined') map.invalidateSize(); }, 280);
 }
+
+// Position sidebar tab correctly on page load
+window.addEventListener('load', function() {
+  var sb  = document.getElementById('controls-sidebar');
+  var tab = document.getElementById('sidebar-tab');
+  if (sb && tab) tab.style.left = sb.getBoundingClientRect().right + 'px';
+});
+// Also reposition on window resize
+window.addEventListener('resize', function() {
+  if (!_sidebarOpen) return;
+  var sb  = document.getElementById('controls-sidebar');
+  var tab = document.getElementById('sidebar-tab');
+  if (sb && tab) tab.style.left = sb.getBoundingClientRect().right + 'px';
+});
 
 
 // ─── Light / Dark Theme ───────────────────────────────────────────────────────
