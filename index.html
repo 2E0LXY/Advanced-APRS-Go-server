@@ -2624,7 +2624,7 @@ body { background: var(--bg-base); color: var(--text-base); }
       <!-- History tab -->
       <div id="detail-history" class="hidden space-y-3">
         <div class="bg-gray-800 rounded p-3">
-          <p class="text-gray-400 text-xs font-bold uppercase mb-2">Speed Over Time (km/h)</p>
+          <p class="text-gray-400 text-xs font-bold uppercase mb-2">Speed Over Time (mph / km/h)</p>
           <canvas id="d-speed-chart" height="80"></canvas>
         </div>
         <div class="bg-gray-800 rounded p-3">
@@ -2988,6 +2988,45 @@ if (typeof L.markerClusterGroup === 'function') {
 let currentTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19,attribution:'© OSM'}).addTo(map);
 let gridLayer = null, nightLayer = null, statusInterval = null, adminAuth = null;
 let stations = {}, ws, myCallsign = '', msgCounter = 1, packetCount = 0;
+
+// ─── Unit Conversion Helpers ──────────────────────────────────────────────────
+// Display values in Miles (km), MPH (km/h), C (F)
+function fmtDist(km) {
+  if (km == null || isNaN(km)) return 'n/a';
+  var mi = km * 0.621371;
+  return mi.toFixed(mi < 10 ? 1 : 0) + ' mi (' + km.toFixed(km < 10 ? 1 : 0) + ' km)';
+}
+function fmtSpeed(kph) {
+  if (kph == null || isNaN(kph)) return 'n/a';
+  var mph = kph * 0.621371;
+  return Math.round(mph) + ' mph (' + Math.round(kph) + ' km/h)';
+}
+function fmtTemp(c) {
+  if (c == null || isNaN(c)) return 'n/a';
+  var f = c * 9/5 + 32;
+  return c.toFixed(1) + '°C (' + f.toFixed(0) + '°F)';
+}
+// Short versions for compact spaces
+function fmtDistShort(km) {
+  if (km == null || isNaN(km)) return '';
+  var mi = km * 0.621371;
+  return mi.toFixed(mi < 10 ? 1 : 0) + ' mi';
+}
+function fmtSpeedShort(kph) {
+  if (kph == null || isNaN(kph)) return '';
+  return Math.round(kph * 0.621371) + ' mph';
+}
+function fmtTempShort(c) {
+  if (c == null || isNaN(c)) return '';
+  return c.toFixed(1) + '°C';
+}
+// Convert mph to km/h (when input is in mph but display needs both)
+function mphToKph(mph) { return mph * 1.609344; }
+function kphToMph(kph) { return kph * 0.621371; }
+function cToF(c) { return c * 9/5 + 32; }
+function fToC(f) { return (f - 32) * 5/9; }
+function kmToMi(km) { return km * 0.621371; }
+function miToKm(mi) { return mi * 1.609344; }
 
 function formatBytes(b) {
   if (!b || isNaN(b) || b === 0) return '0 B';
@@ -3836,11 +3875,11 @@ function showStationPopup(call, st, latest) {
   document.getElementById('modal-time').innerText=new Date(st.lastHeard*1000).toLocaleString()+' ('+(ago<60?ago+'s':ago<3600?Math.floor(ago/60)+'m':Math.floor(ago/3600)+'h')+' ago)';
   document.getElementById('modal-path').innerText=st.path||'n/a';
   const phgEl=document.getElementById('modal-phg');
-  phgEl.innerText=st.phg ? st.phg+' ~ '+(calcPHG(st.phg)/1000).toFixed(1)+'km' : 'n/a';
+  phgEl.innerText=st.phg ? st.phg+' ~ '+(calcPHG(st.phg)/1000*0.621371).toFixed(1)+' mi ('+(calcPHG(st.phg)/1000).toFixed(1)+' km)' : 'n/a';
   // Course/speed in position field
   if (st.movement) {
     const speedKph=(st.movement.spd*1.852).toFixed(0);
-    document.getElementById('modal-pos').innerText += '  |  '+speedKph+'km/h @ '+st.movement.cse+'deg';
+    document.getElementById('modal-pos').innerText += '  |  '+Math.round(speedKph*0.621371)+' mph ('+speedKph+' km/h) @ '+st.movement.cse+'deg';
   }
   const cr=document.getElementById('modal-comment-row');
   const cm=parseComment(st.raw);
@@ -3933,7 +3972,7 @@ async function refreshISS() {
       document.getElementById('iss-pos').innerText =
         iss.latitude.toFixed(3)+'N, '+iss.longitude.toFixed(3)+'E';
       document.getElementById('iss-alt').innerText =
-        'Alt: '+Math.round(iss.altitude)+'km  |  Speed: '+Math.round(iss.velocity)+'km/h';
+        'Alt: '+Math.round(iss.altitude*0.621371)+' mi ('+Math.round(iss.altitude)+' km)  |  Speed: '+Math.round(iss.velocity*0.621371)+' mph ('+Math.round(iss.velocity)+' km/h)';
     }
   } catch(e) { document.getElementById('iss-pos').innerText = 'Position unavailable'; }
 
@@ -4434,9 +4473,9 @@ function renderWX() {
   var avgHum  = hums.length  ? Math.round(hums.reduce(function(a,b){return a+b;},0)/hums.length) : '--';
   var maxWind = winds.length  ? Math.max.apply(null,winds) : '--';
 
-  document.getElementById('wx-avg-temp').innerText    = avgTemp !== '--' ? avgTemp + '°C' : '--';
+  document.getElementById('wx-avg-temp').innerText    = avgTemp !== '--' ? avgTemp + '°C (' + (avgTemp*9/5+32).toFixed(0) + '°F)' : '--';
   document.getElementById('wx-avg-hum').innerText     = avgHum  !== '--' ? avgHum  + '%'  : '--';
-  document.getElementById('wx-max-wind').innerText    = maxWind !== '--' ? maxWind + ' km/h' : '--';
+  document.getElementById('wx-max-wind').innerText    = maxWind !== '--' ? (maxWind*0.621371).toFixed(0) + ' mph (' + maxWind + ' km/h)' : '--';
   document.getElementById('wx-station-count').innerText = wxStations.length;
   document.getElementById('wx-count').innerText = wxStations.length + ' stations';
 
@@ -4480,7 +4519,7 @@ function renderWX() {
       // Temperature - big display
       + (wx.tempC !== undefined
         ? '<div class="text-center mb-3 py-2 bg-gray-900 rounded">'
-          + '<div class="text-3xl font-bold ' + tempColor(wx.tempC) + '">' + wx.tempC + '°C</div>'
+          + '<div class="text-3xl font-bold ' + tempColor(wx.tempC) + '">' + wx.tempC + '°C <span class="text-base text-gray-400">(' + (wx.tempC*9/5+32).toFixed(0) + '°F)</span></div>'
           + '<div class="text-xs text-gray-500 mt-1">Temperature</div>'
           + '</div>'
         : '')
@@ -4499,11 +4538,11 @@ function renderWX() {
         ? '<div><div class="flex justify-between text-gray-400 mb-1"><span>'
           + windIcon(wx.windSpd) + ' Wind '
           + (wx.windDir !== undefined ? windDirLabel(wx.windDir) + ' ' + wx.windDir + '°' : '')
-          + '</span><span class="font-mono">' + wx.windSpd + ' km/h</span></div>'
+          + '</span><span class="font-mono">' + Math.round(wx.windSpd*0.621371) + ' mph (' + wx.windSpd + ' km/h)</span></div>'
           + makeGauge(wx.windSpd, 0, 100, 'km/h', 'bg-green-500') + '</div>' : '')
 
       + (wx.windGust !== undefined && wx.windGust > 0
-        ? '<div class="flex justify-between text-gray-400"><span>💨 Gust</span><span class="font-mono text-yellow-400">' + wx.windGust + ' km/h</span></div>' : '')
+        ? '<div class="flex justify-between text-gray-400"><span>💨 Gust</span><span class="font-mono text-yellow-400">' + Math.round(wx.windGust*0.621371) + ' mph (' + wx.windGust + ' km/h)</span></div>' : '')
 
       + (wx.rain1h !== undefined && parseFloat(wx.rain1h) > 0
         ? '<div class="flex justify-between text-gray-400"><span>🌧 Rain 1h</span><span class="font-mono text-blue-400">' + wx.rain1h + ' mm</span></div>' : '')
@@ -4645,7 +4684,7 @@ function refreshDetailData() {
     tbtn.title = isMoving
       ? (st2.positions.length + ' positions · ' + (function(){
           var d=0; for(var i=1;i<st2.positions.length;i++) d+=haversineKm(st2.positions[i-1].lat,st2.positions[i-1].lon,st2.positions[i].lat,st2.positions[i].lon);
-          return d.toFixed(1)+'km tracked';
+          return (d*0.621371).toFixed(1)+' mi ('+d.toFixed(1)+' km) tracked';
         })()
       )
       : 'Static station — track to watch for movement';
@@ -4664,12 +4703,12 @@ function refreshDetailData() {
 
   // PHG
   var phgEl = document.getElementById('d-phg');
-  phgEl.innerText = st.phg ? st.phg + ' ≈ ' + (calcPHG(st.phg)/1000).toFixed(1) + ' km' : 'n/a';
+  phgEl.innerText = st.phg ? st.phg + ' ≈ ' + (calcPHG(st.phg)/1000*0.621371).toFixed(1) + ' mi (' + (calcPHG(st.phg)/1000).toFixed(1) + ' km)' : 'n/a';
 
   // Speed/course
   var mv = st.movement;
   document.getElementById('d-speed').innerText = mv
-    ? (mv.spd*1.852).toFixed(0) + ' km/h @ ' + mv.cse + '° (' + windDirLabel(mv.cse) + ')'
+    ? (mv.spd*1.852*0.621371).toFixed(0) + ' mph (' + (mv.spd*1.852).toFixed(0) + ' km/h) @ ' + mv.cse + '° (' + windDirLabel(mv.cse) + ')'
     : 'n/a';
 
   // Packet count
@@ -4689,11 +4728,11 @@ function refreshDetailData() {
   if (wx && Object.keys(wx).length) {
     wxBlock.classList.remove('hidden');
     var fields = [];
-    if (wx.tempC     !== undefined) fields.push(['🌡 Temp',     wx.tempC + '°C']);
+    if (wx.tempC     !== undefined) fields.push(['🌡 Temp',     wx.tempC + '°C (' + (wx.tempC*9/5+32).toFixed(0) + '°F)']);
     if (wx.humidity  !== undefined) fields.push(['💧 Humidity',  wx.humidity + '%']);
     if (wx.pressure  !== undefined) fields.push(['📊 Pressure',  wx.pressure + ' hPa']);
-    if (wx.windSpd   !== undefined) fields.push(['🌬 Wind',      wx.windSpd + ' km/h']);
-    if (wx.windGust  !== undefined) fields.push(['💨 Gust',      wx.windGust + ' km/h']);
+    if (wx.windSpd   !== undefined) fields.push(['🌬 Wind',      Math.round(wx.windSpd*0.621371) + ' mph (' + wx.windSpd + ' km/h)']);
+    if (wx.windGust  !== undefined) fields.push(['💨 Gust',      Math.round(wx.windGust*0.621371) + ' mph (' + wx.windGust + ' km/h)']);
     if (wx.rain1h    !== undefined) fields.push(['🌧 Rain 1h',   wx.rain1h + ' mm']);
     document.getElementById('d-wx-data').innerHTML = fields.map(function(f){
       return '<div class="bg-blue-900/30 rounded p-2"><div class="text-gray-400 text-[10px]">' + f[0] + '</div><div class="font-bold text-white">' + f[1] + '</div></div>';
@@ -4763,7 +4802,7 @@ function renderSpeedChart() {
   ctx.fillStyle = '#94a3b8';
   ctx.font = '10px monospace';
   ctx.fillText('0', 2, H-2);
-  ctx.fillText(maxSpd + ' km/h', 2, 12);
+  ctx.fillText(Math.round(maxSpd*0.621371) + ' mph (' + maxSpd + ' km/h)', 2, 12);
 }
 
 function renderDetailPackets() {
@@ -5397,11 +5436,11 @@ function renderWXDetail() {
 
   // Current conditions grid
   var fields = [];
-  if (wx && wx.tempC     !== undefined) fields.push(['🌡 Temp',    wx.tempC + '°C',   tempColor(wx.tempC)]);
+  if (wx && wx.tempC     !== undefined) fields.push(['🌡 Temp',    wx.tempC + '°C (' + (wx.tempC*9/5+32).toFixed(0) + '°F)',   tempColor(wx.tempC)]);
   if (wx && wx.humidity  !== undefined) fields.push(['💧 Humidity', wx.humidity + '%',  'text-blue-400']);
   if (wx && wx.pressure  !== undefined) fields.push(['📊 Pressure', wx.pressure + ' hPa','text-gray-300']);
-  if (wx && wx.windSpd   !== undefined) fields.push(['🌬 Wind',     wx.windSpd + ' km/h','text-green-400']);
-  if (wx && wx.windGust  !== undefined) fields.push(['💨 Gust',     wx.windGust + ' km/h','text-yellow-400']);
+  if (wx && wx.windSpd   !== undefined) fields.push(['🌬 Wind',     Math.round(wx.windSpd*0.621371) + ' mph (' + wx.windSpd + ' km/h)','text-green-400']);
+  if (wx && wx.windGust  !== undefined) fields.push(['💨 Gust',     Math.round(wx.windGust*0.621371) + ' mph (' + wx.windGust + ' km/h)','text-yellow-400']);
   if (wx && wx.rain1h    !== undefined) fields.push(['🌧 Rain 1h',  wx.rain1h + ' mm',  'text-blue-300']);
   if (wx && wx.rain24h   !== undefined) fields.push(['🌧 Rain 24h', wx.rain24h + ' mm', 'text-blue-200']);
   if (wx && wx.luminosity!== undefined) fields.push(['☀️ Solar',    wx.luminosity + ' W/m²','text-yellow-300']);
@@ -5806,7 +5845,7 @@ function renderLeaderboard() {
   var byDist = withPos.slice().sort(function(a,b){ return b.dist-a.dist; }).slice(0,10);
   makeRows(byDist, [
     { val: function(r){ return '<a class="text-blue-400 hover:underline">' + r.call + '</a>'; } },
-    { val: function(r){ return r.dist.toFixed(1) + ' km'; }, cls:'text-right text-blue-300 font-bold' },
+    { val: function(r){ return (r.dist*0.621371).toFixed(1) + ' mi (' + r.dist.toFixed(1) + ' km)'; }, cls:'text-right text-blue-300 font-bold' },
     { val: function(r){ return r.bearing + '° ' + windDirLabel(parseFloat(r.bearing)); }, cls:'text-right text-gray-500' },
   ], 'lb-farthest');
 
@@ -6334,7 +6373,7 @@ function drawTrackHistory(call) {
 
   _trackPolyline.bindTooltip(
     '<b>' + call + '</b><br>' +
-    pts.length + ' positions · ' + totalDist.toFixed(1) + ' km · avg ' + avgSpd + ' km/h',
+    pts.length + ' positions · ' + (totalDist*0.621371).toFixed(1) + ' mi (' + totalDist.toFixed(1) + ' km) · avg ' + Math.round(avgSpd*0.621371) + ' mph (' + avgSpd + ' km/h)',
     { sticky: true, direction: 'top' }
   );
 }
