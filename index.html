@@ -315,6 +315,7 @@ body { background: var(--bg-base); color: var(--text-base); }
         </div>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="cluster-enable" checked onchange="toggleClustering()"><span>Cluster Markers</span></label>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-pistar" onchange="redrawMap()"><span class="text-gray-500">●</span><span class="text-gray-400">Pi-Star / MMDVM</span></label>
+        <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-lora" onchange="toggleLoRa()"><span class="text-purple-400">●</span><span>LoRa Network</span><span class="text-gray-500 text-[10px]">(iGates &amp; Trackers)</span></label>
       </div>
     </div>
     <div class="mt-auto pt-3 border-t border-gray-700 space-y-2">
@@ -1148,6 +1149,10 @@ body { background: var(--bg-base); color: var(--text-base); }
         <div class="bg-gray-900 rounded p-3">
           <h4 class="font-bold text-white mb-1">🏆 Leaderboard</h4>
           <p class="text-xs text-gray-400">Live rankings: most active stations, fastest moving (vehicles only — WX excluded), longest path traversed, most-recently-heard. Active nets &amp; groups detected from message traffic.</p>
+        </div>
+        <div class="bg-gray-900 rounded p-3">
+          <h4 class="font-bold text-white mb-1">📡 LoRa Network</h4>
+          <p class="text-xs text-gray-400">Tick "LoRa Network" in sidebar filters to overlay the global LoRa-APRS network. Shows iGates (📡 purple), Trackers (🛰 green) and signal-quality lines colour-coded by SNR: <span class="text-green-400">green</span> (>-3dB), <span class="text-yellow-400">yellow</span> (-3 to -12), <span class="text-orange-400">orange</span> (-12 to -18), <span class="text-red-400">red</span> (&lt;-18). Data from <a href="https://lora-aprs.live" target="_blank" class="text-blue-400 underline">lora-aprs.live</a>.</p>
         </div>
         <div class="bg-gray-900 rounded p-3">
           <h4 class="font-bold text-white mb-1">🌙 / ☀ Theme Toggle</h4>
@@ -5460,7 +5465,7 @@ function renderWXDetail() {
   renderWXChart('wxd-temp-chart',  hist, 'tempC',    '#f97316', '°C');
   renderWXChart('wxd-hum-chart',   hist, 'humidity', '#60a5fa', '%');
   renderWXChart('wxd-pres-chart',  hist, 'pressure', '#a78bfa', 'hPa');
-  renderWXChart('wxd-wind-chart',  hist, 'windSpd',  '#4ade80', 'km/h');
+  renderWXChart('wxd-wind-chart',  hist, 'windSpd',  '#4ade80', 'mph');  // displays km/h converted to mph
   renderWXChart('wxd-rain-chart',  hist, 'rain1h',   '#38bdf8', 'mm');
 }
 
@@ -7216,6 +7221,190 @@ async function loadAudit() {
 // Hook into existing admin login so we know when it succeeds
 // _adminCreds will be set when admin auth completes
 // Store creds globally (already exists in original code via tryAdminLogin)
+
+
+// ─── LoRa-APRS Integration ────────────────────────────────────────────────────
+// Fetches LoRa-APRS network data from lora.link9.net
+// Shows iGates, Digipeaters and Trackers as separate markers with signal-quality
+// lines between them. Toggled via the "LoRa Network" checkbox in the sidebar.
+
+var _loraEnabled       = false;
+var _loraIgates        = {};     // rx_callsign -> { lat, lon, lastSeen, marker, ... }
+var _loraTrackers      = {};     // tx_callsign -> { lat, lon, lastSeen, marker, ... }
+var _loraLinks         = [];     // L.Polyline list of iGate <-> Tracker links
+var _loraLayerGroup    = null;
+var _loraRefreshTimer  = null;
+var _loraSeenTrackers  = {};     // tx -> last known position from any iGate
+
+function toggleLoRa() {
+  _loraEnabled = document.getElementById('show-lora').checked;
+  if (_loraEnabled) {
+    startLoRaUpdates();
+  } else {
+    stopLoRaUpdates();
+  }
+}
+
+function startLoRaUpdates() {
+  if (!_loraLayerGroup) {
+    _loraLayerGroup = L.layerGroup().addTo(map);
+  }
+  fetchLoRaData();
+  if (_loraRefreshTimer) clearInterval(_loraRefreshTimer);
+  _loraRefreshTimer = setInterval(fetchLoRaData, 60000); // refresh every 60s
+}
+
+function stopLoRaUpdates() {
+  if (_loraRefreshTimer) { clearInterval(_loraRefreshTimer); _loraRefreshTimer = null; }
+  if (_loraLayerGroup) { map.removeLayer(_loraLayerGroup); _loraLayerGroup = null; }
+  _loraIgates = {}; _loraTrackers = {}; _loraLinks = [];
+}
+
+async function fetchLoRaData() {
+  if (!_loraEnabled) return;
+  try {
+    // Fetch the most recent 200 messages - covers last ~30-60 minutes globally
+    var r = await fetch('https://lora.link9.net/api/messages?limit=100&page=1');
+    if (!r.ok) {
+      console.warn('LoRa fetch failed:', r.status);
+      return;
+    }
+    var d = await r.json();
+    if (!d.results || !Array.isArray(d.results)) return;
+    renderLoRaData(d.results);
+  } catch(e) {
+    console.warn('LoRa fetch error:', e);
+  }
+}
+
+function loraSignalColor(snr) {
+  if (snr == null || snr === 0) return '#6b7280'; // grey - unknown/digipeated
+  if (snr > -3)  return '#22c55e';  // green - excellent
+  if (snr > -12) return '#eab308';  // yellow - good
+  if (snr > -18) return '#f97316';  // orange - weak
+  return '#ef4444';                  // red - poor
+}
+
+function renderLoRaData(results) {
+  if (!_loraLayerGroup) return;
+  _loraLayerGroup.clearLayers();
+
+  // Group by callsign to get latest position
+  var igates   = {};
+  var trackers = {};
+  var links    = [];
+
+  results.forEach(function(m) {
+    var lat = parseFloat(m.latitude);
+    var lon = parseFloat(m.longitude);
+    if (isNaN(lat) || isNaN(lon)) return;
+
+    // Each record is rx_callsign (iGate) receiving from tx_callsign (Tracker)
+    // The lat/lon in record is the iGate location
+    var rxCall = (m.rx_callsign || '').trim();
+    var txCall = (m.tx_callsign || '').trim();
+    if (!rxCall) return;
+
+    // Determine if this is a Digipeater (destination contains digi indicator)
+    var isDigi = (m.destination || '').includes('*') || (m.path || '').includes('WIDE2');
+
+    // Self-beacon (rx == tx) means it's the iGate's own position beacon
+    if (rxCall === txCall) {
+      igates[rxCall] = {
+        call: rxCall, lat: lat, lon: lon,
+        elevation: m.elevation, ts: m.received_at,
+        battery: m.battery, isDigi: isDigi
+      };
+    } else {
+      // It's a tracker heard by this iGate
+      // Tracker's actual lat/lon isn't given - but the iGate's is.
+      // Without separate tx position, store the iGate location for reference
+      if (!igates[rxCall]) {
+        igates[rxCall] = { call: rxCall, lat: lat, lon: lon, elevation: m.elevation, ts: m.received_at };
+      }
+      // Track trackers - store last known via this iGate
+      if (!trackers[txCall]) {
+        trackers[txCall] = { call: txCall, lat: lat, lon: lon, viaGate: rxCall };
+      }
+      // Create link
+      links.push({
+        from: { lat: igates[rxCall].lat, lon: igates[rxCall].lon },
+        to:   { lat: lat, lon: lon },
+        snr:  parseFloat(m.signal_quality),
+        rssi: parseFloat(m.signal_strength),
+        dist: parseFloat(m.distance),
+        rxCall: rxCall, txCall: txCall,
+        ts: m.received_at
+      });
+    }
+  });
+
+  // Render iGates - blue/purple square markers
+  Object.keys(igates).forEach(function(call) {
+    var g = igates[call];
+    var icon = L.divIcon({
+      html: '<div style="background:#7c3aed;color:#fff;border:2px solid #fff;border-radius:3px;padding:2px 5px;font-size:10px;font-weight:bold;font-family:monospace;box-shadow:0 2px 4px rgba(0,0,0,0.4);white-space:nowrap">📡 ' + call + '</div>',
+      className: '', iconSize: null, iconAnchor: [0, 0]
+    });
+    var m = L.marker([g.lat, g.lon], { icon: icon })
+      .bindPopup('<div style="font-family:monospace;font-size:12px">'
+        + '<div style="color:#a78bfa;font-weight:bold;font-size:14px;margin-bottom:4px">📡 ' + call + '</div>'
+        + '<div style="color:#9ca3af;margin-bottom:2px">' + (g.isDigi ? 'LoRa Digipeater' : 'LoRa iGate') + '</div>'
+        + (g.elevation ? '<div>Elev: ' + Math.round(g.elevation*3.28084) + ' ft (' + g.elevation + 'm)</div>' : '')
+        + (g.battery ? '<div>Battery: ' + g.battery + 'V</div>' : '')
+        + '<div style="color:#6b7280;font-size:10px;margin-top:4px">Last: ' + (g.ts||'').replace('T',' ').replace('+00:00','Z') + '</div>'
+        + '<div style="color:#6b7280;font-size:10px"><a href="https://lora-aprs.live/?call=' + encodeURIComponent(call) + '" target="_blank" style="color:#60a5fa">View on lora-aprs.live ↗</a></div>'
+        + '</div>');
+    m.addTo(_loraLayerGroup);
+  });
+
+  // Render Trackers - small green dots
+  Object.keys(trackers).forEach(function(call) {
+    var t = trackers[call];
+    var icon = L.divIcon({
+      html: '<div style="background:#10b981;color:#fff;border:2px solid #fff;border-radius:50%;padding:1px 4px;font-size:9px;font-weight:bold;font-family:monospace;box-shadow:0 2px 4px rgba(0,0,0,0.4);white-space:nowrap">🛰 ' + call + '</div>',
+      className: '', iconSize: null, iconAnchor: [0, 0]
+    });
+    var m = L.marker([t.lat, t.lon], { icon: icon })
+      .bindPopup('<div style="font-family:monospace;font-size:12px">'
+        + '<div style="color:#34d399;font-weight:bold;font-size:14px;margin-bottom:4px">🛰 ' + call + '</div>'
+        + '<div style="color:#9ca3af;margin-bottom:2px">LoRa Tracker</div>'
+        + '<div>Heard by: <span style="color:#a78bfa">' + t.viaGate + '</span></div>'
+        + '<div style="color:#6b7280;font-size:10px;margin-top:4px"><a href="https://lora-aprs.live/?call=' + encodeURIComponent(call) + '" target="_blank" style="color:#60a5fa">View on lora-aprs.live ↗</a></div>'
+        + '</div>');
+    m.addTo(_loraLayerGroup);
+  });
+
+  // Render signal-quality lines (iGate <-> Tracker)
+  links.forEach(function(link) {
+    var color = loraSignalColor(link.snr);
+    var dashed = isNaN(link.snr) || link.snr === 0;
+    var line = L.polyline(
+      [[link.from.lat, link.from.lon], [link.to.lat, link.to.lon]],
+      {
+        color: color, weight: 2, opacity: 0.7,
+        dashArray: dashed ? '4,4' : null
+      }
+    ).bindTooltip(
+      '<b>' + link.txCall + '</b> → <b>' + link.rxCall + '</b><br>'
+      + (isNaN(link.snr) ? 'SNR: unknown (digipeated)' : 'SNR: ' + link.snr.toFixed(1) + ' dB')
+      + (isNaN(link.rssi) ? '' : '<br>RSSI: ' + link.rssi.toFixed(0) + ' dBm')
+      + (isNaN(link.dist) ? '' : '<br>Distance: ' + (link.dist*0.621371).toFixed(1) + ' mi (' + link.dist.toFixed(1) + ' km)'),
+      { sticky: true }
+    );
+    line.addTo(_loraLayerGroup);
+  });
+
+  // Save state for click handlers
+  _loraIgates = igates;
+  _loraTrackers = trackers;
+  _loraLinks = links;
+
+  // Update status indicator
+  var n = Object.keys(igates).length + Object.keys(trackers).length;
+  console.log('LoRa: rendered ' + Object.keys(igates).length + ' iGates, ' + Object.keys(trackers).length + ' trackers, ' + links.length + ' links');
+}
+
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 initReplayProgress();
