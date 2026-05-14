@@ -455,22 +455,63 @@ body { background: var(--bg-base); color: var(--text-base); }
 
     <!-- STATIONS LIST -->
     <div id="search-panel" class="absolute inset-0 z-20 bg-gray-900 hidden p-4 overflow-y-auto">
-      <h2 class="text-lg font-bold mb-3">Latest Heard Stations</h2>
-      <input type="text" id="search-box" placeholder="Filter callsign..." class="w-full max-w-sm bg-gray-700 p-2 rounded mb-3 uppercase text-white outline-none border border-gray-600 text-sm" onkeyup="renderList()">
-      <div class="bg-gray-800 rounded border border-gray-700 overflow-x-auto">
-        <table class="w-full text-left text-xs">
-          <thead class="bg-gray-700 text-gray-300">
-            <tr>
-              <th class="p-2">Icon</th>
-              <th class="p-2">Callsign</th>
-              <th class="p-2">Path</th>
-              <th class="p-2">Last Heard</th>
-              <th class="p-2">Coordinates</th>
-              <th class="p-2">Raw Packet</th>
-            </tr>
-          </thead>
-          <tbody id="station-list" class="divide-y divide-gray-700"></tbody>
-        </table>
+      <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <h2 class="text-lg font-bold">Latest Heard Stations</h2>
+        <div class="flex border-b border-gray-700">
+          <button onclick="switchStationsTab('aprs')" id="stab-aprs"
+            class="px-4 py-2 text-sm font-bold text-white border-b-2 border-blue-500">
+            📡 APRS-IS
+          </button>
+          <button onclick="switchStationsTab('lora')" id="stab-lora"
+            class="px-4 py-2 text-sm font-bold text-gray-400 border-b-2 border-transparent hover:text-white">
+            🔮 LoRa
+          </button>
+        </div>
+      </div>
+
+      <!-- APRS-IS tab -->
+      <div id="stations-aprs">
+        <input type="text" id="search-box" placeholder="Filter callsign..." class="w-full max-w-sm bg-gray-700 p-2 rounded mb-3 uppercase text-white outline-none border border-gray-600 text-sm" onkeyup="renderList()">
+        <div class="bg-gray-800 rounded border border-gray-700 overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-gray-700 text-gray-300">
+              <tr>
+                <th class="p-2">Icon</th>
+                <th class="p-2">Callsign</th>
+                <th class="p-2">Path</th>
+                <th class="p-2">Last Heard</th>
+                <th class="p-2">Coordinates</th>
+                <th class="p-2">Raw Packet</th>
+              </tr>
+            </thead>
+            <tbody id="station-list" class="divide-y divide-gray-700"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- LoRa tab -->
+      <div id="stations-lora" class="hidden">
+        <div class="flex items-center justify-between mb-3">
+          <input type="text" id="lora-search-box" placeholder="Filter callsign..." class="w-full max-w-sm bg-gray-700 p-2 rounded uppercase text-white outline-none border border-gray-600 text-sm" oninput="renderLoRaList()">
+          <button onclick="fetchLoRaData()" class="ml-2 bg-purple-700 hover:bg-purple-600 px-3 py-1.5 rounded text-xs text-white">🔄 Refresh</button>
+        </div>
+        <p id="lora-list-empty" class="text-gray-500 text-xs text-center py-4">Tick "LoRa Network" in the map sidebar to fetch data, or click Refresh above.</p>
+        <div id="lora-list-wrap" class="bg-gray-800 rounded border border-gray-700 overflow-x-auto hidden">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-gray-700 text-gray-300">
+              <tr>
+                <th class="p-2">Last Seen</th>
+                <th class="p-2">TX Callsign</th>
+                <th class="p-2">iGate (*digipeated)</th>
+                <th class="p-2 text-right">ASL (m/ft)</th>
+                <th class="p-2 text-right">SNR (dB)</th>
+                <th class="p-2 text-right">RSSI (dBm)</th>
+                <th class="p-2 text-right">Distance</th>
+              </tr>
+            </thead>
+            <tbody id="lora-list" class="divide-y divide-gray-700"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -7242,6 +7283,102 @@ var _loraLayerGroup    = null;
 var _loraRefreshTimer  = null;
 var _loraLatest        = [];   // last fetched records (for re-rendering on filter change)
 var _loraTrackerPaths  = {};   // tx_callsign -> array of {lat,lon,ts} for movement detection
+var _loraP2PFocus      = null; // callsign whose P2P links we're highlighting
+
+function switchStationsTab(tab) {
+  var aprsTab = document.getElementById('stab-aprs');
+  var loraTab = document.getElementById('stab-lora');
+  var aprsPanel = document.getElementById('stations-aprs');
+  var loraPanel = document.getElementById('stations-lora');
+  if (tab === 'lora') {
+    aprsTab.className = 'px-4 py-2 text-sm font-bold text-gray-400 border-b-2 border-transparent hover:text-white';
+    loraTab.className = 'px-4 py-2 text-sm font-bold text-white border-b-2 border-purple-500';
+    aprsPanel.classList.add('hidden');
+    loraPanel.classList.remove('hidden');
+    // Fetch if we haven't yet
+    if (!_loraLatest.length) {
+      // Temporarily enable to fetch
+      var wasEnabled = _loraEnabled;
+      _loraEnabled = true;
+      fetchLoRaData().then(function(){
+        if (!wasEnabled) _loraEnabled = false;
+        renderLoRaList();
+      });
+    } else {
+      renderLoRaList();
+    }
+  } else {
+    aprsTab.className = 'px-4 py-2 text-sm font-bold text-white border-b-2 border-blue-500';
+    loraTab.className = 'px-4 py-2 text-sm font-bold text-gray-400 border-b-2 border-transparent hover:text-white';
+    aprsPanel.classList.remove('hidden');
+    loraPanel.classList.add('hidden');
+  }
+}
+
+function renderLoRaList() {
+  var tbody = document.getElementById('lora-list');
+  var wrap  = document.getElementById('lora-list-wrap');
+  var empty = document.getElementById('lora-list-empty');
+  if (!tbody) return;
+  if (!_loraLatest.length) {
+    if (wrap) wrap.classList.add('hidden');
+    if (empty) empty.classList.remove('hidden');
+    return;
+  }
+  if (wrap) wrap.classList.remove('hidden');
+  if (empty) empty.classList.add('hidden');
+
+  var filter = (document.getElementById('lora-search-box')||{value:''}).value.toUpperCase().trim();
+
+  // Sort newest first
+  var sorted = _loraLatest.slice().sort(function(a,b){
+    return new Date(b.received_at) - new Date(a.received_at);
+  });
+
+  if (filter) {
+    sorted = sorted.filter(function(r){
+      return (r.tx_callsign||'').toUpperCase().includes(filter)
+          || (r.rx_callsign||'').toUpperCase().includes(filter);
+    });
+  }
+
+  // Cap at 500 rows for performance
+  sorted = sorted.slice(0, 500);
+
+  tbody.innerHTML = sorted.map(function(r) {
+    var ts = new Date(r.received_at);
+    var tsStr = isNaN(ts) ? r.received_at :
+      ts.toISOString().replace('T',' ').slice(0,19) + 'Z';
+    var digipeated = (r.destination||'').includes('*');
+    var rxDisplay = digipeated ? r.rx_callsign + '<span class="text-amber-400">*</span>' : r.rx_callsign;
+    var snr = parseFloat(r.signal_quality);
+    var rssi = parseFloat(r.signal_strength);
+    var dist = parseFloat(r.distance);
+    var elev = parseFloat(r.elevation);
+    var snrCls = (snr > -3) ? 'text-green-400' : (snr > -12) ? 'text-yellow-400' : (snr > -18) ? 'text-orange-400' : (snr < -18 ? 'text-red-400' : 'text-gray-500');
+    return '<tr class="hover:bg-gray-900 cursor-pointer" onclick="loraFocusCallsign(\''+(r.tx_callsign||'').replace(/[\\\']/g,'')+'\')">'
+      + '<td class="p-2 font-mono text-gray-400">' + tsStr + '</td>'
+      + '<td class="p-2 font-mono text-emerald-300 font-bold">' + (r.tx_callsign||'?') + '</td>'
+      + '<td class="p-2 font-mono text-purple-300">' + rxDisplay + '</td>'
+      + '<td class="p-2 font-mono text-right text-gray-400">' + (isNaN(elev) ? '-' : elev + ' / ' + Math.round(elev*3.28084)) + '</td>'
+      + '<td class="p-2 font-mono text-right ' + snrCls + '">' + (isNaN(snr) || snr===0 ? '-' : snr.toFixed(1)) + '</td>'
+      + '<td class="p-2 font-mono text-right text-gray-400">' + (isNaN(rssi) || rssi===0 ? '-' : rssi.toFixed(0)) + '</td>'
+      + '<td class="p-2 font-mono text-right text-blue-300">' + (isNaN(dist) || dist===0 ? '-' : (dist*0.621371).toFixed(1) + ' mi (' + dist.toFixed(1) + ' km)') + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+function loraFocusCallsign(call) {
+  // Switch to map and show P2P links for this callsign
+  _loraP2PFocus = call;
+  togglePanel('map');
+  if (!_loraEnabled) {
+    document.getElementById('show-lora').checked = true;
+    toggleLoRa();
+  } else {
+    renderLoRaData(_loraLatest);
+  }
+}
 
 function toggleLoRa() {
   _loraEnabled = document.getElementById('show-lora').checked;
@@ -7260,15 +7397,11 @@ function startLoRaUpdates() {
 function stopLoRaUpdates() {
   if (_loraRefreshTimer) { clearInterval(_loraRefreshTimer); _loraRefreshTimer = null; }
   if (_loraLayerGroup) { map.removeLayer(_loraLayerGroup); _loraLayerGroup = null; }
-  _loraLatest = [];
-  _loraTrackerPaths = {};
+  _loraP2PFocus = null;
 }
 
 async function fetchLoRaData() {
-  if (!_loraEnabled) return;
   try {
-    // Fetch all available records (up to 1000) via pagination
-    // Use 10 pages of 100 each for full network view
     var allResults = [];
     var pages = 10;
     var promises = [];
@@ -7285,7 +7418,11 @@ async function fetchLoRaData() {
     });
     if (!allResults.length) return;
     _loraLatest = allResults;
-    renderLoRaData(allResults);
+    if (_loraEnabled) renderLoRaData(allResults);
+    // Also refresh the stations table if user is on the LoRa tab
+    if (!document.getElementById('stations-lora').classList.contains('hidden')) {
+      renderLoRaList();
+    }
   } catch(e) {
     console.warn('LoRa fetch error:', e);
   }
@@ -7299,24 +7436,97 @@ function loraSignalColor(snr) {
   return '#ef4444';
 }
 
-// Determine node type from packet characteristics
-function classifyNode(rxCall, packetsAsRx, packetsAsTx) {
-  // iGates appear as rx_callsign; if it ALSO appears as tx_callsign (digipeated by something)
-  // and has many rx records, it's likely a digi too
-  // For now: a node that has appeared as rx_callsign for OTHER callsigns is an iGate
-  // A node where path contains WIDE2-1 or destination has * may indicate digipeater role
-  if (packetsAsRx > 0) {
-    // Has received others - it's an iGate (possibly also a digi)
-    return 'igate';
+function loraShowP2P(call) {
+  // Build list of all stations that heard this callsign and vice versa
+  var heardBy = {};   // iGates that heard this callsign (as tx)
+  var heardOf = {};   // trackers heard by this callsign (when it's an iGate)
+  _loraLatest.forEach(function(m) {
+    if (m.tx_callsign === call && m.rx_callsign !== call) {
+      // call was transmitting, m.rx_callsign heard it
+      if (!heardBy[m.rx_callsign] || heardBy[m.rx_callsign].ts < new Date(m.received_at).getTime()) {
+        heardBy[m.rx_callsign] = {
+          rxCall: m.rx_callsign,
+          snr: parseFloat(m.signal_quality),
+          rssi: parseFloat(m.signal_strength),
+          dist: parseFloat(m.distance),
+          digipeated: (m.destination||'').includes('*'),
+          ts: new Date(m.received_at).getTime(),
+          tsStr: m.received_at,
+          lat: parseFloat(m.latitude),
+          lon: parseFloat(m.longitude)
+        };
+      }
+    }
+    if (m.rx_callsign === call && m.tx_callsign !== call) {
+      // call (iGate) heard m.tx_callsign
+      if (!heardOf[m.tx_callsign] || heardOf[m.tx_callsign].ts < new Date(m.received_at).getTime()) {
+        heardOf[m.tx_callsign] = {
+          txCall: m.tx_callsign,
+          snr: parseFloat(m.signal_quality),
+          rssi: parseFloat(m.signal_strength),
+          dist: parseFloat(m.distance),
+          digipeated: (m.destination||'').includes('*'),
+          ts: new Date(m.received_at).getTime(),
+          tsStr: m.received_at
+        };
+      }
+    }
+  });
+
+  var heardByList = Object.values(heardBy);
+  var heardOfList = Object.values(heardOf);
+
+  var html = '<div style="font-family:monospace;font-size:11px;min-width:280px;max-width:380px">';
+  html += '<div style="color:#a78bfa;font-weight:bold;font-size:14px;margin-bottom:6px">📡 ' + call + ' — P2P Network</div>';
+
+  if (heardByList.length) {
+    html += '<div style="color:#9ca3af;font-weight:bold;margin-top:6px;border-bottom:1px solid #374151;padding-bottom:2px">Heard by ' + heardByList.length + ' iGate' + (heardByList.length===1?'':'s') + ':</div>';
+    html += '<table style="width:100%;font-size:10px;margin-top:2px"><thead><tr style="color:#6b7280"><th align="left">iGate</th><th align="right">SNR</th><th align="right">Dist</th><th align="right">When</th></tr></thead><tbody>';
+    heardByList.sort(function(a,b){return b.ts-a.ts;}).slice(0,15).forEach(function(h) {
+      var snrCol = (h.snr > -3) ? '#22c55e' : (h.snr > -12) ? '#eab308' : (h.snr > -18) ? '#f97316' : (h.snr < -18 ? '#ef4444' : '#9ca3af');
+      var ago = Math.floor((Date.now()-h.ts)/60000);
+      html += '<tr>'
+        + '<td style="color:#a78bfa">' + h.rxCall + (h.digipeated?'<span style="color:#fbbf24">*</span>':'') + '</td>'
+        + '<td align="right" style="color:' + snrCol + '">' + (isNaN(h.snr)||h.snr===0?'-':h.snr.toFixed(1)) + '</td>'
+        + '<td align="right" style="color:#60a5fa">' + (isNaN(h.dist)||h.dist===0?'-':h.dist.toFixed(0)+'km') + '</td>'
+        + '<td align="right" style="color:#6b7280">' + (ago<60?ago+'m':Math.floor(ago/60)+'h')+' ago</td>'
+        + '</tr>';
+    });
+    html += '</tbody></table>';
   }
-  return 'tracker';
+
+  if (heardOfList.length) {
+    html += '<div style="color:#9ca3af;font-weight:bold;margin-top:8px;border-bottom:1px solid #374151;padding-bottom:2px">This iGate heard ' + heardOfList.length + ' station' + (heardOfList.length===1?'':'s') + ':</div>';
+    html += '<table style="width:100%;font-size:10px;margin-top:2px"><thead><tr style="color:#6b7280"><th align="left">Tracker</th><th align="right">SNR</th><th align="right">Dist</th><th align="right">When</th></tr></thead><tbody>';
+    heardOfList.sort(function(a,b){return b.ts-a.ts;}).slice(0,15).forEach(function(h) {
+      var snrCol = (h.snr > -3) ? '#22c55e' : (h.snr > -12) ? '#eab308' : (h.snr > -18) ? '#f97316' : (h.snr < -18 ? '#ef4444' : '#9ca3af');
+      var ago = Math.floor((Date.now()-h.ts)/60000);
+      html += '<tr>'
+        + '<td style="color:#34d399">' + h.txCall + (h.digipeated?'<span style="color:#fbbf24">*</span>':'') + '</td>'
+        + '<td align="right" style="color:' + snrCol + '">' + (isNaN(h.snr)||h.snr===0?'-':h.snr.toFixed(1)) + '</td>'
+        + '<td align="right" style="color:#60a5fa">' + (isNaN(h.dist)||h.dist===0?'-':h.dist.toFixed(0)+'km') + '</td>'
+        + '<td align="right" style="color:#6b7280">' + (ago<60?ago+'m':Math.floor(ago/60)+'h')+' ago</td>'
+        + '</tr>';
+    });
+    html += '</tbody></table>';
+  }
+
+  if (!heardByList.length && !heardOfList.length) {
+    html += '<div style="color:#6b7280;text-align:center;padding:10px">No P2P data available</div>';
+  }
+
+  html += '<div style="margin-top:8px;display:flex;gap:6px"><button onclick="_loraP2PFocus=\''+call.replace(/[\\\']/g,'')+'\';renderLoRaData(_loraLatest);" style="flex:1;background:#7c3aed;border:none;color:#fff;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:10px">Focus on map</button>';
+  html += '<button onclick="_loraP2PFocus=null;renderLoRaData(_loraLatest);" style="flex:1;background:#374151;border:none;color:#fff;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:10px">Show all</button>';
+  html += '<a href="https://lora-aprs.live/?call=' + encodeURIComponent(call) + '" target="_blank" style="flex:1;background:#1e40af;border:none;color:#fff;padding:4px 8px;border-radius:4px;text-decoration:none;font-size:10px;text-align:center">lora-aprs.live ↗</a></div>';
+  html += '</div>';
+
+  return html;
 }
 
 function renderLoRaData(results) {
   if (!_loraLayerGroup || !results || !results.length) return;
   _loraLayerGroup.clearLayers();
 
-  // Read filter state
   var showIgates    = (document.getElementById('lora-show-igates')   ||{checked:true}).checked;
   var showDigis     = (document.getElementById('lora-show-digis')    ||{checked:true}).checked;
   var showTrackers  = (document.getElementById('lora-show-trackers') ||{checked:true}).checked;
@@ -7324,14 +7534,8 @@ function renderLoRaData(results) {
   var showDigipeated= (document.getElementById('lora-show-digipeated')||{checked:true}).checked;
   var onlyMoving    = (document.getElementById('lora-only-moving')   ||{checked:false}).checked;
 
-  // First pass: classify nodes by their role
-  // - rx_callsign appearing for OTHER tx_callsigns => iGate
-  // - rx_callsign == tx_callsign with no other rx role => Tracker (self beacon)
-  // - destination contains "*" or path has digipeater => Digipeater
-  var rxCounts = {};  // call -> how many records they appear as rx for OTHERS
-  var txOnlyCalls = {}; // call -> seen only as tx
-  var nodeData = {};  // call -> latest record info
-  var trackerPositions = {}; // tx -> latest position via direct receive
+  var rxCounts = {};
+  var nodeData = {};
   var links = [];
 
   results.forEach(function(m) {
@@ -7342,12 +7546,8 @@ function renderLoRaData(results) {
     if (!rx || !tx || isNaN(lat) || isNaN(lon)) return;
 
     var isDigipeated = (m.destination || '').includes('*');
+    if (rx !== tx) rxCounts[rx] = (rxCounts[rx] || 0) + 1;
 
-    if (rx !== tx) {
-      rxCounts[rx] = (rxCounts[rx] || 0) + 1;
-    }
-
-    // Always record latest position from each callsign
     var ts = new Date(m.received_at).getTime();
     if (!nodeData[rx] || nodeData[rx].ts < ts) {
       nodeData[rx] = { call: rx, lat: lat, lon: lon, ts: ts,
@@ -7355,39 +7555,28 @@ function renderLoRaData(results) {
         receivedAt: m.received_at, role: 'igate' };
     }
 
-    // If self-beacon (rx==tx), it's the iGate's own position - already captured above
-    // If different, this is a tracker's packet relayed via iGate
     if (rx !== tx) {
-      // The lat/lon in the record is the iGate location (rx) NOT the tracker
-      // Tracker actual position is unknown from this API unless tx is also an iGate
-      // We'll track tx as a tracker without precise position
       if (!nodeData[tx]) {
         nodeData[tx] = { call: tx, lat: lat, lon: lon, ts: ts,
           elevation: m.elevation, battery: m.battery,
           receivedAt: m.received_at, role: 'tracker',
           viaGate: rx, approximate: true };
       }
-      // Build link
       var snr = parseFloat(m.signal_quality);
       links.push({
         from: { lat: nodeData[rx] ? nodeData[rx].lat : lat,
                 lon: nodeData[rx] ? nodeData[rx].lon : lon },
         to:   { lat: lat, lon: lon },
         rxCall: rx, txCall: tx,
-        snr: snr,
-        rssi: parseFloat(m.signal_strength),
-        dist: parseFloat(m.distance),
-        digipeated: isDigipeated,
+        snr: snr, rssi: parseFloat(m.signal_strength),
+        dist: parseFloat(m.distance), digipeated: isDigipeated,
         ts: m.received_at
       });
     }
 
-    // Track positions over time for movement detection
     if (rx === tx) {
-      // Self-beacon - we have an authoritative position
       if (!_loraTrackerPaths[rx]) _loraTrackerPaths[rx] = [];
       var path = _loraTrackerPaths[rx];
-      // Only add if position changed
       var lastP = path[path.length-1];
       if (!lastP || lastP.lat !== lat || lastP.lon !== lon) {
         path.push({ lat: lat, lon: lon, ts: ts });
@@ -7396,12 +7585,10 @@ function renderLoRaData(results) {
     }
   });
 
-  // Now classify - iGate = has been rx for others; otherwise Tracker
   Object.keys(nodeData).forEach(function(call) {
     var n = nodeData[call];
     if (rxCounts[call] && rxCounts[call] > 0) {
       n.role = 'igate';
-      // Check if it's also a digipeater: appeared in any digipeated path
       results.forEach(function(m) {
         if ((m.destination || '').includes(call + '*') ||
             (m.path || '').includes(call + '*')) {
@@ -7413,69 +7600,47 @@ function renderLoRaData(results) {
     }
   });
 
-  // Detect moving trackers from path history
   Object.keys(_loraTrackerPaths).forEach(function(call) {
     var path = _loraTrackerPaths[call];
     if (path.length < 2 || !nodeData[call]) return;
     var first = path[0], last = path[path.length-1];
     var distMoved = haversineKm(first.lat, first.lon, last.lat, last.lon);
-    nodeData[call].moving = distMoved > 0.1; // moved >100m
+    nodeData[call].moving = distMoved > 0.1;
     nodeData[call].pathLength = path.length;
   });
 
-  // Now render markers
-  var rendered = { igates: 0, digis: 0, trackers: 0 };
   Object.keys(nodeData).forEach(function(call) {
     var n = nodeData[call];
-
-    // Apply role filter
     if (n.role === 'igate'      && !showIgates)   return;
     if (n.role === 'digipeater' && !showDigis)    return;
     if (n.role === 'tracker'    && !showTrackers) return;
-
-    // Apply moving filter
     if (onlyMoving && !n.moving) return;
 
-    rendered[n.role === 'igate' ? 'igates' : (n.role === 'digipeater' ? 'digis' : 'trackers')]++;
-
-    var iconHtml, anchor = [0, 0];
+    var isFocused = _loraP2PFocus === call;
+    var iconHtml;
     if (n.role === 'igate') {
-      iconHtml = '<div style="background:#7c3aed;color:#fff;border:2px solid #fff;border-radius:3px;padding:2px 5px;font-size:10px;font-weight:bold;font-family:monospace;box-shadow:0 2px 4px rgba(0,0,0,0.4);white-space:nowrap">📡 ' + call + '</div>';
+      iconHtml = '<div style="background:#7c3aed;color:#fff;border:2px solid ' + (isFocused ? '#06b6d4' : '#fff') + ';border-radius:3px;padding:2px 5px;font-size:10px;font-weight:bold;font-family:monospace;box-shadow:0 2px 4px rgba(0,0,0,0.4);white-space:nowrap' + (isFocused ? ';outline:3px solid #06b6d4;outline-offset:2px' : '') + '">📡 ' + call + '</div>';
     } else if (n.role === 'digipeater') {
-      iconHtml = '<div style="background:#d97706;color:#fff;border:2px solid #fff;border-radius:3px;padding:2px 5px;font-size:10px;font-weight:bold;font-family:monospace;box-shadow:0 2px 4px rgba(0,0,0,0.4);white-space:nowrap">🔄 ' + call + '</div>';
+      iconHtml = '<div style="background:#d97706;color:#fff;border:2px solid ' + (isFocused ? '#06b6d4' : '#fff') + ';border-radius:3px;padding:2px 5px;font-size:10px;font-weight:bold;font-family:monospace;box-shadow:0 2px 4px rgba(0,0,0,0.4);white-space:nowrap">🔄 ' + call + '</div>';
     } else {
-      iconHtml = '<div style="background:#10b981;color:#fff;border:2px solid #fff;border-radius:50%;padding:1px 4px;font-size:9px;font-weight:bold;font-family:monospace;box-shadow:0 2px 4px rgba(0,0,0,0.4);white-space:nowrap' + (n.moving ? ';outline:2px solid #06b6d4;outline-offset:2px' : '') + '">🛰 ' + call + (n.moving ? ' →' : '') + '</div>';
+      iconHtml = '<div style="background:#10b981;color:#fff;border:2px solid ' + (isFocused ? '#06b6d4' : '#fff') + ';border-radius:50%;padding:1px 4px;font-size:9px;font-weight:bold;font-family:monospace;box-shadow:0 2px 4px rgba(0,0,0,0.4);white-space:nowrap' + (n.moving || isFocused ? ';outline:2px solid #06b6d4;outline-offset:2px' : '') + '">🛰 ' + call + (n.moving ? ' →' : '') + '</div>';
     }
-    var icon = L.divIcon({ html: iconHtml, className: '', iconSize: null, iconAnchor: anchor });
+    var icon = L.divIcon({ html: iconHtml, className: '', iconSize: null, iconAnchor: [0,0] });
 
-    var popup = '<div style="font-family:monospace;font-size:12px;min-width:200px">'
-      + '<div style="color:' + (n.role==='igate'?'#a78bfa':n.role==='digipeater'?'#fbbf24':'#34d399') + ';font-weight:bold;font-size:14px;margin-bottom:4px">'
-      + (n.role==='igate'?'📡 ':n.role==='digipeater'?'🔄 ':'🛰 ') + call + '</div>'
-      + '<div style="color:#9ca3af;margin-bottom:4px">LoRa ' + (n.role==='digipeater'?'Digipeater':n.role==='igate'?'iGate':'Tracker') + (n.moving?' · <span style="color:#06b6d4">Moving</span>':'') + '</div>'
-      + (n.elevation ? '<div>Elev: ' + Math.round(n.elevation*3.28084) + ' ft (' + n.elevation + ' m)</div>' : '')
-      + (n.battery ? '<div>Battery: ' + n.battery + ' V</div>' : '')
-      + (n.viaGate ? '<div>Heard by: <span style="color:#a78bfa">' + n.viaGate + '</span></div>' : '')
-      + (n.pathLength ? '<div>Position history: ' + n.pathLength + ' fixes</div>' : '')
-      + (n.approximate ? '<div style="color:#fbbf24;font-size:10px">⚠ Position approximate (iGate location)</div>' : '')
-      + '<div style="color:#6b7280;font-size:10px;margin-top:4px">' + (n.receivedAt||'').replace('T',' ').replace('+00:00','Z') + '</div>'
-      + '<div style="margin-top:4px"><a href="https://lora-aprs.live/?call=' + encodeURIComponent(call) + '" target="_blank" style="color:#60a5fa;font-size:11px">View on lora-aprs.live ↗</a></div>'
-      + '</div>';
+    // Use the rich P2P popup
+    var marker = L.marker([n.lat, n.lon], { icon: icon }).addTo(_loraLayerGroup);
+    marker.bindPopup(function() { return loraShowP2P(call); }, { maxWidth: 420 });
 
-    L.marker([n.lat, n.lon], { icon: icon }).bindPopup(popup).addTo(_loraLayerGroup);
-
-    // Draw movement trail for moving trackers
     if (n.moving && _loraTrackerPaths[call] && _loraTrackerPaths[call].length >= 2) {
       var pathPts = _loraTrackerPaths[call].map(function(p){ return [p.lat, p.lon]; });
       L.polyline(pathPts, { color: '#06b6d4', weight: 2, opacity: 0.6, dashArray: '4,3' }).addTo(_loraLayerGroup);
     }
   });
 
-  // Render links with filter
-  var linksRendered = 0;
+  // Render links - if P2P focus is active, only show links to/from focused callsign
   links.forEach(function(link) {
     if (link.digipeated && !showDigipeated) return;
     if (!link.digipeated && !showDirect) return;
-    // Hide links to/from filtered-out nodes
     var rxNode = nodeData[link.rxCall];
     var txNode = nodeData[link.txCall];
     if (!rxNode || !txNode) return;
@@ -7484,12 +7649,18 @@ function renderLoRaData(results) {
     if (txNode.role === 'tracker'    && !showTrackers) return;
     if (onlyMoving && !txNode.moving) return;
 
+    // P2P focus mode: only show links involving focused callsign
+    var inFocus = !_loraP2PFocus || link.rxCall === _loraP2PFocus || link.txCall === _loraP2PFocus;
+    if (_loraP2PFocus && !inFocus) return;
+
     var color = loraSignalColor(link.snr);
     var dashed = link.digipeated || isNaN(link.snr) || link.snr === 0;
+    var weight = _loraP2PFocus && inFocus ? 4 : 2;
+    var opacity = _loraP2PFocus && !inFocus ? 0.15 : 0.6;
 
     L.polyline(
       [[link.from.lat, link.from.lon], [link.to.lat, link.to.lon]],
-      { color: color, weight: 2, opacity: 0.6, dashArray: dashed ? '4,4' : null }
+      { color: color, weight: weight, opacity: opacity, dashArray: dashed ? '4,4' : null }
     ).bindTooltip(
       '<b>' + link.txCall + '</b> → <b>' + link.rxCall + '</b><br>'
       + (link.digipeated ? '<span style="color:#9ca3af">Digipeated</span><br>' : '<span style="color:#22c55e">Direct RF</span><br>')
@@ -7498,10 +7669,7 @@ function renderLoRaData(results) {
       + (isNaN(link.dist) || link.dist === 0 ? '' : '<br>Distance: ' + (link.dist*0.621371).toFixed(1) + ' mi (' + link.dist.toFixed(1) + ' km)'),
       { sticky: true }
     ).addTo(_loraLayerGroup);
-    linksRendered++;
   });
-
-  console.log('LoRa: ' + rendered.igates + ' iGates, ' + rendered.digis + ' digis, ' + rendered.trackers + ' trackers, ' + linksRendered + ' links rendered');
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
