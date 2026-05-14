@@ -255,21 +255,25 @@ body { background: var(--bg-base); color: var(--text-base); }
 <!-- MAIN -->
 <div class="flex-1 relative flex overflow-hidden">
 
-  <!-- Replay Loading Overlay -->
-  <div id="replay-overlay" class="fixed inset-0 flex flex-col items-center justify-center space-y-4" style="background:var(--bg-base,#0f172a);opacity:0.97;z-index:100001">
-    <button onclick="finishReplay()" style="position:absolute;top:20px;right:20px;background:#374151;border:1px solid #4b5563;color:#d1d5db;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px">Skip ✕</button>
-    <div class="text-4xl mb-2">📡</div>
-    <h2 class="text-white font-bold text-lg">Loading APRS History</h2>
-    <p class="text-gray-400 text-sm">Replaying last hour of activity from server...</p>
-    <div class="w-64 bg-gray-700 rounded-full h-2 overflow-hidden">
-      <div id="replay-bar" class="bg-blue-500 h-2 rounded-full transition-all duration-200" style="width:0%"></div>
+  <!-- Replay Progress (small corner indicator, non-blocking) -->
+  <div id="replay-overlay" class="hidden fixed bottom-4 right-4 bg-gray-900 border border-gray-700 rounded-lg shadow-2xl px-4 py-3 flex items-center space-x-3" style="z-index:95;max-width:340px">
+    <div class="text-2xl animate-pulse">📡</div>
+    <div class="flex-1 min-w-0">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-white text-xs font-bold">Loading recent activity...</span>
+        <button onclick="finishReplay()" class="text-gray-500 hover:text-gray-300 text-xs ml-2" title="Dismiss">✕</button>
+      </div>
+      <div class="w-full bg-gray-700 rounded-full h-1.5 overflow-hidden mb-1">
+        <div id="replay-bar" class="bg-blue-500 h-1.5 rounded-full transition-all duration-200" style="width:0%"></div>
+      </div>
+      <div class="flex items-center space-x-2 text-xs text-gray-500 font-mono">
+        <span id="replay-packets">0 packets</span>
+        <span>·</span>
+        <span id="replay-stations">0 stations</span>
+        <span>·</span>
+        <span id="replay-elapsed">0s</span>
+      </div>
     </div>
-    <div class="flex items-center space-x-4 text-xs text-gray-400">
-      <span id="replay-packets">0 packets</span>
-      <span id="replay-stations">0 stations</span>
-      <span id="replay-elapsed">0s</span>
-    </div>
-    <p class="text-gray-600 text-xs">Map will appear automatically when complete</p>
   </div>
 
   <!-- SIDEBAR -->
@@ -5890,6 +5894,9 @@ var _replayTimer   = null;
 // Estimate ring buffer size from /api/status for progress bar
 // If we can't get it, animate indefinitely
 async function initReplayProgress() {
+  // Show the small progress indicator (hidden by default)
+  var ov = document.getElementById('replay-overlay');
+  if (ov) ov.classList.remove('hidden');
   try {
     var r = await fetch(location.origin + '/api/status');
     if (!r.ok) throw new Error(r.status);
@@ -5937,25 +5944,28 @@ function updateReplayProgress() {
 }
 
 function finishReplay() {
+  if (!_replayActive) return;  // Already done
   _replayActive = false;
   if (_replayTimer) { clearInterval(_replayTimer); _replayTimer = null; }
 
-  // Complete the bar
+  // Complete the bar (turns green briefly)
   var bar = document.getElementById('replay-bar');
   if (bar) { bar.style.width = '100%'; bar.classList.replace('bg-blue-500','bg-green-500'); }
 
-  // Short pause then hide overlay
+  // Refresh display right away - map should already be visible
+  try { redrawMap(); } catch(e) {}
+  try { renderList(); } catch(e) {}
+  try { logChat('SERVER', 'Replay complete - ' + _replayPackets + ' packets, ' + Object.keys(stations).length + ' stations', 'text-indigo-400'); } catch(e) {}
+
+  // Fade out the small indicator after 1.5s
   setTimeout(function() {
     var overlay = document.getElementById('replay-overlay');
     if (overlay) {
-      overlay.style.transition = 'opacity 0.4s';
+      overlay.style.transition = 'opacity 0.5s';
       overlay.style.opacity = '0';
-      setTimeout(function(){ overlay.style.display = 'none'; }, 400);
+      setTimeout(function(){ overlay.classList.add('hidden'); overlay.style.opacity = ''; }, 500);
     }
-    redrawMap();
-    renderList();
-    logChat('SERVER', 'Replay complete — ' + _replayPackets + ' packets · ' + Object.keys(stations).length + ' stations', 'text-indigo-400');
-  }, 400);
+  }, 1500);
 }
 
 
