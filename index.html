@@ -193,6 +193,27 @@ body { background: var(--bg-base); color: var(--text-base); }
 .marker-cluster-large { background-clip:padding-box; border-radius:20px; background-color:rgba(185,28,28,0.6); }
 .marker-cluster-large div { background-color:rgba(185,28,28,0.9); border-radius:15px; color:#fff; font-weight:bold; font-size:12px; line-height:28px; text-align:center; }
 
+/* ─── Animated P2P connection lines ───────────────────────────────────────── */
+/* Uses Leaflet's stroke-dasharray to create a marching-ants effect */
+@keyframes connFlow {
+  to { stroke-dashoffset: -40; }
+}
+.aprs-conn-line {
+  stroke-dasharray: 8 6;
+  animation: connFlow 1s linear infinite;
+}
+.aprs-conn-line-fast {
+  stroke-dasharray: 6 4;
+  animation: connFlow 0.6s linear infinite;
+}
+.aprs-conn-pulse {
+  animation: connPulse 2s ease-in-out infinite;
+}
+@keyframes connPulse {
+  0%, 100% { stroke-opacity: 0.4; stroke-width: 2; }
+  50%      { stroke-opacity: 0.95; stroke-width: 3.5; }
+}
+
 /* Force all modals and overlays above everything (map, sidebar, header) */
 #member-modal,
 #signin-modal,
@@ -332,6 +353,13 @@ body { background: var(--bg-base); color: var(--text-base); }
           <button onclick="clearPathViz();document.getElementById('path-viz-label').innerText='No path shown'" class="text-[10px] text-gray-500 hover:text-red-400 hidden" id="clear-path-btn">✕ Clear</button>
         </div>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="cluster-enable" checked onchange="toggleClustering()"><span>Cluster Markers</span></label>
+        <label class="flex items-center space-x-2 cursor-pointer">
+          <input type="checkbox" id="show-all-connections" onchange="toggleAllConnections()">
+          <span class="text-cyan-400">🔗</span>
+          <span>Show all P2P connections</span>
+          <span class="text-[10px] text-gray-500">(animated)</span>
+        </label>
+        <div id="connections-stats" class="hidden ml-5 text-[10px] text-cyan-400/70 font-mono"></div>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-pistar" onchange="redrawMap()"><span class="text-gray-500">●</span><span class="text-gray-400">Pi-Star / MMDVM</span></label>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-lora-aprsis" checked onchange="redrawMap()"><span class="text-fuchsia-400">●</span><span>LoRa (via APRS-IS)</span></label>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-lora" onchange="toggleLoRa()"><span class="text-purple-400">●</span><span>LoRa Network</span></label>
@@ -5267,7 +5295,7 @@ function drawConnections(call) {
     var op = other.positions[other.positions.length-1];
     var line = L.polyline(
       [[thisPos.lat, thisPos.lon], [op.lat, op.lon]],
-      { color: COLOR_HEARD, weight: 3, opacity: 0.85 }
+      { color: COLOR_HEARD, weight: 3, opacity: 0.95, className: 'aprs-conn-line-fast' }
     ).bindTooltip(
       '<b>' + call + '</b> heard <b>' + h.call + '</b><br>'
       + h.count + ' packet' + (h.count===1?'':'s') + ' relayed<br>'
@@ -5293,7 +5321,7 @@ function drawConnections(call) {
     var dp = digi.positions[digi.positions.length-1];
     var line = L.polyline(
       [[dp.lat, dp.lon], [thisPos.lat, thisPos.lon]],
-      { color: COLOR_VIA, weight: 3, opacity: 0.85, dashArray: '8 4' }
+      { color: COLOR_VIA, weight: 3, opacity: 0.95, className: 'aprs-conn-line' }
     ).bindTooltip(
       '<b>' + call + '</b> relayed via <b>' + v.call + '</b><br>'
       + 'Last: ' + secondsAgo(v.lastTs) + ' ago',
@@ -7899,6 +7927,136 @@ function deviceChip(tocall) {
 
 // Load on startup
 loadDeviceDB();
+
+
+
+// ─── Global P2P Connections Overlay ───────────────────────────────────────────
+// When the "Show all P2P connections" checkbox is ticked, draws animated
+// lines from every station to the digipeaters it has used (parsed from
+// each station's raw packet path). Re-renders on packet updates.
+
+var _allConnEnabled  = false;
+var _allConnLayer    = null;
+var _allConnInterval = null;
+var _allConnLineCount = 0;
+
+function toggleAllConnections() {
+  _allConnEnabled = document.getElementById('show-all-connections').checked;
+  var stats = document.getElementById('connections-stats');
+  if (_allConnEnabled) {
+    if (stats) stats.classList.remove('hidden');
+    drawAllConnections();
+    // Refresh periodically as new packets arrive
+    if (_allConnInterval) clearInterval(_allConnInterval);
+    _allConnInterval = setInterval(drawAllConnections, 15000);
+  } else {
+    if (stats) stats.classList.add('hidden');
+    clearAllConnections();
+    if (_allConnInterval) { clearInterval(_allConnInterval); _allConnInterval = null; }
+  }
+}
+
+function clearAllConnections() {
+  if (_allConnLayer) {
+    try { map.removeLayer(_allConnLayer); } catch(e) {}
+    _allConnLayer = null;
+  }
+  _allConnLineCount = 0;
+}
+
+function drawAllConnections() {
+  if (!_allConnEnabled || typeof map === 'undefined') return;
+  clearAllConnections();
+  _allConnLayer = L.layerGroup().addTo(map);
+
+  // Build a unique link set so we don't draw A->B twice
+  var seen = {};
+  var connNodes = {};   // unique nodes involved
+  var linkCount = 0;
+
+  // Visible bounds for performance - only consider stations on screen
+  var bounds;
+  try { bounds = map.getBounds().pad(0.3); } catch(e) { bounds = null; }
+
+  Object.keys(stations).forEach(function(call) {
+    var st = stations[call];
+    if (!st || !st.positions || !st.positions.length || !st.raw) return;
+    var pos = st.positions[st.positions.length-1];
+    if (bounds && !bounds.contains([pos.lat, pos.lon])) return;
+
+    // Parse the raw packet path: SRC>DEST,DIGI1,DIGI2*,...:payload
+    var gt = st.raw.indexOf('>'), col = st.raw.indexOf(':');
+    if (gt < 0 || col < 0) return;
+    var pathParts = st.raw.slice(gt+1, col).split(',').slice(1);
+
+    pathParts.forEach(function(hop) {
+      var clean = hop.replace('*','');
+      var used = hop.endsWith('*');
+      if (!used) return;  // only show actually-used digipeater hops
+      // Skip generic markers
+      if (clean.startsWith('WIDE') || clean.startsWith('TRACE') ||
+          clean.startsWith('qA')   || clean === 'TCPIP' || clean === 'RELAY' ||
+          clean === 'NOGATE' || clean === 'ECHO') return;
+
+      // Find the digi station
+      var digi = stations[clean] || stations[clean.split('-')[0]];
+      if (!digi || !digi.positions || !digi.positions.length) return;
+      var dp = digi.positions[digi.positions.length-1];
+      if (bounds && !bounds.contains([dp.lat, dp.lon])) return;
+
+      // Dedupe (use callsign pair as key)
+      var key = call < clean ? call + '|' + clean : clean + '|' + call;
+      if (seen[key]) return;
+      seen[key] = true;
+
+      // Calculate distance for visual weight
+      var d = haversineKm(pos.lat, pos.lon, dp.lat, dp.lon);
+      // Recent = brighter, older = dimmer
+      var ageMin = (Date.now()/1000 - st.lastHeard) / 60;
+      var opacity = ageMin < 5 ? 0.9 : ageMin < 30 ? 0.6 : 0.35;
+
+      // Colour by station type
+      var color;
+      if (st.type === 'lora')     color = '#e879f9';   // fuchsia
+      else if (st.type === 'cwop') color = '#34d399';  // emerald (less common for digis)
+      else                         color = '#22d3ee';  // cyan (default)
+
+      // Use faster animation for recent packets
+      var cls = ageMin < 5 ? 'aprs-conn-line-fast' : 'aprs-conn-line';
+
+      var line = L.polyline(
+        [[pos.lat, pos.lon], [dp.lat, dp.lon]],
+        { color: color, weight: 2.5, opacity: opacity, className: cls }
+      ).bindTooltip(
+        '<b>' + call + '</b> via <b>' + clean + '</b><br>'
+        + (d ? 'Distance: ' + (d*0.621371).toFixed(1) + ' mi (' + d.toFixed(1) + ' km)<br>' : '')
+        + 'Last heard ' + secondsAgo(st.lastHeard) + ' ago',
+        { sticky: true }
+      );
+      line.addTo(_allConnLayer);
+      connNodes[call] = true;
+      connNodes[clean] = true;
+      linkCount++;
+    });
+  });
+
+  // Update stats
+  _allConnLineCount = linkCount;
+  var stats = document.getElementById('connections-stats');
+  if (stats) {
+    stats.innerHTML = linkCount + ' active link' + (linkCount===1?'':'s')
+      + ' · ' + Object.keys(connNodes).length + ' nodes';
+  }
+}
+
+// Re-render on pan/zoom so we only show what's visible
+if (typeof map !== 'undefined' && map.on) {
+  setTimeout(function() {
+    if (map && map.on) {
+      map.on('moveend', function() { if (_allConnEnabled) drawAllConnections(); });
+    }
+  }, 1000);
+}
 
 
 // ─── LoRa-APRS Integration ────────────────────────────────────────────────────
