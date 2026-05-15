@@ -497,6 +497,7 @@ body { background: var(--bg-base); color: var(--text-base); }
               <tr>
                 <th class="p-2">Icon</th>
                 <th class="p-2">Callsign</th>
+                <th class="p-2">Device</th>
                 <th class="p-2">Path</th>
                 <th class="p-2">Last Heard</th>
                 <th class="p-2">Coordinates</th>
@@ -938,6 +939,13 @@ body { background: var(--bg-base); color: var(--text-base); }
             </table>
           </div>
 
+        </div>
+
+        <!-- Top Devices -->
+        <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 mb-3">
+          <h3 class="text-purple-400 font-bold mb-2 flex items-center"><span class="mr-2">📟</span>Top Devices &amp; Software</h3>
+          <p class="text-xs text-gray-500 mb-3">Aggregated from <a href="https://github.com/aprsorg/aprs-deviceid" target="_blank" class="underline">aprs-deviceid</a> tocall database (CC BY-SA 2.0)</p>
+          <div id="lb-devices" class="space-y-1 text-xs"></div>
         </div>
 
         <!-- Active Nets Detection -->
@@ -2652,6 +2660,7 @@ body { background: var(--bg-base); color: var(--text-base); }
             <span id="detail-status" class="text-xs px-2 py-0.5 rounded-full"></span>
           </div>
           <p id="detail-symbol-label" class="text-xs text-gray-400"></p>
+          <p id="detail-device-chip" class="hidden text-xs mt-1"></p>
         </div>
       </div>
       <div class="flex items-center space-x-2">
@@ -3571,7 +3580,9 @@ function redrawMap() {
     const lls = st.positions.map(p=>[p.lat,p.lon]);
     const icon = makeIcon(st, call);
     const si = getSymbolInfo(st.sym);
-    const tip = `<b style="color:#60a5fa">${call}</b> <span style="color:#94a3b8;font-size:10px">${si.label}</span>`;
+    const _dev = lookupDevice(extractTocall(st.raw));
+    const _devLine = _dev ? `<br><span style="color:#a78bfa;font-size:10px">📟 ${_dev.vendor||''} ${_dev.model||''}</span>` : '';
+    const tip = `<b style="color:#60a5fa">${call}</b> <span style="color:#94a3b8;font-size:10px">${si.label}</span>${_devLine}`;
     if (!st.marker) {
       st.marker = L.marker([latest.lat,latest.lon],{icon})
         .bindTooltip(tip,{direction:'top',offset:[0,-12],permanent:false});
@@ -3627,6 +3638,7 @@ function renderList() {
         <td class="p-2 font-bold">
           <a href="#" onclick="openDetail('${call}');return false;" class="hover:underline text-blue-400 cursor-pointer">${call}</a>
         </td>
+        <td class="p-2">${deviceChip(extractTocall(st.raw))}</td>
         <td class="p-2 font-mono text-gray-500 truncate max-w-[100px]">${st.path||''}</td>
         <td class="p-2 text-gray-300">${d.toLocaleTimeString()}</td>
         <td class="p-2 font-mono">${loc}</td>
@@ -6376,6 +6388,70 @@ function renderLeaderboard() {
         + '</div>';
     }).join('');
   }
+
+  // ─── Top Devices/Software ────────────────────────────────────────────────
+  renderDeviceAggregation(active);
+}
+
+function renderDeviceAggregation(active) {
+  var el = document.getElementById('lb-devices');
+  if (!el) return;
+  if (!_deviceExactMap) {
+    el.innerHTML = '<p class="text-gray-500 text-center py-3">Device database loading...</p>';
+    return;
+  }
+  // Tally devices
+  var tally = {};      // key: "vendor|model|class" -> {vendor, model, class, count, calls:Set, tocall}
+  var unknown = 0;
+  active.forEach(function(s) {
+    var tc = extractTocall(s.st.raw||'');
+    if (!tc) return;
+    var d = lookupDevice(tc);
+    if (!d) { unknown++; return; }
+    var key = (d.vendor||'?') + '|' + (d.model||'?') + '|' + (d.class||'?');
+    if (!tally[key]) {
+      tally[key] = { vendor: d.vendor||'', model: d.model||'', class: d.class||'',
+        shownClass: d.shownClass||'', tocall: d.tocall||tc, count: 0 };
+    }
+    tally[key].count++;
+  });
+  var rows = Object.values(tally).sort(function(a,b){ return b.count - a.count; });
+  var total = rows.reduce(function(s,r){ return s + r.count; }, 0) + unknown;
+  if (!rows.length && !unknown) {
+    el.innerHTML = '<p class="text-gray-500 text-center py-3">No device data yet</p>';
+    return;
+  }
+  var classColours = {
+    wx:'bg-blue-900 text-blue-300', tracker:'bg-emerald-900 text-emerald-300',
+    gadget:'bg-purple-900 text-purple-300', rig:'bg-amber-900 text-amber-300',
+    ht:'bg-orange-900 text-orange-300', app:'bg-pink-900 text-pink-300',
+    software:'bg-cyan-900 text-cyan-300', daemon:'bg-gray-700 text-gray-300',
+    service:'bg-indigo-900 text-indigo-300', network:'bg-rose-900 text-rose-300',
+    digi:'bg-yellow-900 text-yellow-300', igate:'bg-teal-900 text-teal-300',
+    dstar:'bg-fuchsia-900 text-fuchsia-300', satellite:'bg-violet-900 text-violet-300'
+  };
+  var maxCount = rows[0].count;
+  el.innerHTML = rows.slice(0, 20).map(function(r) {
+    var pct = total ? Math.round(100 * r.count / total) : 0;
+    var width = Math.round(100 * r.count / maxCount);
+    var cls = classColours[r.class] || 'bg-gray-700 text-gray-300';
+    return '<div class="flex items-center gap-2 py-1">'
+      + '<div class="flex-shrink-0 ' + cls + ' px-2 py-0.5 rounded text-[10px] font-mono whitespace-nowrap">' + r.tocall + '</div>'
+      + '<div class="flex-1 min-w-0">'
+      +   '<div class="flex items-center justify-between mb-0.5">'
+      +     '<span class="text-white truncate">' + (r.vendor ? r.vendor + ' ' : '') + r.model + '</span>'
+      +     '<span class="text-gray-400 text-[10px] flex-shrink-0 ml-2">' + r.count + ' (' + pct + '%) · ' + r.shownClass + '</span>'
+      +   '</div>'
+      +   '<div class="bg-gray-900 rounded h-1.5 overflow-hidden">'
+      +     '<div class="bg-purple-500 h-1.5" style="width:' + width + '%"></div>'
+      +   '</div>'
+      + '</div>'
+      + '</div>';
+  }).join('');
+  if (unknown > 0) {
+    var pct = total ? Math.round(100 * unknown / total) : 0;
+    el.innerHTML += '<div class="text-xs text-gray-500 pt-2 mt-2 border-t border-gray-700">Unidentified: ' + unknown + ' stations (' + pct + '%) — possibly experimental tocalls or stations without a position packet</div>';
+  }
 }
 
 // Auto-refresh leaderboard every 30s when open
@@ -7708,6 +7784,119 @@ async function loadAudit() {
 // Hook into existing admin login so we know when it succeeds
 // _adminCreds will be set when admin auth completes
 // Store creds globally (already exists in original code via tryAdminLogin)
+
+
+
+// ─── APRS Device Identification ────────────────────────────────────────────────
+// Loads the aprs-deviceid database (TOCALL -> vendor/model/class)
+// and exposes lookupDevice(tocall) for use throughout the app.
+// Source: https://github.com/aprsorg/aprs-deviceid (CC BY-SA 2.0)
+
+var _deviceDB = null;        // { tocalls:[...], classes:[...] }
+var _deviceExactMap = null;  // exact-match Map for O(1) lookup
+var _deviceWildcards = null; // sorted list of wildcard entries by specificity
+var _deviceClassMap  = null; // class -> shown name
+
+async function loadDeviceDB() {
+  if (_deviceDB) return _deviceDB;
+  try {
+    var r = await fetch(location.origin + '/api/tocalls');
+    if (!r.ok) return null;
+    _deviceDB = await r.json();
+    buildDeviceIndex();
+    return _deviceDB;
+  } catch(e) { console.warn('Device DB load failed:', e); return null; }
+}
+
+function buildDeviceIndex() {
+  if (!_deviceDB) return;
+  _deviceExactMap = new Map();
+  _deviceWildcards = [];
+  (_deviceDB.tocalls || []).forEach(function(e) {
+    var t = e.tocall || '';
+    if (!t) return;
+    if (t.indexOf('?') === -1 && t.indexOf('n') === -1 && t.indexOf('*') === -1) {
+      _deviceExactMap.set(t.toUpperCase(), e);
+    } else {
+      // Compute specificity: count of literal (non-wildcard) chars
+      var spec = 0;
+      for (var i = 0; i < t.length; i++) {
+        var c = t.charAt(i);
+        if (c !== '?' && c !== 'n' && c !== '*') spec++;
+      }
+      // Build regex: ? -> [A-Z0-9], n -> [0-9], * -> .*
+      var re = '';
+      for (var j = 0; j < t.length; j++) {
+        var ch = t.charAt(j);
+        if (ch === '?') re += '[A-Z0-9]';
+        else if (ch === 'n') re += '[0-9]';
+        else if (ch === '*') re += '.*';
+        else re += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+      }
+      _deviceWildcards.push({ entry: e, regex: new RegExp('^' + re + '$'), spec: spec, len: t.length });
+    }
+  });
+  // Sort wildcards by specificity desc (longest literal match wins)
+  _deviceWildcards.sort(function(a,b){ return b.spec - a.spec || b.len - a.len; });
+
+  _deviceClassMap = {};
+  (_deviceDB.classes || []).forEach(function(c) { _deviceClassMap[c.class] = c.shown || c.class; });
+}
+
+// Returns { tocall, vendor, model, class, shownClass, os, ... } or null
+function lookupDevice(tocall) {
+  if (!_deviceExactMap) return null;
+  if (!tocall) return null;
+  var t = tocall.toUpperCase();
+  // Try exact match first
+  if (_deviceExactMap.has(t)) {
+    var hit = _deviceExactMap.get(t);
+    return enrichDevice(hit);
+  }
+  // Walk wildcards (already sorted by specificity)
+  for (var i = 0; i < _deviceWildcards.length; i++) {
+    if (_deviceWildcards[i].regex.test(t)) return enrichDevice(_deviceWildcards[i].entry);
+  }
+  return null;
+}
+
+function enrichDevice(e) {
+  if (!e) return null;
+  var out = Object.assign({}, e);
+  out.shownClass = (e.class && _deviceClassMap) ? (_deviceClassMap[e.class] || e.class) : '';
+  return out;
+}
+
+// Extract the destination (tocall) from a raw APRS packet
+function extractTocall(raw) {
+  if (!raw) return '';
+  var gt = raw.indexOf('>');
+  var col = raw.indexOf(':');
+  if (gt < 0 || col < 0) return '';
+  var dest = raw.slice(gt+1, col).split(',')[0];
+  return dest.toUpperCase();
+}
+
+// Returns an HTML chip for a device, or empty string
+function deviceChip(tocall) {
+  var d = lookupDevice(tocall);
+  if (!d) return '';
+  var classColours = {
+    wx:'bg-blue-900 text-blue-300', tracker:'bg-emerald-900 text-emerald-300',
+    gadget:'bg-purple-900 text-purple-300', rig:'bg-amber-900 text-amber-300',
+    ht:'bg-orange-900 text-orange-300', app:'bg-pink-900 text-pink-300',
+    software:'bg-cyan-900 text-cyan-300', daemon:'bg-gray-700 text-gray-300',
+    service:'bg-indigo-900 text-indigo-300', network:'bg-rose-900 text-rose-300',
+    digi:'bg-yellow-900 text-yellow-300', igate:'bg-teal-900 text-teal-300',
+    dstar:'bg-fuchsia-900 text-fuchsia-300', satellite:'bg-violet-900 text-violet-300'
+  };
+  var cls = classColours[d.class] || 'bg-gray-800 text-gray-300';
+  var title = (d.vendor ? d.vendor + ' — ' : '') + (d.model || '') + (d.os ? ' (' + d.os + ')' : '') + ' [' + d.tocall + ']';
+  return '<span class="' + cls + ' px-1.5 py-0.5 rounded text-[10px] font-mono cursor-help" title="' + title.replace(/"/g,'&quot;') + '">' + (d.model || d.vendor || d.tocall) + '</span>';
+}
+
+// Load on startup
+loadDeviceDB();
 
 
 // ─── LoRa-APRS Integration ────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"embed"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -218,6 +219,16 @@ type wsMessage struct {
 	Data     interface{} `json:"data,omitempty"`
 }
 
+
+// handleTocalls serves the embedded APRS device identification database.
+// Source: https://github.com/aprsorg/aprs-deviceid (CC BY-SA 2.0)
+// Updated occasionally by re-embedding tocalls.json at build time.
+func handleTocalls(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=86400") // 24h cache
+	w.Write(embeddedTocallsJSON)
+}
+
 func main() {
 	loadOrInitCreds()
 	loadSavedConfig()
@@ -275,6 +286,7 @@ func main() {
 	http.HandleFunc("/api/tle", handleTLE)
 	http.HandleFunc("/api/ariss", handleARISS)
 	http.HandleFunc("/api/version", handleVersion)
+	http.HandleFunc("/api/tocalls", handleTocalls)
 	http.HandleFunc("/api/messages", handleMessages)
 	http.HandleFunc("/api/iss", handleISSPosition)
 	http.HandleFunc("/api/update", basicAuth(handleUpdate))
@@ -2984,3 +2996,7 @@ func loadConfigFromFile() interface{} {
 	json.Unmarshal(data, &c)
 	return c
 }
+//go:embed tocalls.json
+var embeddedTocallsJSON []byte
+
+
