@@ -142,6 +142,24 @@ body { background: var(--bg-base); color: var(--text-base); }
 [data-theme="light"] #controls-sidebar .text-purple-400{ color: #6b21a8 !important; }
 [data-theme="light"] #controls-sidebar .text-amber-400 { color: #92400e !important; }
 [data-theme="light"] #controls-sidebar .font-mono      { color: #1e293b !important; }
+/* Fallback: catch any unclassed text in sidebar labels/spans/divs (filter labels etc) */
+[data-theme="light"] #controls-sidebar,
+[data-theme="light"] #controls-sidebar label,
+[data-theme="light"] #controls-sidebar label > span,
+[data-theme="light"] #controls-sidebar label > span:not([class]),
+[data-theme="light"] #controls-sidebar h3,
+[data-theme="light"] #controls-sidebar h4,
+[data-theme="light"] #controls-sidebar div { color: #0f172a; }
+/* Make the ● dots more contrasted on light - they need to stay coloured but visible */
+[data-theme="light"] #controls-sidebar .text-yellow-500 { color: #b45309 !important; }
+[data-theme="light"] #controls-sidebar .text-purple-400 { color: #7c3aed !important; }
+[data-theme="light"] #controls-sidebar .text-fuchsia-400{ color: #a21caf !important; }
+[data-theme="light"] #controls-sidebar .text-cyan-400   { color: #0e7490 !important; }
+[data-theme="light"] #controls-sidebar .text-emerald-400{ color: #047857 !important; }
+[data-theme="light"] #controls-sidebar .text-orange-400 { color: #c2410c !important; }
+/* Override sub-filter borders */
+[data-theme="light"] #lora-sub-filters { border-color: #c4b5fd !important; }
+[data-theme="light"] #lora-sub-filters hr { border-color: #c4b5fd !important; }
 [data-theme="light"] #controls-sidebar select,
 [data-theme="light"] #controls-sidebar input[type=text] {
   background: var(--bg-input) !important;
