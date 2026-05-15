@@ -333,6 +333,7 @@ body { background: var(--bg-base); color: var(--text-base); }
         </div>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="cluster-enable" checked onchange="toggleClustering()"><span>Cluster Markers</span></label>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-pistar" onchange="redrawMap()"><span class="text-gray-500">●</span><span class="text-gray-400">Pi-Star / MMDVM</span></label>
+        <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-lora-aprsis" checked onchange="redrawMap()"><span class="text-fuchsia-400">●</span><span>LoRa (via APRS-IS)</span></label>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-lora" onchange="toggleLoRa()"><span class="text-purple-400">●</span><span>LoRa Network</span></label>
         <div id="lora-sub-filters" class="hidden ml-5 space-y-1 mt-1 border-l-2 border-purple-900 pl-3">
           <label class="flex items-center space-x-2 cursor-pointer text-xs"><input type="checkbox" id="lora-show-igates"    checked onchange="renderLoRaData(_loraLatest)"><span class="text-purple-400">📡</span><span class="text-gray-400">iGates</span></label>
@@ -3550,6 +3551,7 @@ function redrawMap() {
   const showCwop   = document.getElementById('show-cwop').checked;
   const showOgn    = document.getElementById('show-ogn').checked;
   const showPiStar = (document.getElementById('show-pistar')||{checked:false}).checked;
+  const showLoraIS = (document.getElementById('show-lora-aprsis')||{checked:true}).checked;
 
   Object.keys(stations).forEach(call=>{
     const st = stations[call];
