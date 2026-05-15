@@ -3,7 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"embed"
+	_ "embed"
 	"encoding/json"
 	"os"
 	"os/exec"
