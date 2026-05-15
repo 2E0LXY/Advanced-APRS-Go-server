@@ -2646,6 +2646,7 @@ body { background: var(--bg-base); color: var(--text-base); }
     <!-- Tabs -->
     <div class="flex border-b border-gray-700 flex-shrink-0">
       <button onclick="detailTab('overview')" id="tab-overview" class="detail-tab px-4 py-2 text-sm font-medium text-white border-b-2 border-blue-500">Overview</button>
+      <button onclick="detailTab('connections')" id="tab-connections" class="detail-tab px-4 py-2 text-sm font-medium text-gray-400 hover:text-white border-b-2 border-transparent">🔗 Connections</button>
       <button onclick="detailTab('history')" id="tab-history" class="detail-tab px-4 py-2 text-sm font-medium text-gray-400 hover:text-white border-b-2 border-transparent">History</button>
       <button onclick="detailTab('packets')" id="tab-packets" class="detail-tab px-4 py-2 text-sm font-medium text-gray-400 hover:text-white border-b-2 border-transparent">Packets</button>
       <button onclick="detailTab('path')" id="tab-path" class="detail-tab px-4 py-2 text-sm font-medium text-gray-400 hover:text-white border-b-2 border-transparent">Path</button>
@@ -2679,6 +2680,38 @@ body { background: var(--bg-base); color: var(--text-base); }
       </div>
 
       <!-- History tab -->
+      <!-- Connections tab -->
+      <div id="detail-connections" class="hidden space-y-3">
+        <div class="bg-gray-800 rounded-lg border border-gray-700 p-3">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="text-sm font-bold text-cyan-400">📡 Stations heard by this digipeater</h4>
+            <span class="text-xs text-gray-500" id="conn-heard-count">—</span>
+          </div>
+          <p class="text-xs text-gray-500 mb-2">Stations whose packets passed through this station as a digipeater. Click any callsign to inspect, or use the buttons below to visualise on the map.</p>
+          <div id="conn-heard-list" class="max-h-64 overflow-y-auto"></div>
+        </div>
+
+        <div class="bg-gray-800 rounded-lg border border-gray-700 p-3">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="text-sm font-bold text-amber-400">📶 Digipeaters this station has used</h4>
+            <span class="text-xs text-gray-500" id="conn-via-count">—</span>
+          </div>
+          <p class="text-xs text-gray-500 mb-2">Stations that have relayed this station's packets (acting as digipeaters).</p>
+          <div id="conn-via-list" class="max-h-64 overflow-y-auto"></div>
+        </div>
+
+        <div class="bg-gray-800 rounded-lg border border-gray-700 p-3">
+          <h4 class="text-sm font-bold text-purple-400 mb-2">🌐 Nearby stations</h4>
+          <p class="text-xs text-gray-500 mb-2">Other live stations within 50 mi (80 km) sorted by distance.</p>
+          <div id="conn-nearby-list" class="max-h-64 overflow-y-auto"></div>
+        </div>
+
+        <div class="flex flex-wrap gap-2 pt-2 border-t border-gray-700">
+          <button onclick="showConnectionsOnMap()" class="text-xs bg-cyan-700 hover:bg-cyan-600 px-3 py-2 rounded text-white font-bold">🌐 Show all connections on map</button>
+          <button onclick="clearConnectionsOnMap()" class="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded text-gray-300">Clear from map</button>
+        </div>
+      </div>
+
       <div id="detail-history" class="hidden space-y-3">
         <div class="bg-gray-800 rounded p-3">
           <p class="text-gray-400 text-xs font-bold uppercase mb-2">Speed Over Time (mph / km/h)</p>
@@ -4675,7 +4708,7 @@ function closeDetail() {
 
 function detailTab(tab) {
   _detailTab = tab;
-  ['overview','history','packets','path'].forEach(function(t) {
+  ['overview','connections','history','packets','path'].forEach(function(t) {
     document.getElementById('detail-' + t).classList.add('hidden');
     var btn = document.getElementById('tab-' + t);
     if (btn) { btn.classList.remove('text-white','border-blue-500'); btn.classList.add('text-gray-400','border-transparent'); }
@@ -4684,6 +4717,7 @@ function detailTab(tab) {
   var activeBtn = document.getElementById('tab-' + tab);
   if (activeBtn) { activeBtn.classList.add('text-white','border-blue-500'); activeBtn.classList.remove('text-gray-400','border-transparent'); }
 
+  if (tab === 'connections') renderDetailConnections();
   if (tab === 'history')  renderDetailHistory();
   if (tab === 'packets')  renderDetailPackets();
   if (tab === 'path')     renderDetailPath();
@@ -4921,6 +4955,287 @@ function renderDetailPath() {
     else lines.push('<span class="text-gray-400">' + hop + '</span> — path element (unused)');
   });
   explains.innerHTML = lines.map(function(l){ return '<div>' + l + '</div>'; }).join('');
+}
+
+
+// ─── Station Connections (APRS) ───────────────────────────────────────────────
+// Builds a graph from packet history: who has digipeated whom, who is nearby
+// and who they share infrastructure with. Visualises on the map.
+
+var _connLayers = [];     // L.Layer[] currently drawn for connections
+
+function clearConnectionsOnMap() {
+  _connLayers.forEach(function(l){ try { map.removeLayer(l); } catch(e){} });
+  _connLayers = [];
+  // Also clear any LoRa P2P focus
+  if (_loraP2PFocus) {
+    _loraP2PFocus = null;
+    if (_loraEnabled) renderLoRaData(_loraLatest);
+  }
+  // Also clear any APRS path viz
+  if (typeof _pathLayers !== 'undefined' && _pathLayers.length) {
+    clearPathViz();
+  }
+}
+
+// Scan recent packet history to find:
+// - who has been heard via THIS station (THIS = digipeater)
+// - which digis have been used by THIS station
+// Returns { heardByThis: [{call, lastTs, count}], viaForThis: [{call, lastTs, count, dist}] }
+function computeStationConnections(call) {
+  var heardByThis = {};   // others heard VIA this station as digi
+  var viaForThis  = {};   // digis used by this station
+  var nearbySet   = {};
+
+  var st = stations[call];
+  if (!st) return { heardByThis: [], viaForThis: [], nearby: [] };
+
+  var thisPos = st.positions && st.positions.length ? st.positions[st.positions.length-1] : null;
+
+  // Iterate over all known stations' raw packets
+  Object.keys(stations).forEach(function(otherCall) {
+    if (otherCall === call) return;
+    var other = stations[otherCall];
+    if (!other.raw) return;
+
+    // Parse path from raw packet: SRC>DEST,PATH:payload
+    var gt = other.raw.indexOf('>');
+    var col = other.raw.indexOf(':');
+    if (gt < 0 || col < 0) return;
+    var path = other.raw.slice(gt+1, col).split(',').slice(1);
+
+    // Was this packet relayed THROUGH our station (call)?
+    var thisInPath = path.some(function(hop) {
+      var clean = hop.replace('*','');
+      return clean === call || clean === baseCall(call) ||
+             clean.split('-')[0] === baseCall(call);
+    });
+    if (thisInPath) {
+      // other was heard via our station
+      if (!heardByThis[otherCall]) {
+        heardByThis[otherCall] = { call: otherCall, lastTs: other.lastHeard, count: 0,
+          hasPos: !!(other.positions && other.positions.length) };
+      }
+      heardByThis[otherCall].count++;
+      heardByThis[otherCall].lastTs = Math.max(heardByThis[otherCall].lastTs, other.lastHeard);
+    }
+
+    // Nearby?
+    if (thisPos && other.positions && other.positions.length) {
+      var op = other.positions[other.positions.length-1];
+      var d = haversineKm(thisPos.lat, thisPos.lon, op.lat, op.lon);
+      if (d <= 80) {  // 50 mi / 80 km
+        nearbySet[otherCall] = { call: otherCall, dist: d, lastTs: other.lastHeard, pos: op };
+      }
+    }
+  });
+
+  // Now find digis used BY THIS station - parse our own path
+  if (st.raw) {
+    var gt = st.raw.indexOf('>');
+    var col = st.raw.indexOf(':');
+    if (gt >= 0 && col >= 0) {
+      var myPath = st.raw.slice(gt+1, col).split(',').slice(1);
+      myPath.forEach(function(hop) {
+        var clean = hop.replace('*','');
+        var used  = hop.endsWith('*');
+        // Skip non-callsign elements
+        if (clean.startsWith('qA') || clean === 'TCPIP' || clean === 'RELAY' || clean === 'TRACE') return;
+        if (clean.startsWith('WIDE') && !used) return;  // WIDE1-1 unused
+        // Only show actually-used hops (with *) - those that relayed our packet
+        if (!used) return;
+        if (clean.startsWith('WIDE')) return;
+        var digiSt = stations[clean] || stations[clean.split('-')[0]];
+        var pos = digiSt && digiSt.positions && digiSt.positions.length ?
+          digiSt.positions[digiSt.positions.length-1] : null;
+        var dist = (pos && thisPos) ? haversineKm(thisPos.lat, thisPos.lon, pos.lat, pos.lon) : null;
+        viaForThis[clean] = { call: clean, lastTs: digiSt ? digiSt.lastHeard : st.lastHeard,
+          hasPos: !!pos, dist: dist };
+      });
+    }
+  }
+
+  return {
+    heardByThis: Object.values(heardByThis).sort(function(a,b){return b.lastTs - a.lastTs;}),
+    viaForThis:  Object.values(viaForThis).sort(function(a,b){return b.lastTs - a.lastTs;}),
+    nearby:      Object.values(nearbySet).sort(function(a,b){return a.dist - b.dist;})
+  };
+}
+
+function renderDetailConnections() {
+  var call = _detailCall;
+  if (!call) return;
+  var data = computeStationConnections(call);
+
+  // Heard list
+  var heardEl = document.getElementById('conn-heard-list');
+  var heardCnt = document.getElementById('conn-heard-count');
+  if (heardCnt) heardCnt.innerText = data.heardByThis.length + ' station' + (data.heardByThis.length===1?'':'s');
+  if (heardEl) {
+    if (!data.heardByThis.length) {
+      heardEl.innerHTML = '<p class="text-xs text-gray-600 text-center py-3">No stations have been digipeated through ' + call + '</p>';
+    } else {
+      heardEl.innerHTML = '<table class="w-full text-xs"><thead class="text-gray-500"><tr><th class="text-left pb-1">Callsign</th><th class="text-right pb-1">Packets</th><th class="text-right pb-1">Last heard</th></tr></thead><tbody>'
+        + data.heardByThis.slice(0, 30).map(function(h) {
+          var ago = secondsAgo(h.lastTs);
+          return '<tr class="hover:bg-gray-900">'
+            + '<td class="py-0.5"><a class="text-cyan-400 hover:underline cursor-pointer font-mono" onclick="openDetail(\''+h.call.replace(/[\\\']/g,'')+'\')">'+h.call+'</a>' + (h.hasPos?'':' <span class="text-gray-600 text-[10px]">(no position)</span>') + '</td>'
+            + '<td class="py-0.5 text-right text-gray-400">'+h.count+'</td>'
+            + '<td class="py-0.5 text-right text-gray-500">'+ago+'</td>'
+            + '</tr>';
+        }).join('') + '</tbody></table>';
+    }
+  }
+
+  // Via list
+  var viaEl  = document.getElementById('conn-via-list');
+  var viaCnt = document.getElementById('conn-via-count');
+  if (viaCnt) viaCnt.innerText = data.viaForThis.length + ' digi' + (data.viaForThis.length===1?'':'s');
+  if (viaEl) {
+    if (!data.viaForThis.length) {
+      viaEl.innerHTML = '<p class="text-xs text-gray-600 text-center py-3">No digipeaters used (direct to gateway or no path data)</p>';
+    } else {
+      viaEl.innerHTML = '<table class="w-full text-xs"><thead class="text-gray-500"><tr><th class="text-left pb-1">Digipeater</th><th class="text-right pb-1">Distance</th><th class="text-right pb-1">Last heard</th></tr></thead><tbody>'
+        + data.viaForThis.map(function(v) {
+          var ago = secondsAgo(v.lastTs);
+          var distStr = v.dist != null ? (v.dist*0.621371).toFixed(1) + ' mi' : '-';
+          return '<tr class="hover:bg-gray-900">'
+            + '<td class="py-0.5"><a class="text-amber-400 hover:underline cursor-pointer font-mono" onclick="openDetail(\''+v.call.replace(/[\\\']/g,'')+'\')">'+v.call+'</a>' + (v.hasPos?'':' <span class="text-gray-600 text-[10px]">(no position)</span>') + '</td>'
+            + '<td class="py-0.5 text-right text-blue-300">'+distStr+'</td>'
+            + '<td class="py-0.5 text-right text-gray-500">'+ago+'</td>'
+            + '</tr>';
+        }).join('') + '</tbody></table>';
+    }
+  }
+
+  // Nearby list
+  var nearEl = document.getElementById('conn-nearby-list');
+  if (nearEl) {
+    if (!data.nearby.length) {
+      nearEl.innerHTML = '<p class="text-xs text-gray-600 text-center py-3">No nearby stations within 50 mi</p>';
+    } else {
+      nearEl.innerHTML = '<table class="w-full text-xs"><thead class="text-gray-500"><tr><th class="text-left pb-1">Callsign</th><th class="text-right pb-1">Distance</th><th class="text-right pb-1">Last heard</th></tr></thead><tbody>'
+        + data.nearby.slice(0, 30).map(function(n) {
+          var ago = secondsAgo(n.lastTs);
+          return '<tr class="hover:bg-gray-900">'
+            + '<td class="py-0.5"><a class="text-purple-300 hover:underline cursor-pointer font-mono" onclick="openDetail(\''+n.call.replace(/[\\\']/g,'')+'\')">'+n.call+'</a></td>'
+            + '<td class="py-0.5 text-right text-blue-300">'+(n.dist*0.621371).toFixed(1)+' mi ('+n.dist.toFixed(1)+' km)</td>'
+            + '<td class="py-0.5 text-right text-gray-500">'+ago+'</td>'
+            + '</tr>';
+        }).join('') + '</tbody></table>';
+    }
+  }
+}
+
+function secondsAgo(ts) {
+  var s = Math.floor(Date.now()/1000) - ts;
+  if (s < 60) return s + 's';
+  if (s < 3600) return Math.floor(s/60) + 'm';
+  if (s < 86400) return Math.floor(s/3600) + 'h';
+  return Math.floor(s/86400) + 'd';
+}
+
+function showConnectionsOnMap() {
+  var call = _detailCall;
+  if (!call) return;
+  closeDetail();
+  togglePanel('map');
+  setTimeout(function(){ drawConnections(call); }, 200);
+}
+
+function drawConnections(call) {
+  clearConnectionsOnMap();
+  var st = stations[call];
+  if (!st || !st.positions.length) return;
+  var thisPos = st.positions[st.positions.length-1];
+  var data = computeStationConnections(call);
+
+  // Bright, distinct colours
+  var COLOR_HEARD = '#06b6d4';  // bright cyan - stations heard BY this digi
+  var COLOR_VIA   = '#f59e0b';  // bright amber - digis used BY this station
+  var COLOR_FOCUS = '#fbbf24';  // bright yellow - focus station
+
+  // Draw lines: this station -> each station heard via it
+  data.heardByThis.forEach(function(h) {
+    var other = stations[h.call];
+    if (!other || !other.positions || !other.positions.length) return;
+    var op = other.positions[other.positions.length-1];
+    var line = L.polyline(
+      [[thisPos.lat, thisPos.lon], [op.lat, op.lon]],
+      { color: COLOR_HEARD, weight: 3, opacity: 0.85 }
+    ).bindTooltip(
+      '<b>' + call + '</b> heard <b>' + h.call + '</b><br>'
+      + h.count + ' packet' + (h.count===1?'':'s') + ' relayed<br>'
+      + 'Last: ' + secondsAgo(h.lastTs) + ' ago',
+      { sticky: true }
+    );
+    line.addTo(map);
+    _connLayers.push(line);
+
+    // Small endpoint marker
+    var endM = L.circleMarker([op.lat, op.lon], {
+      radius: 5, color: '#0f172a', weight: 2, fillColor: COLOR_HEARD, fillOpacity: 1
+    }).bindTooltip(h.call + ' (heard by ' + call + ')', { direction: 'top' });
+    endM.on('click', function(){ openDetail(h.call); });
+    endM.addTo(map);
+    _connLayers.push(endM);
+  });
+
+  // Draw lines: digis used by this station -> this station
+  data.viaForThis.forEach(function(v) {
+    var digi = stations[v.call] || stations[v.call.split('-')[0]];
+    if (!digi || !digi.positions || !digi.positions.length) return;
+    var dp = digi.positions[digi.positions.length-1];
+    var line = L.polyline(
+      [[dp.lat, dp.lon], [thisPos.lat, thisPos.lon]],
+      { color: COLOR_VIA, weight: 3, opacity: 0.85, dashArray: '8 4' }
+    ).bindTooltip(
+      '<b>' + call + '</b> relayed via <b>' + v.call + '</b><br>'
+      + 'Last: ' + secondsAgo(v.lastTs) + ' ago',
+      { sticky: true }
+    );
+    line.addTo(map);
+    _connLayers.push(line);
+
+    var digiM = L.circleMarker([dp.lat, dp.lon], {
+      radius: 6, color: '#0f172a', weight: 2, fillColor: COLOR_VIA, fillOpacity: 1
+    }).bindTooltip(v.call + ' (digipeater for ' + call + ')', { direction: 'top' });
+    digiM.on('click', function(){ openDetail(v.call); });
+    digiM.addTo(map);
+    _connLayers.push(digiM);
+  });
+
+  // Focus marker on this station - large yellow ring
+  var ring = L.circleMarker([thisPos.lat, thisPos.lon], {
+    radius: 14, color: COLOR_FOCUS, weight: 3, fillColor: COLOR_FOCUS, fillOpacity: 0.25
+  }).bindTooltip(
+    '<b>' + call + '</b> — ' + data.heardByThis.length + ' heard, ' + data.viaForThis.length + ' digis used',
+    { direction: 'top', permanent: true }
+  );
+  ring.addTo(map);
+  _connLayers.push(ring);
+
+  // Fit to bounds
+  var pts = [[thisPos.lat, thisPos.lon]];
+  data.heardByThis.forEach(function(h){
+    var s = stations[h.call]; if (s && s.positions.length) {
+      var p = s.positions[s.positions.length-1]; pts.push([p.lat, p.lon]);
+    }
+  });
+  data.viaForThis.forEach(function(v){
+    var s = stations[v.call] || stations[v.call.split('-')[0]];
+    if (s && s.positions.length) {
+      var p = s.positions[s.positions.length-1]; pts.push([p.lat, p.lon]);
+    }
+  });
+  if (pts.length > 1) map.fitBounds(L.latLngBounds(pts), { padding: [50, 50], maxZoom: 11 });
+
+  // Toast confirmation
+  var toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:#0e7490;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:bold;z-index:99999;box-shadow:0 4px 12px rgba(0,0,0,0.5);pointer-events:none';
+  toast.innerHTML = '🌐 Connections for <b>' + call + '</b>: ' + data.heardByThis.length + ' heard · ' + data.viaForThis.length + ' digis used <span style="opacity:0.7;font-weight:normal">— click any node to inspect</span>';
+  document.body.appendChild(toast);
+  setTimeout(function(){ toast.style.transition='opacity 0.5s'; toast.style.opacity='0'; setTimeout(function(){toast.remove();}, 500); }, 5000);
 }
 
 function showPathOnMapFromDetail() {
@@ -7685,8 +8000,17 @@ function renderLoRaData(results) {
 
     var color = loraSignalColor(link.snr);
     var dashed = link.digipeated || isNaN(link.snr) || link.snr === 0;
-    var weight = _loraP2PFocus && inFocus ? 4 : 2;
-    var opacity = _loraP2PFocus && !inFocus ? 0.15 : 0.6;
+    // In focus mode: focused links bright and bold, others dimmed
+    var weight  = _loraP2PFocus && inFocus ? 5 : 2;
+    var opacity = _loraP2PFocus ? (inFocus ? 1.0 : 0.08) : 0.65;
+    // Boost colour saturation for focused links
+    if (_loraP2PFocus && inFocus) {
+      if (!isNaN(link.snr) && link.snr !== 0) {
+        // brighten the SNR colour
+        var bright = { '#22c55e':'#00ff88', '#eab308':'#ffd700', '#f97316':'#ff6b00', '#ef4444':'#ff0044' };
+        color = bright[color] || color;
+      }
+    }
 
     L.polyline(
       [[link.from.lat, link.from.lon], [link.to.lat, link.to.lon]],
