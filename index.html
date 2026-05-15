@@ -6280,10 +6280,17 @@ function toggleSidebar() {
     sb.style.overflow = '';
     sb.style.opacity  = '1';
     if (arrow) arrow.innerText = '◀';
-    // Position button at sidebar's right edge (measured dynamically after layout settles)
+    // Two-stage measurement: snap to expected position immediately,
+    // then re-measure after CSS transition fully settles (avoids
+    // catching the sidebar mid-animation and parking the button
+    // somewhere in the middle of the column)
+    if (tab) tab.style.left = '256px';
     setTimeout(function(){
-      if (tab && sb) tab.style.left = sb.getBoundingClientRect().right + 'px';
-    }, 50);
+      if (tab && sb) {
+        var r = sb.getBoundingClientRect();
+        if (r.width > 50) tab.style.left = r.right + 'px';
+      }
+    }, 350);
   } else {
     sb.style.width    = '0';
     sb.style.minWidth = '0';
@@ -6293,21 +6300,26 @@ function toggleSidebar() {
     if (arrow) arrow.innerText = '▶';
     if (tab) tab.style.left = '0';
   }
-  setTimeout(function(){ if(typeof map!=='undefined') map.invalidateSize(); }, 280);
+  setTimeout(function(){ if(typeof map!=='undefined') map.invalidateSize(); }, 380);
 }
 
 // Position sidebar tab correctly on page load
 window.addEventListener('load', function() {
   var sb  = document.getElementById('controls-sidebar');
   var tab = document.getElementById('sidebar-tab');
-  if (sb && tab) tab.style.left = sb.getBoundingClientRect().right + 'px';
+  if (sb && tab) {
+    var r = sb.getBoundingClientRect();
+    tab.style.left = (r.width > 50 ? r.right : 256) + 'px';
+  }
 });
-// Also reposition on window resize
 window.addEventListener('resize', function() {
   if (!_sidebarOpen) return;
   var sb  = document.getElementById('controls-sidebar');
   var tab = document.getElementById('sidebar-tab');
-  if (sb && tab) tab.style.left = sb.getBoundingClientRect().right + 'px';
+  if (sb && tab) {
+    var r = sb.getBoundingClientRect();
+    if (r.width > 50) tab.style.left = r.right + 'px';
+  }
 });
 
 
