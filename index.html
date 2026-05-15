@@ -1203,8 +1203,9 @@ body { background: var(--bg-base); color: var(--text-base); }
           <p class="text-xs text-gray-400">Live rankings: most active stations, fastest moving (vehicles only — WX excluded), longest path traversed, most-recently-heard. Active nets &amp; groups detected from message traffic.</p>
         </div>
         <div class="bg-gray-900 rounded p-3">
-          <h4 class="font-bold text-white mb-1">📡 LoRa Network</h4>
-          <p class="text-xs text-gray-400">Tick "LoRa Network" in sidebar filters to overlay the global LoRa-APRS network. Shows iGates (📡 purple), Trackers (🛰 green) and signal-quality lines colour-coded by SNR: <span class="text-green-400">green</span> (>-3dB), <span class="text-yellow-400">yellow</span> (-3 to -12), <span class="text-orange-400">orange</span> (-12 to -18), <span class="text-red-400">red</span> (&lt;-18). Data from <a href="https://lora-aprs.live" target="_blank" class="text-blue-400 underline">lora-aprs.live</a>.</p>
+          <h4 class="font-bold text-white mb-1">📡 LoRa Stations (two sources)</h4>
+          <p class="text-xs text-gray-400 mb-2"><b class="text-fuchsia-300">LoRa (via APRS-IS)</b> — sidebar filter, ON by default. Identifies LoRa-APRS stations from your live APRS-IS feed by their TOCALL prefix (APLR*, APLG*, APLT*, APLO*) or LoRa keyword. Get the most comprehensive coverage as nearly all LoRa iGates gate to APRS-IS. Marked with a small purple <span class="bg-fuchsia-600 text-white rounded-full px-1.5 text-[10px]">L</span> badge on the map icon.</p>
+          <p class="text-xs text-gray-400">"<b class="text-purple-300">LoRa Network</b>" overlay — OFF by default. Adds the lora-aprs.live overlay with iGates (📡 purple), Trackers (🛰 green) and signal-quality lines colour-coded by SNR: <span class="text-green-400">green</span> (>-3dB), <span class="text-yellow-400">yellow</span> (-3 to -12), <span class="text-orange-400">orange</span> (-12 to -18), <span class="text-red-400">red</span> (&lt;-18). Background fetch enriches APRS-IS LoRa stations with SNR/RSSI data when available — click any LoRa station to see signal details. Data from <a href="https://lora-aprs.live" target="_blank" class="text-blue-400 underline">lora-aprs.live</a>.</p>
         </div>
         <div class="bg-gray-900 rounded p-3">
           <h4 class="font-bold text-white mb-1">🌙 / ☀ Theme Toggle</h4>
@@ -2669,6 +2670,13 @@ body { background: var(--bg-base); color: var(--text-base); }
           <p class="text-blue-300 text-xs font-bold uppercase mb-2">Weather Data</p>
           <div id="d-wx-data" class="grid grid-cols-3 gap-2 text-xs"></div>
         </div>
+        <div id="d-lora-block" class="hidden bg-fuchsia-900/20 border border-fuchsia-800 rounded p-3">
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-fuchsia-300 text-xs font-bold uppercase">📡 LoRa Signal Data</p>
+            <a id="d-lora-link" href="#" target="_blank" class="text-xs text-fuchsia-400 hover:underline">lora-aprs.live ↗</a>
+          </div>
+          <div id="d-lora-data" class="grid grid-cols-4 gap-2 text-xs"></div>
+        </div>
         <div class="bg-gray-800 rounded p-3">
           <p class="text-gray-400 text-xs mb-1">Comment / Status</p>
           <p id="d-comment" class="text-xs text-white"></p>
@@ -3381,7 +3389,37 @@ function determineType(call, raw) {
   if (call.startsWith('CW')||u.includes('CWOP')) return 'cwop';
   if (u.includes('OGNFLR')||call.startsWith('FLR')) return 'ogn';
   if (u.includes('PISTAR')||u.includes('MMDVM')||u.includes('APDPRS')) return 'pistar';
+  if (isLoraStation(call, raw)) return 'lora';
   return 'aprs';
+}
+
+// Detect LoRa-APRS stations from APRS-IS packet data.
+// LoRa firmware uses specific TOCALL prefixes:
+//   APLRG*  - LoRa_APRS_iGate (Richonguzman / CA2RXU)
+//   APLRT*  - LoRa_APRS_Tracker
+//   APLG01  - LoRa Gateway Lib
+//   APLT00  - LoRa Tracker original
+//   APLO01  - lora-aprs.info original firmware
+// Also: symbol overlay character 'L' on diamond/star
+// Also: comment field containing 'LoRa' or 'lora-aprs'
+function isLoraStation(call, raw) {
+  if (!raw) return false;
+  const u = raw.toUpperCase();
+  // Extract TOCALL (destination) from header: SRC>TOCALL,PATH:payload
+  const gt = raw.indexOf('>'), col = raw.indexOf(':');
+  if (gt > 0 && col > gt) {
+    const dest = raw.slice(gt+1, col).split(',')[0].toUpperCase();
+    if (/^APLR[GT]/.test(dest)) return true;       // CA2RXU iGate / Tracker
+    if (/^APLG\d/.test(dest)) return true;        // LoRa Gateway Lib
+    if (/^APLT\d/.test(dest)) return true;        // LoRa Tracker
+    if (/^APLO\d/.test(dest)) return true;        // lora-aprs.info
+    if (dest.startsWith('APL') && dest.length >= 5) return true; // generic LoRa
+  }
+  // Check comment for LoRa keyword
+  if (u.includes('LORA') && !u.includes('CALORA')) return true;
+  // Check for L overlay symbol (\L or /L in symbol field)
+  // Symbol is the two chars before/around the comment in position packets
+  return false;
 }
 
 function handleIncoming(data) {
@@ -3456,17 +3494,22 @@ function makeIcon(st, call) {
   const ageSec = Math.floor(Date.now()/1000) - (st.lastHeard||0);
   const opacity = ageSec < 1200 ? 1.0 : ageSec < 4800 ? 0.8 : ageSec < 7200 ? 0.4 : 0.25;
   const filter  = ageSec > 4800 ? 'filter:grayscale(60%);' : '';
+  // LoRa-from-APRS-IS gets a small purple L badge in the corner
+  const loraBadge = (st.type === 'lora')
+    ? '<div style="position:absolute;top:-3px;right:-3px;width:12px;height:12px;background:#a855f7;color:#fff;border:1.5px solid #fff;border-radius:50%;font-size:8px;font-weight:bold;text-align:center;line-height:9px;font-family:monospace;box-shadow:0 1px 3px rgba(0,0,0,0.5);z-index:5">L</div>'
+    : '';
   let iconHtml;
   if (st.sym && st.sym.length >= 2) {
     const sp = getSymbolSprite(st.sym[0], st.sym[1]);
     if (sp) {
-      iconHtml = '<div style="width:24px;height:24px;'+ring+'border-radius:2px;overflow:hidden;'
+      iconHtml = '<div style="width:24px;height:24px;position:relative;'+ring+'border-radius:2px;overflow:visible;'
         +'box-shadow:0 1px 4px rgba(0,0,0,.6);image-rendering:pixelated;opacity:'+opacity+';'+filter+'">'
-        +'<div style="width:24px;height:24px;background:url('+sp.sheet+') -'+sp.px+'px -'+sp.py+'px;background-size:384px 144px"></div></div>';
+        +'<div style="width:24px;height:24px;background:url('+sp.sheet+') -'+sp.px+'px -'+sp.py+'px;background-size:384px 144px"></div>'
+        +loraBadge+'</div>';
     }
   }
   if (!iconHtml) {
-    iconHtml = '<div style="width:22px;height:22px;background:#4b5563;border-radius:50%;border:2px solid rgba(255,255,255,0.5);'+ring+'opacity:'+opacity+';display:flex;align-items:center;justify-content:center;font-size:10px;color:white">?</div>';
+    iconHtml = '<div style="width:22px;height:22px;position:relative;background:'+(st.type==='lora'?'#a855f7':'#4b5563')+';border-radius:50%;border:2px solid rgba(255,255,255,0.5);'+ring+'opacity:'+opacity+';display:flex;align-items:center;justify-content:center;font-size:10px;color:white">'+(st.type==='lora'?'L':'?')+loraBadge+'</div>';
   }
   return L.divIcon({html:iconHtml, className:'', iconSize:[24,24], iconAnchor:[12,12], tooltipAnchor:[12,-12]});
 }
@@ -3483,6 +3526,10 @@ function redrawMap() {
 
   Object.keys(stations).forEach(call=>{
     const st = stations[call];
+    // Re-classify if type might be wrong (e.g. existing stations before LoRa detection added)
+    if (st.type === 'aprs' && st.raw && isLoraStation(call, st.raw)) {
+      st.type = 'lora';
+    }
     st.positions = st.positions.filter(p=>now-p.ts<=tail);
     const isStatic = st.positions.length<=1 || (() => {
       const a=st.positions[0], b=st.positions[st.positions.length-1];
@@ -3492,6 +3539,8 @@ function redrawMap() {
       ||(st.type==='aprs'&&!showAprs)
       ||(st.type==='cwop'&&!showCwop)
       ||(st.type==='ogn'&&!showOgn)
+      ||(st.type==='pistar'&&!showPiStar)
+      ||(st.type==='lora'&&!showLoraIS)
       ||st.positions.length===0;
     if (hide) {
       if (st.marker) { clusterGroup.removeLayer(st.marker); map.removeLayer(st.marker); st.marker=null; }
@@ -3517,7 +3566,7 @@ function redrawMap() {
       st.marker.off('click');
       st.marker.on('click',function(){openDetail(call);});
     }
-    const trailColor = st.type==='cwop'?'#10b981':st.type==='ogn'?'#f59e0b':'#3b82f6';
+    const trailColor = st.type==='cwop'?'#10b981':st.type==='ogn'?'#f59e0b':st.type==='lora'?'#e879f9':'#3b82f6';
     if (!st.polyline) st.polyline=L.polyline(lls,{color:trailColor,weight:2,opacity:0.5}).addTo(map);
     else st.polyline.setLatLngs(lls);
     // Course/speed leader arrow
@@ -4830,6 +4879,30 @@ function refreshDetailData() {
     }).join('');
   } else {
     wxBlock.classList.add('hidden');
+  }
+
+  // LoRa signal data block
+  var loraBlock = document.getElementById('d-lora-block');
+  if (st.type === 'lora') {
+    loraBlock.classList.remove('hidden');
+    document.getElementById('d-lora-link').href = 'https://lora-aprs.live/?call=' + encodeURIComponent(_detailCall);
+    var loraFields = [];
+    loraFields.push(['Type', 'LoRa-APRS', 'text-fuchsia-300']);
+    if (st.loraSignal) {
+      var sig = st.loraSignal;
+      var snrCls = (sig.snr > -3) ? 'text-green-400' : (sig.snr > -12) ? 'text-yellow-400' : (sig.snr > -18) ? 'text-orange-400' : 'text-red-400';
+      if (!isNaN(sig.snr) && sig.snr !== 0)   loraFields.push(['SNR (latest)',    sig.snr.toFixed(1) + ' dB', snrCls]);
+      if (!isNaN(sig.rssi) && sig.rssi !== 0) loraFields.push(['RSSI (latest)',   sig.rssi.toFixed(0) + ' dBm', 'text-blue-300']);
+      if (sig.rxCall) loraFields.push(['Last iGate',     sig.rxCall + (sig.digipeated ? '*' : ''), 'text-purple-300']);
+      if (!isNaN(sig.dist) && sig.dist > 0) loraFields.push(['Distance to iGate', (sig.dist*0.621371).toFixed(1) + ' mi (' + sig.dist.toFixed(1) + ' km)', 'text-blue-300']);
+    } else {
+      loraFields.push(['Signal data', 'Not available from lora-aprs.live', 'text-gray-500']);
+    }
+    document.getElementById('d-lora-data').innerHTML = loraFields.map(function(f){
+      return '<div class="bg-fuchsia-900/30 rounded p-2"><div class="text-gray-400 text-[10px]">' + f[0] + '</div><div class="font-bold ' + (f[2]||'text-white') + '">' + f[1] + '</div></div>';
+    }).join('');
+  } else {
+    loraBlock.classList.add('hidden');
   }
 }
 
@@ -7868,7 +7941,34 @@ function loraShowP2P(call) {
   return html;
 }
 
+function enrichAPRSISLoRaData(results) {
+  // Cross-reference: for any LoRa-APRS station already in stations{} that ALSO
+  // appears in lora-aprs.live data, attach the latest SNR/RSSI/iGate info
+  if (!results || !results.length) return;
+  results.forEach(function(m) {
+    var tx = (m.tx_callsign || '').trim().toUpperCase();
+    if (!tx || !stations[tx]) return;
+    // Only attach to stations we've identified as LoRa
+    if (stations[tx].type !== 'lora') return;
+    var snr  = parseFloat(m.signal_quality);
+    var rssi = parseFloat(m.signal_strength);
+    var rxc  = (m.rx_callsign||'').trim();
+    var ts   = new Date(m.received_at).getTime();
+    // Keep the latest signal data
+    if (!stations[tx].loraSignal || stations[tx].loraSignal.ts < ts) {
+      stations[tx].loraSignal = {
+        snr: snr, rssi: rssi, rxCall: rxc, ts: ts,
+        digipeated: (m.destination||'').includes('*'),
+        dist: parseFloat(m.distance)
+      };
+    }
+  });
+}
+
 function renderLoRaData(results) {
+  // Enrich the APRS-IS-derived LoRa stations with the rich signal data
+  enrichAPRSISLoRaData(results);
+
   if (!_loraLayerGroup || !results || !results.length) return;
   _loraLayerGroup.clearLayers();
 
@@ -8035,6 +8135,37 @@ loadMOTDBanner();
 connectWS();
 setInterval(redrawMap, 30000);
 populateConnInfo();
+
+// Background fetch of lora-aprs.live to enrich any LoRa-via-APRS-IS stations
+// with SNR/RSSI signal data. Runs even when the "LoRa Network" overlay is OFF.
+// This is purely for tagging existing stations - doesn't draw anything extra.
+function backgroundEnrichLoRaSignals() {
+  if ((document.getElementById('show-lora-aprsis')||{checked:true}).checked) {
+    // Only enrich if user wants to see LoRa-via-APRS-IS stations
+    fetchLoRaSignalData();
+  }
+}
+async function fetchLoRaSignalData() {
+  try {
+    var promises = [];
+    for (var p = 1; p <= 10; p++) {
+      promises.push(
+        fetch('https://lora.link9.net/api/messages?limit=100&page=' + p)
+          .then(function(r){ return r.ok ? r.json() : null; })
+          .catch(function(){ return null; })
+      );
+    }
+    var responses = await Promise.all(promises);
+    var allResults = [];
+    responses.forEach(function(d){ if (d && d.results) allResults = allResults.concat(d.results); });
+    if (allResults.length) {
+      _loraLatest = allResults;          // also feeds the overlay if user enables it
+      enrichAPRSISLoRaData(allResults);  // tag stations{} with signal data
+    }
+  } catch(e) { console.warn('LoRa signal enrich failed:', e); }
+}
+setTimeout(backgroundEnrichLoRaSignals, 5000);     // initial after 5s
+setInterval(backgroundEnrichLoRaSignals, 180000);  // refresh every 3min
 // Small delay before version check so page is fully loaded
 setTimeout(checkForUpdates, 2000);
 setInterval(checkForUpdates, 3600000); // re-check every hour
