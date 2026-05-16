@@ -246,6 +246,10 @@ body { background: var(--bg-base); color: var(--text-base); }
 .leaflet-popup-pane { z-index: 700 !important; }
 .leaflet-tooltip-pane { z-index: 800 !important; }
 </style>
+
+<!-- Cesium for 3D Globe (loaded on demand) -->
+<link rel="preconnect" href="https://cesium.com">
+
 </head>
 <body class="bg-gray-900 h-screen flex flex-col text-white font-sans overflow-hidden">
 
@@ -261,6 +265,7 @@ body { background: var(--bg-base); color: var(--text-base); }
   </div>
   <div class="flex space-x-1 text-xs font-medium">
     <button onclick="togglePanel('map')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Map</button>
+    <button onclick="toggle3DGlobe()" id="globe-btn" title="3D Globe View" class="px-3 py-1.5 bg-gradient-to-r from-indigo-900 to-purple-900 hover:from-indigo-700 hover:to-purple-700 rounded transition-colors">🌍 <span class="hidden md:inline">Globe</span></button>
     <button onclick="togglePanel('search')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Stations</button>
     <button onclick="shareCurrentView()" title="Copy link to this map view" class="px-2 py-1.5 bg-gray-800 hover:bg-cyan-700 rounded transition-colors text-xs">🔗</button>
     <button onclick="openSearchModal()" title="Smart Search (Ctrl+K)" class="px-2 py-1.5 bg-gray-800 hover:bg-cyan-700 rounded transition-colors text-xs">🔍 <kbd class="hidden md:inline-block ml-1 px-1 py-0.5 bg-gray-700 rounded text-[10px] border border-gray-600">⌘K</kbd></button>
@@ -269,7 +274,9 @@ body { background: var(--bg-base); color: var(--text-base); }
     <button onclick="togglePanel('wx')" class="px-3 py-1.5 bg-sky-900 hover:bg-sky-700 rounded transition-colors">🌦 Weather</button>
     <button onclick="togglePanel('watch')" class="px-3 py-1.5 bg-amber-900 hover:bg-amber-700 rounded transition-colors">👁 Watch</button>
     <button onclick="togglePanel('iss')" class="px-3 py-1.5 bg-indigo-900 hover:bg-indigo-700 rounded transition-colors">🛸 ISS</button>
+    <button onclick="togglePanel('objects')" class="px-3 py-1.5 bg-orange-900 hover:bg-orange-700 rounded transition-colors">📌 Objects</button>
     <button onclick="togglePanel('utils')" class="px-3 py-1.5 bg-teal-900 hover:bg-teal-700 rounded transition-colors">🔧 Utils</button>
+    <button onclick="togglePanel('mesh')" class="px-3 py-1.5 bg-violet-900 hover:bg-violet-700 rounded transition-colors">🕸 Mesh</button>
     <button onclick="togglePanel('leaderboard')" class="px-3 py-1.5 bg-rose-900 hover:bg-rose-700 rounded transition-colors">🏆 Board</button>
     <button onclick="togglePanel('help')" class="px-3 py-1.5 bg-green-900 hover:bg-green-700 rounded transition-colors">Help</button>
     <button onclick="openMemberPanel()" id="member-btn" class="px-3 py-1.5 bg-cyan-900 hover:bg-cyan-700 rounded transition-colors">👤 <span id="member-btn-label">Login</span></button>
@@ -383,6 +390,17 @@ body { background: var(--bg-base); color: var(--text-base); }
         <div id="connections-stats" class="hidden ml-5 text-[10px] text-cyan-400/70 font-mono"></div>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-pistar" onchange="redrawMap()"><span class="text-gray-500">●</span><span class="text-gray-400">Pi-Star / MMDVM</span></label>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-lora-aprsis" checked onchange="redrawMap()"><span class="text-fuchsia-400">●</span><span>LoRa (via APRS-IS)</span></label>
+        <label class="flex items-center space-x-2 cursor-pointer">
+          <input type="checkbox" id="show-seamarks" onchange="toggleSeamarks()">
+          <span class="text-cyan-400">⚓</span>
+          <span>Sea Marks (OpenSeaMap)</span>
+        </label>
+        <label class="flex items-center space-x-2 cursor-pointer">
+          <input type="checkbox" id="show-ships" onchange="toggleShips()">
+          <span class="text-blue-400">🚢</span>
+          <span>Live Ships (AIS)</span>
+        </label>
+        <div id="ais-status" class="hidden ml-5 text-[10px] text-blue-300 font-mono"></div>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-lora" onchange="toggleLoRa()"><span class="text-purple-400">●</span><span>LoRa Network</span></label>
         <div id="lora-sub-filters" class="hidden ml-5 space-y-1 mt-1 border-l-2 border-purple-900 pl-3">
           <label class="flex items-center space-x-2 cursor-pointer text-xs"><input type="checkbox" id="lora-show-igates"    checked onchange="renderLoRaData(_loraLatest)"><span class="text-purple-400">📡</span><span class="text-gray-400">iGates</span></label>
@@ -523,6 +541,181 @@ body { background: var(--bg-base); color: var(--text-base); }
 
 
     <!-- STATIONS LIST -->
+    
+    <!-- 3D Globe Panel -->
+    <div id="globe-panel" class="absolute inset-0 z-30 bg-gray-900 hidden">
+      <div id="cesium-container" style="width:100%;height:100%"></div>
+      <div class="absolute top-3 left-3 z-50 bg-gray-900/85 border border-purple-700 rounded p-3 shadow-2xl text-sm space-y-2 max-w-xs">
+        <div class="font-bold text-purple-400">🌍 3D Globe View</div>
+        <div class="text-xs text-gray-400">Drag to rotate · Scroll to zoom · Right-drag to pan</div>
+        <div class="flex items-center justify-between gap-2 text-xs">
+          <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="g-stations" checked onchange="g3dRedraw()"> Stations</label>
+          <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="g-iss" checked onchange="g3dRedraw()"> ISS</label>
+          <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="g-trails" onchange="g3dRedraw()"> Trails</label>
+        </div>
+        <div class="text-xs">
+          <span id="g-stat" class="text-gray-500"></span>
+        </div>
+        <button onclick="toggle3DGlobe()" class="w-full bg-gray-800 hover:bg-gray-700 rounded py-1 text-xs">Close 3D View</button>
+      </div>
+    </div>
+
+    
+    <!-- APRS Objects Panel -->
+    <div id="objects-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
+      <div class="max-w-5xl mx-auto space-y-4 pb-12">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-bold text-orange-400">📌 APRS Objects &amp; Items</h2>
+          <div class="flex items-center gap-2">
+            <button onclick="openCreateObject()" id="obj-create-btn" class="bg-orange-700 hover:bg-orange-600 px-4 py-2 rounded text-sm font-bold">+ Create Object</button>
+            <button onclick="loadObjects()" class="bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded text-sm">🔄</button>
+          </div>
+        </div>
+
+        <p id="obj-auth-warn" class="hidden text-xs bg-amber-900/40 border border-amber-700 rounded p-3 text-amber-300">
+          ⚠ Sign in as a member to create or edit APRS objects. Objects are transmitted to APRS-IS with your callsign as the originator.
+        </p>
+
+        <div class="bg-gray-800 rounded border border-gray-700">
+          <div class="p-2 bg-gray-700 border-b border-gray-600 font-bold text-xs uppercase">Active Objects <span id="obj-count" class="text-gray-500 font-normal normal-case ml-2"></span></div>
+          <table class="w-full text-left text-xs">
+            <thead class="bg-gray-800 text-gray-400 uppercase">
+              <tr>
+                <th class="p-2">Name</th>
+                <th class="p-2">Owner</th>
+                <th class="p-2">Position</th>
+                <th class="p-2">Symbol</th>
+                <th class="p-2">Comment</th>
+                <th class="p-2">Last Seen</th>
+                <th class="p-2"></th>
+              </tr>
+            </thead>
+            <tbody id="objects-list" class="divide-y divide-gray-700"></tbody>
+          </table>
+        </div>
+
+        <p class="text-xs text-gray-500">APRS objects are temporary points pushed to the network with a name, position and comment. Commonly used for events, emergencies, search-and-rescue, repeater locations, and net meeting points. They expire after a set time unless re-beaconed.</p>
+      </div>
+    </div>
+
+    <!-- Create/Edit Object Modal -->
+    <div id="obj-modal" class="hidden fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/70" onclick="if(event.target===this)closeObjModal()">
+      <div class="bg-gray-900 border border-orange-700 rounded-xl shadow-2xl w-full max-w-2xl">
+        <div class="flex items-center justify-between p-4 border-b border-gray-700">
+          <h2 class="text-lg font-bold text-orange-400" id="obj-modal-title">📌 Create APRS Object</h2>
+          <button onclick="closeObjModal()" class="text-gray-400 hover:text-white">✕</button>
+        </div>
+        <div class="p-4 space-y-3 text-sm">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Object Name * (max 9 chars)</label>
+              <input type="text" id="obj-name" maxlength="9" class="w-full bg-gray-800 border border-gray-700 rounded p-2 uppercase outline-none">
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Type</label>
+              <select id="obj-type" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none">
+                <option value="object">Object (recommended)</option>
+                <option value="item">Item</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Latitude *</label>
+              <input type="number" id="obj-lat" step="any" placeholder="53.7392" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none">
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Longitude *</label>
+              <input type="number" id="obj-lon" step="any" placeholder="-1.5992" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none">
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Symbol Table</label>
+              <select id="obj-symtable" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none">
+                <option value="/">/  Primary</option>
+                <option value="\">\  Alternate</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Symbol Code</label>
+              <select id="obj-symcode" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none">
+                <option value="!">!  Police</option>
+                <option value=""">"  Reserved</option>
+                <option value="#">#  Digi</option>
+                <option value="$">$  Phone</option>
+                <option value="%">%  Generic</option>
+                <option value="&">&amp;  HF Gateway</option>
+                <option value="*">*  Snowmobile</option>
+                <option value="+">+  Red Cross</option>
+                <option value="-" selected>−  House</option>
+                <option value=">">&gt;  Car</option>
+                <option value="?">?  Info Kiosk</option>
+                <option value="E">E  Event</option>
+                <option value="F">F  Farm Vehicle</option>
+                <option value="O">O  Balloon</option>
+                <option value="W">W  Weather Station</option>
+                <option value="X">X  Helicopter</option>
+                <option value="b">b  Bicycle</option>
+                <option value="h">h  Hospital</option>
+                <option value="j">j  Jeep</option>
+                <option value="k">k  Truck</option>
+                <option value="l">l  Laptop</option>
+                <option value="r">r  Repeater</option>
+                <option value="s">s  Ship</option>
+                <option value="t">t  Truck Stop</option>
+                <option value="u">u  Truck (18-wheel)</option>
+                <option value="v">v  Van</option>
+              </select>
+            </div>
+            <div class="col-span-2">
+              <label class="text-xs text-gray-400 block mb-1">Comment (max 36 chars)</label>
+              <input type="text" id="obj-comment" maxlength="36" placeholder="Event details, status, etc." class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none">
+            </div>
+            <div class="col-span-2 flex items-center gap-3 bg-gray-800 p-3 rounded">
+              <label class="flex items-center gap-2 text-xs">
+                <input type="checkbox" id="obj-killed">
+                <span>Mark as killed (deletes the object - APRS network will stop showing it)</span>
+              </label>
+            </div>
+          </div>
+          <p class="text-xs text-amber-400">⚠ This object will be transmitted to APRS-IS with YOUR callsign as the originator. It will be visible to everyone on the network. Use responsibly.</p>
+          <div class="flex gap-2">
+            <button onclick="submitObject()" id="obj-submit" class="flex-1 bg-orange-700 hover:bg-orange-600 px-4 py-2 rounded font-bold">📡 Transmit to APRS-IS</button>
+            <button onclick="closeObjModal()" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded">Cancel</button>
+          </div>
+          <div id="obj-result" class="hidden text-xs p-2 rounded"></div>
+        </div>
+      </div>
+    </div>
+
+    
+    <!-- Mesh Network Panel -->
+    <div id="mesh-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4">
+      <div class="max-w-6xl mx-auto flex flex-col h-full">
+        <div class="flex items-center justify-between mb-2 flex-shrink-0">
+          <div>
+            <h2 class="text-xl font-bold text-violet-400">🕸 APRS Mesh Network</h2>
+            <p class="text-xs text-gray-500">Force-directed graph of digipeater relay relationships. Drag nodes. Larger = more relayed. Lines show recent relay activity.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="rebuildMesh()" class="text-xs bg-violet-700 hover:bg-violet-600 px-3 py-1.5 rounded font-bold">🔄 Rebuild</button>
+            <select id="mesh-filter" onchange="rebuildMesh()" class="text-xs bg-gray-800 border border-gray-700 rounded p-1.5">
+              <option value="all">All stations</option>
+              <option value="digi">Digipeaters only</option>
+              <option value="moving">Moving stations</option>
+            </select>
+            <span id="mesh-stat" class="text-xs text-gray-500 font-mono"></span>
+          </div>
+        </div>
+        <div class="flex-1 bg-gray-950 rounded border border-violet-900 overflow-hidden relative">
+          <svg id="mesh-svg" class="absolute inset-0 w-full h-full"></svg>
+          <div id="mesh-tooltip" class="hidden absolute bg-gray-900 border border-violet-700 rounded p-2 text-xs pointer-events-none shadow-xl z-50" style="max-width:280px"></div>
+          <div class="absolute bottom-3 left-3 bg-gray-900/85 rounded p-2 text-xs space-y-1">
+            <div><span class="inline-block w-3 h-3 rounded-full bg-violet-500 mr-1"></span> Digipeater</div>
+            <div><span class="inline-block w-3 h-3 rounded-full bg-cyan-500 mr-1"></span> Station</div>
+            <div><span class="inline-block w-3 h-3 rounded-full bg-amber-500 mr-1"></span> Hub (high traffic)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="search-panel" class="absolute inset-0 z-20 bg-gray-900 hidden p-4 overflow-y-auto">
       <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h2 class="text-lg font-bold">Latest Heard Stations</h2>
@@ -699,6 +892,18 @@ body { background: var(--bg-base); color: var(--text-base); }
             </button>
           </div>
         </div>
+
+        <!-- Smart Alert Rules -->
+        <div class="bg-gray-800 p-4 rounded border border-amber-900 mb-3">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-sm font-bold text-amber-400">⚡ Smart Alerts</h3>
+            <button onclick="addAlertRule()" class="text-xs bg-amber-700 hover:bg-amber-600 px-2 py-1 rounded">+ Add Rule</button>
+          </div>
+          <p class="text-xs text-gray-500 mb-2">Trigger notifications based on conditions. Rules run in your browser - no server required. They check on every received packet.</p>
+          <div id="alert-rules-list" class="space-y-1 text-xs"></div>
+        </div>
+
+        
 
         <div class="bg-gray-800 p-4 rounded border border-gray-700">
           <p class="text-xs text-gray-400 mb-3">
@@ -2859,6 +3064,7 @@ body { background: var(--bg-base); color: var(--text-base); }
     <div class="flex items-center justify-between p-3 border-t border-gray-700 flex-shrink-0 bg-gray-900 rounded-b-xl">
       <button onclick="centreOnDetailStation()" class="text-xs bg-blue-800 hover:bg-blue-700 px-3 py-1.5 rounded text-white">📍 Show on Map</button>
       <button id="detail-track-btn" onclick="toggleTrackFromDetail()" class="text-xs bg-cyan-800 hover:bg-cyan-700 px-3 py-1.5 rounded text-white">📡 Track</button>
+        <button onclick="showTripHistory()" id="detail-trip-btn" class="text-xs bg-emerald-800 hover:bg-emerald-700 px-3 py-1.5 rounded text-white" title="Show full trip with detected stops">🛣 Trip</button>
       <button onclick="showPathOnMapFromDetail()" class="text-xs bg-purple-800 hover:bg-purple-700 px-3 py-1.5 rounded text-white">🔗 Show Path</button>
       <button onclick="openMsgToStation()" class="text-xs bg-green-800 hover:bg-green-700 px-3 py-1.5 rounded text-white">✉ Send Message</button>
     </div>
@@ -8711,6 +8917,1111 @@ function drawTrendChart(canvasId, data, color) {
 // Just call trendTrack from anywhere we see a packet
 setInterval(renderTrends, 5000);
 
+
+// ─── 3D Globe View (CesiumJS) ─────────────────────────────────────────────────
+// Loaded on demand to avoid initial page weight (~2MB)
+var _cesiumLoaded   = false;
+var _cesiumViewer   = null;
+var _g3dActive      = false;
+var _g3dEntities    = { stations: [], iss: null, trails: [] };
+var _g3dRefreshTimer = null;
+
+function toggle3DGlobe() {
+  if (_g3dActive) {
+    document.getElementById('globe-panel').classList.add('hidden');
+    document.getElementById('map-panel').classList.remove('hidden');
+    document.getElementById('globe-btn').classList.remove('ring-2','ring-purple-400');
+    if (_g3dRefreshTimer) { clearInterval(_g3dRefreshTimer); _g3dRefreshTimer = null; }
+    _g3dActive = false;
+    return;
+  }
+  document.getElementById('globe-btn').classList.add('ring-2','ring-purple-400');
+  // Hide all other panels
+  ['map-panel','search-panel','messages-panel','status-panel','weather-panel',
+   'watch-panel','iss-panel','utils-panel','leaderboard-panel','help-panel','admin-panel'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
+  document.getElementById('globe-panel').classList.remove('hidden');
+  _g3dActive = true;
+  initCesium();
+}
+
+function initCesium() {
+  if (_cesiumLoaded) { _cesiumViewer && _cesiumViewer.resize(); g3dRedraw(); return; }
+  document.getElementById('g-stat').innerText = 'Loading Cesium engine (one-time, ~2MB)...';
+  // Load Cesium dynamically
+  var cssLink = document.createElement('link');
+  cssLink.rel  = 'stylesheet';
+  cssLink.href = 'https://cdn.jsdelivr.net/npm/cesium@1.118/Build/Cesium/Widgets/widgets.css';
+  document.head.appendChild(cssLink);
+  var script = document.createElement('script');
+  script.src = 'https://cdn.jsdelivr.net/npm/cesium@1.118/Build/Cesium/Cesium.js';
+  script.onload = function() {
+    window.CESIUM_BASE_URL = 'https://cdn.jsdelivr.net/npm/cesium@1.118/Build/Cesium/';
+    _cesiumLoaded = true;
+    _cesiumViewer = new Cesium.Viewer('cesium-container', {
+      animation: false, baseLayerPicker: false, fullscreenButton: false,
+      geocoder: false, homeButton: false, infoBox: true, sceneModePicker: false,
+      selectionIndicator: true, timeline: false, navigationHelpButton: false,
+      navigationInstructionsInitiallyVisible: false, scene3DOnly: true,
+      imageryProvider: new Cesium.UrlTemplateImageryProvider({
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        credit: 'Esri World Imagery'
+      })
+    });
+    // Add starfield background
+    _cesiumViewer.scene.skyAtmosphere.show = true;
+    _cesiumViewer.scene.globe.enableLighting = true;
+    // Spin slightly for the wow factor on first load
+    _cesiumViewer.camera.flyHome(0);
+    document.getElementById('g-stat').innerText = '';
+    g3dRedraw();
+    _g3dRefreshTimer = setInterval(g3dRedraw, 30000);
+  };
+  script.onerror = function() {
+    document.getElementById('g-stat').innerText = 'Failed to load Cesium - check internet';
+  };
+  document.body.appendChild(script);
+}
+
+function g3dRedraw() {
+  if (!_cesiumViewer) return;
+  var showStations = document.getElementById('g-stations').checked;
+  var showIss      = document.getElementById('g-iss').checked;
+  var showTrails   = document.getElementById('g-trails').checked;
+
+  // Clear existing entities
+  _g3dEntities.stations.forEach(function(e){ _cesiumViewer.entities.remove(e); });
+  _g3dEntities.trails.forEach(function(e){ _cesiumViewer.entities.remove(e); });
+  _g3dEntities.stations = [];
+  _g3dEntities.trails = [];
+
+  if (showStations) {
+    var count = 0;
+    Object.keys(stations).forEach(function(call) {
+      var st = stations[call];
+      if (!st.positions || !st.positions.length) return;
+      var p = st.positions[st.positions.length-1];
+      var color;
+      if      (st.type === 'cwop')   color = Cesium.Color.LIME;
+      else if (st.type === 'ogn')    color = Cesium.Color.ORANGE;
+      else if (st.type === 'lora')   color = Cesium.Color.MAGENTA;
+      else if (st.type === 'pistar') color = Cesium.Color.GRAY;
+      else                           color = Cesium.Color.CYAN;
+      var ent = _cesiumViewer.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(p.lon, p.lat, (st.alt||0) + 1000),
+        point: { pixelSize: 5, color: color, outlineColor: Cesium.Color.WHITE, outlineWidth: 1,
+                 heightReference: Cesium.HeightReference.NONE },
+        label: { text: call, font: '11px monospace', fillColor: Cesium.Color.WHITE,
+                 outlineColor: Cesium.Color.BLACK, outlineWidth: 2, style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                 pixelOffset: new Cesium.Cartesian2(0, -16),
+                 distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 5000000),
+                 scale: 0.85 },
+        description: '<b>' + call + '</b><br>Type: ' + st.type + '<br>Last: ' + secondsAgo(st.lastHeard) + ' ago<br>' + (st.raw ? '<code style="font-size:10px">' + escapeHtml(st.raw) + '</code>' : '')
+      });
+      _g3dEntities.stations.push(ent);
+      count++;
+
+      if (showTrails && st.positions.length > 1) {
+        var pts = [];
+        st.positions.forEach(function(pos){ pts.push(pos.lon, pos.lat, 5000); });
+        var trail = _cesiumViewer.entities.add({
+          polyline: {
+            positions: Cesium.Cartesian3.fromDegreesArrayHeights(pts),
+            width: 2, material: color, clampToGround: false
+          }
+        });
+        _g3dEntities.trails.push(trail);
+      }
+    });
+    document.getElementById('g-stat').innerText = count + ' stations rendered';
+  }
+
+  // ISS
+  if (_g3dEntities.iss) { _cesiumViewer.entities.remove(_g3dEntities.iss); _g3dEntities.iss = null; }
+  if (showIss && typeof _iss !== 'undefined' && _iss && _iss.lat) {
+    _g3dEntities.iss = _cesiumViewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(_iss.lon, _iss.lat, (_iss.altitude||408) * 1000),
+      point: { pixelSize: 12, color: Cesium.Color.YELLOW, outlineColor: Cesium.Color.BLACK, outlineWidth: 2 },
+      label: { text: '🛸 ISS', font: '13px monospace', fillColor: Cesium.Color.YELLOW,
+               outlineColor: Cesium.Color.BLACK, outlineWidth: 2,
+               style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+               pixelOffset: new Cesium.Cartesian2(0, -22) },
+      description: 'International Space Station<br>Altitude: ~408 km<br>Speed: ~28000 km/h'
+    });
+  }
+}
+
+
+
+// ─── APRS Object Manager ──────────────────────────────────────────────────────
+async function loadObjects() {
+  try {
+    var r = await fetch(location.origin + '/api/objects');
+    if (!r.ok) return;
+    var objs = await r.json();
+    renderObjects(objs);
+  } catch(e) { console.warn('Load objects:', e); }
+}
+
+function renderObjects(objs) {
+  var tbody = document.getElementById('objects-list');
+  document.getElementById('obj-count').innerText = (objs.length || 0) + ' active';
+  if (!objs || !objs.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-500">No active objects</td></tr>';
+    return;
+  }
+  tbody.innerHTML = objs.map(function(o) {
+    var ago = secondsAgo(o.ts);
+    var isMine = _memberSession && _memberSession.callsign &&
+                 ((o.from||'').split('-')[0] === _memberSession.callsign.split('-')[0]);
+    var actions = '<button onclick="focusObject(\''+(o.name||'').replace(/[\\\']/g,'')+'\')" class="text-xs text-cyan-400 hover:underline">📍</button>';
+    if (isMine) {
+      actions += ' <button onclick="editObject(\''+(o.name||'').replace(/[\\\']/g,'')+'\')" class="text-xs text-amber-400 hover:underline ml-2">✏</button>';
+      actions += ' <button onclick="killObject(\''+(o.name||'').replace(/[\\\']/g,'')+'\')" class="text-xs text-red-400 hover:underline ml-2">🗑</button>';
+    }
+    return '<tr class="hover:bg-gray-900">'
+      + '<td class="p-2 font-bold font-mono text-orange-300">' + escapeHtml(o.name||'') + '</td>'
+      + '<td class="p-2 font-mono text-blue-400">' + escapeHtml(o.from||'') + (isMine ? ' <span class="text-green-400">(mine)</span>' : '') + '</td>'
+      + '<td class="p-2 font-mono text-gray-400">' + (o.lat ? o.lat.toFixed(4) + ', ' + o.lon.toFixed(4) : '-') + '</td>'
+      + '<td class="p-2 font-mono">' + (o.sym || '-') + '</td>'
+      + '<td class="p-2 text-gray-300">' + escapeHtml(o.comment||'') + '</td>'
+      + '<td class="p-2 text-gray-500">' + ago + ' ago</td>'
+      + '<td class="p-2">' + actions + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+function focusObject(name) {
+  var o = (window._lastObjects||[]).find(function(x){return x.name===name;});
+  if (!o || !o.lat) {
+    // Refresh and try
+    loadObjects().then(function(){
+      var o2 = (window._lastObjects||[]).find(function(x){return x.name===name;});
+      if (o2 && o2.lat) { togglePanel('map'); setTimeout(function(){ map.setView([o2.lat,o2.lon], 12); }, 100); }
+    });
+    return;
+  }
+  togglePanel('map');
+  setTimeout(function(){ map.setView([o.lat,o.lon], 12); }, 100);
+}
+
+function openCreateObject() {
+  if (!_memberSession) {
+    document.getElementById('obj-auth-warn').classList.remove('hidden');
+    return;
+  }
+  document.getElementById('obj-auth-warn').classList.add('hidden');
+  document.getElementById('obj-modal-title').innerText = '📌 Create APRS Object';
+  ['obj-name','obj-lat','obj-lon','obj-comment'].forEach(function(id){
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('obj-killed').checked = false;
+  document.getElementById('obj-result').classList.add('hidden');
+  // Default position: map centre
+  try {
+    var c = map.getCenter();
+    document.getElementById('obj-lat').value = c.lat.toFixed(4);
+    document.getElementById('obj-lon').value = c.lng.toFixed(4);
+  } catch(e) {}
+  document.getElementById('obj-modal').classList.remove('hidden');
+}
+
+function editObject(name) {
+  var o = (window._lastObjects||[]).find(function(x){return x.name===name;});
+  if (!o) return;
+  document.getElementById('obj-modal-title').innerText = '✏ Edit ' + name;
+  document.getElementById('obj-name').value = o.name;
+  document.getElementById('obj-name').disabled = true;
+  document.getElementById('obj-lat').value = o.lat || '';
+  document.getElementById('obj-lon').value = o.lon || '';
+  document.getElementById('obj-comment').value = o.comment || '';
+  if (o.sym && o.sym.length >= 2) {
+    document.getElementById('obj-symtable').value = o.sym[0];
+    var symSel = document.getElementById('obj-symcode');
+    for (var i = 0; i < symSel.options.length; i++) {
+      if (symSel.options[i].value === o.sym[1]) { symSel.selectedIndex = i; break; }
+    }
+  }
+  document.getElementById('obj-killed').checked = false;
+  document.getElementById('obj-result').classList.add('hidden');
+  document.getElementById('obj-modal').classList.remove('hidden');
+}
+
+function killObject(name) {
+  if (!confirm('Send a kill packet for "' + name + '"? This tells APRS network to stop displaying it.')) return;
+  editObject(name);
+  document.getElementById('obj-killed').checked = true;
+  // Auto submit
+  setTimeout(submitObject, 300);
+}
+
+function closeObjModal() {
+  document.getElementById('obj-modal').classList.add('hidden');
+  document.getElementById('obj-name').disabled = false;
+}
+
+async function submitObject() {
+  if (!_memberSession) { alert('Please sign in as a member first'); return; }
+  var name = document.getElementById('obj-name').value.trim().toUpperCase();
+  var lat  = parseFloat(document.getElementById('obj-lat').value);
+  var lon  = parseFloat(document.getElementById('obj-lon').value);
+  var sym  = document.getElementById('obj-symtable').value + document.getElementById('obj-symcode').value;
+  var cmt  = document.getElementById('obj-comment').value.trim();
+  var killed = document.getElementById('obj-killed').checked;
+  var resEl = document.getElementById('obj-result');
+  if (!name || isNaN(lat) || isNaN(lon)) {
+    resEl.className = 'text-xs p-2 rounded bg-red-900/30 border border-red-700 text-red-300';
+    resEl.innerText = 'Name, latitude and longitude are required';
+    resEl.classList.remove('hidden');
+    return;
+  }
+  document.getElementById('obj-submit').disabled = true;
+  document.getElementById('obj-submit').innerText = 'Transmitting...';
+
+  try {
+    var r = await fetch(location.origin + '/api/member/object', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Member-Token': _memberSession.token },
+      body: JSON.stringify({
+        name: name, lat: lat, lon: lon, sym: sym, comment: cmt,
+        killed: killed, type: document.getElementById('obj-type').value
+      })
+    });
+    var d = await r.json();
+    if (r.ok) {
+      resEl.className = 'text-xs p-2 rounded bg-green-900/30 border border-green-700 text-green-300';
+      resEl.innerText = '✓ Object ' + (killed ? 'killed' : 'transmitted') + ': ' + (d.packet || name);
+      resEl.classList.remove('hidden');
+      setTimeout(function(){
+        closeObjModal();
+        loadObjects();
+      }, 1500);
+    } else {
+      resEl.className = 'text-xs p-2 rounded bg-red-900/30 border border-red-700 text-red-300';
+      resEl.innerText = '✗ ' + (d.error || 'Failed to transmit');
+      resEl.classList.remove('hidden');
+    }
+  } catch(e) {
+    resEl.className = 'text-xs p-2 rounded bg-red-900/30 border border-red-700 text-red-300';
+    resEl.innerText = '✗ Network error: ' + e.message;
+    resEl.classList.remove('hidden');
+  } finally {
+    document.getElementById('obj-submit').disabled = false;
+    document.getElementById('obj-submit').innerText = '📡 Transmit to APRS-IS';
+  }
+}
+
+// Hook into togglePanel to load on open
+(function(){
+  var _prevT = togglePanel;
+  togglePanel = function(name) {
+    _prevT(name);
+    if (name === 'objects') loadObjects();
+  };
+})();
+
+// Track latest objects for editing
+fetch(location.origin + '/api/objects').then(function(r){return r.ok ? r.json() : [];}).then(function(d){window._lastObjects = d;}).catch(function(){});
+
+
+
+// ─── Mesh Network Visualisation ───────────────────────────────────────────────
+// Custom force-directed graph (no D3 dependency) - shows digipeater relationships
+// Built from packet path data already in stations{}
+
+var _meshNodes = {};
+var _meshLinks = [];
+var _meshAnim  = null;
+var _meshDrag  = null;
+var _meshSvg   = null;
+
+function rebuildMesh() {
+  if (document.getElementById('mesh-panel').classList.contains('hidden')) return;
+  var filter = document.getElementById('mesh-filter').value;
+  buildMeshGraph(filter);
+  renderMesh();
+  if (!_meshAnim) startMeshAnim();
+}
+
+function buildMeshGraph(filter) {
+  _meshNodes = {};
+  _meshLinks = [];
+  var linkMap = {};
+
+  Object.keys(stations).forEach(function(call) {
+    var st = stations[call];
+    if (!st.raw) return;
+    if (filter === 'moving' && (!st.positions || st.positions.length < 2)) return;
+
+    // Parse path
+    var gt = st.raw.indexOf('>'), col = st.raw.indexOf(':');
+    if (gt < 0 || col < 0) return;
+    var hops = st.raw.slice(gt+1, col).split(',').slice(1);
+
+    var usedHops = hops.filter(function(h) {
+      if (!h.endsWith('*')) return false;
+      var c = h.replace('*','');
+      if (c.startsWith('WIDE')||c.startsWith('TRACE')||c.startsWith('qA')||c==='TCPIP') return false;
+      return true;
+    }).map(function(h){ return h.replace('*',''); });
+
+    if (filter === 'digi' && !usedHops.length) return;
+    if (!usedHops.length && filter !== 'all') return;
+
+    // Add station node
+    if (!_meshNodes[call]) {
+      _meshNodes[call] = { id: call, type: 'station', count: 0,
+        x: 400 + Math.random()*200, y: 300 + Math.random()*200, vx: 0, vy: 0 };
+    }
+    _meshNodes[call].count++;
+
+    // Add digi nodes and links
+    usedHops.forEach(function(digi) {
+      if (!_meshNodes[digi]) {
+        _meshNodes[digi] = { id: digi, type: 'digi', count: 0,
+          x: 400 + Math.random()*200, y: 300 + Math.random()*200, vx: 0, vy: 0 };
+      }
+      _meshNodes[digi].count += 3; // digis weighted higher
+      _meshNodes[digi].type = 'digi';
+
+      var key = call + '|' + digi;
+      if (!linkMap[key]) {
+        linkMap[key] = { source: call, target: digi, weight: 1 };
+        _meshLinks.push(linkMap[key]);
+      } else {
+        linkMap[key].weight++;
+      }
+    });
+  });
+
+  // Cap to top 200 nodes by count for performance
+  var nodeArr = Object.values(_meshNodes).sort(function(a,b){ return b.count - a.count; });
+  if (nodeArr.length > 200) {
+    var keep = {};
+    nodeArr.slice(0, 200).forEach(function(n){ keep[n.id] = true; });
+    var newNodes = {};
+    nodeArr.slice(0, 200).forEach(function(n){ newNodes[n.id] = n; });
+    _meshNodes = newNodes;
+    _meshLinks = _meshLinks.filter(function(l){ return keep[l.source] && keep[l.target]; });
+  }
+
+  // Mark hubs (top 10% by count)
+  if (nodeArr.length > 5) {
+    var thresh = nodeArr[Math.floor(nodeArr.length * 0.1)].count;
+    Object.values(_meshNodes).forEach(function(n){
+      if (n.count >= thresh && n.type === 'digi') n.type = 'hub';
+    });
+  }
+
+  document.getElementById('mesh-stat').innerText =
+    Object.keys(_meshNodes).length + ' nodes · ' + _meshLinks.length + ' links';
+}
+
+function renderMesh() {
+  var svg = document.getElementById('mesh-svg');
+  _meshSvg = svg;
+  var rect = svg.getBoundingClientRect();
+  var W = rect.width, H = rect.height;
+
+  // Initialise positions near centre if all at origin
+  Object.values(_meshNodes).forEach(function(n){
+    if (n.x === 0 && n.y === 0) {
+      n.x = W/2 + (Math.random()-0.5) * 400;
+      n.y = H/2 + (Math.random()-0.5) * 300;
+    }
+  });
+
+  // Build SVG
+  var linksHtml = _meshLinks.map(function(l, i) {
+    var a = _meshNodes[l.source], b = _meshNodes[l.target];
+    if (!a || !b) return '';
+    return '<line id="mlnk-'+i+'" stroke="#6366f1" stroke-opacity="0.25" stroke-width="'+Math.min(3, 0.5 + l.weight/5)+'" x1="'+a.x+'" y1="'+a.y+'" x2="'+b.x+'" y2="'+b.y+'"/>';
+  }).join('');
+
+  var nodesHtml = Object.values(_meshNodes).map(function(n) {
+    var color = n.type === 'hub' ? '#f59e0b' : n.type === 'digi' ? '#a78bfa' : '#22d3ee';
+    var radius = Math.min(14, 3 + Math.sqrt(n.count));
+    return '<g id="mnod-'+n.id+'" data-id="'+n.id+'" style="cursor:grab" '
+      + 'onmousedown="meshDragStart(event,\''+n.id.replace(/[\\\']/g,'')+'\')" '
+      + 'onmouseover="meshTooltip(event,\''+n.id.replace(/[\\\']/g,'')+'\')" '
+      + 'onmouseout="meshTipOut()"'
+      + 'onclick="openDetail(\''+n.id.replace(/[\\\']/g,'')+'\')">'
+      + '<circle cx="'+n.x+'" cy="'+n.y+'" r="'+radius+'" fill="'+color+'" stroke="#000" stroke-width="1.5" fill-opacity="0.9"/>'
+      + (radius > 6 ? '<text x="'+n.x+'" y="'+(n.y+radius+10)+'" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="monospace" pointer-events="none">'+n.id+'</text>' : '')
+      + '</g>';
+  }).join('');
+
+  svg.innerHTML = linksHtml + nodesHtml;
+}
+
+function startMeshAnim() {
+  function step() {
+    if (document.getElementById('mesh-panel').classList.contains('hidden')) {
+      _meshAnim = null;
+      return;
+    }
+    physicsStep();
+    updateMeshPositions();
+    _meshAnim = requestAnimationFrame(step);
+  }
+  _meshAnim = requestAnimationFrame(step);
+}
+
+function physicsStep() {
+  if (!_meshSvg) return;
+  var rect = _meshSvg.getBoundingClientRect();
+  var W = rect.width, H = rect.height;
+  var nodes = Object.values(_meshNodes);
+
+  // Repulsion - all-pairs O(n^2) but n is capped at 200
+  nodes.forEach(function(a) {
+    nodes.forEach(function(b) {
+      if (a === b) return;
+      var dx = a.x - b.x, dy = a.y - b.y;
+      var d2 = dx*dx + dy*dy + 0.01;
+      var force = 1200 / d2;
+      a.vx += dx * force * 0.05;
+      a.vy += dy * force * 0.05;
+    });
+  });
+
+  // Attraction along links
+  _meshLinks.forEach(function(l) {
+    var a = _meshNodes[l.source], b = _meshNodes[l.target];
+    if (!a || !b) return;
+    var dx = b.x - a.x, dy = b.y - a.y;
+    var k = 0.005 * Math.log(1 + l.weight);
+    a.vx += dx * k;
+    a.vy += dy * k;
+    b.vx -= dx * k;
+    b.vy -= dy * k;
+  });
+
+  // Centring + damping + clip
+  nodes.forEach(function(n) {
+    if (n === _meshDrag) { n.vx = 0; n.vy = 0; return; }
+    n.vx += (W/2 - n.x) * 0.0008;
+    n.vy += (H/2 - n.y) * 0.0008;
+    n.vx *= 0.85;
+    n.vy *= 0.85;
+    n.x += n.vx;
+    n.y += n.vy;
+    if (n.x < 20) { n.x = 20; n.vx = 0; }
+    if (n.y < 20) { n.y = 20; n.vy = 0; }
+    if (n.x > W-20) { n.x = W-20; n.vx = 0; }
+    if (n.y > H-20) { n.y = H-20; n.vy = 0; }
+  });
+}
+
+function updateMeshPositions() {
+  if (!_meshSvg) return;
+  _meshLinks.forEach(function(l, i) {
+    var line = document.getElementById('mlnk-'+i);
+    if (!line) return;
+    var a = _meshNodes[l.source], b = _meshNodes[l.target];
+    if (!a || !b) return;
+    line.setAttribute('x1', a.x);
+    line.setAttribute('y1', a.y);
+    line.setAttribute('x2', b.x);
+    line.setAttribute('y2', b.y);
+  });
+  Object.values(_meshNodes).forEach(function(n) {
+    var g = document.getElementById('mnod-'+n.id);
+    if (!g) return;
+    var c = g.querySelector('circle');
+    if (c) { c.setAttribute('cx', n.x); c.setAttribute('cy', n.y); }
+    var t = g.querySelector('text');
+    if (t) { t.setAttribute('x', n.x); t.setAttribute('y', n.y + 18); }
+  });
+}
+
+function meshDragStart(ev, id) {
+  ev.preventDefault();
+  var n = _meshNodes[id];
+  if (!n) return;
+  _meshDrag = n;
+  document.addEventListener('mousemove', meshDragMove);
+  document.addEventListener('mouseup', meshDragEnd);
+}
+function meshDragMove(ev) {
+  if (!_meshDrag || !_meshSvg) return;
+  var rect = _meshSvg.getBoundingClientRect();
+  _meshDrag.x = ev.clientX - rect.left;
+  _meshDrag.y = ev.clientY - rect.top;
+}
+function meshDragEnd() {
+  _meshDrag = null;
+  document.removeEventListener('mousemove', meshDragMove);
+  document.removeEventListener('mouseup', meshDragEnd);
+}
+
+function meshTooltip(ev, id) {
+  var n = _meshNodes[id];
+  var tip = document.getElementById('mesh-tooltip');
+  if (!n || !tip) return;
+  var st = stations[id];
+  tip.innerHTML = '<div class="font-bold text-violet-300 mb-1">' + id + '</div>'
+    + '<div class="text-xs text-gray-400">' + n.type + ' · activity score: ' + n.count + '</div>'
+    + (st ? '<div class="text-xs mt-1 text-gray-500">Last: ' + secondsAgo(st.lastHeard) + ' ago</div>' : '')
+    + '<div class="text-xs text-cyan-400 mt-1">Click to inspect →</div>';
+  tip.style.left = (ev.offsetX + 15) + 'px';
+  tip.style.top  = (ev.offsetY + 15) + 'px';
+  tip.classList.remove('hidden');
+}
+function meshTipOut() {
+  document.getElementById('mesh-tooltip').classList.add('hidden');
+}
+
+// Auto-rebuild when panel opens
+(function(){
+  var _prevTP = togglePanel;
+  togglePanel = function(name) {
+    _prevTP(name);
+    if (name === 'mesh') setTimeout(rebuildMesh, 100);
+  };
+})();
+
+
+
+// ─── Marine / Maritime Overlays ───────────────────────────────────────────────
+var _seamarkLayer = null;
+var _aisWs = null;
+var _aisShips = {};
+var _aisLayer = null;
+
+function toggleSeamarks() {
+  var enabled = document.getElementById('show-seamarks').checked;
+  if (enabled) {
+    if (!_seamarkLayer) {
+      _seamarkLayer = L.tileLayer(
+        'https://t1.openseamap.org/seamark/{z}/{x}/{y}.png',
+        { maxZoom: 18, opacity: 0.85, attribution: '© OpenSeaMap contributors' }
+      );
+    }
+    _seamarkLayer.addTo(map);
+  } else if (_seamarkLayer) {
+    map.removeLayer(_seamarkLayer);
+  }
+}
+
+function toggleShips() {
+  var enabled = document.getElementById('show-ships').checked;
+  var statusEl = document.getElementById('ais-status');
+  if (enabled) {
+    statusEl.classList.remove('hidden');
+    statusEl.innerText = 'Need a free aisstream.io API key';
+    setupAISFeed();
+  } else {
+    statusEl.classList.add('hidden');
+    if (_aisWs) { _aisWs.close(); _aisWs = null; }
+    if (_aisLayer) { map.removeLayer(_aisLayer); _aisLayer = null; }
+    _aisShips = {};
+  }
+}
+
+function setupAISFeed() {
+  var key = localStorage.getItem('aisstream-key');
+  if (!key) {
+    key = prompt('AIS Stream needs a free API key from aisstream.io.\n\nGet one at: https://aisstream.io (takes 30 seconds)\n\nPaste it here:');
+    if (!key || key.length < 10) {
+      document.getElementById('show-ships').checked = false;
+      toggleShips();
+      return;
+    }
+    localStorage.setItem('aisstream-key', key.trim());
+    key = key.trim();
+  }
+  startAISWebSocket(key);
+}
+
+function startAISWebSocket(key) {
+  if (!_aisLayer) _aisLayer = L.layerGroup().addTo(map);
+  var statusEl = document.getElementById('ais-status');
+  statusEl.innerText = 'Connecting to aisstream.io...';
+  try {
+    _aisWs = new WebSocket('wss://stream.aisstream.io/v0/stream');
+    _aisWs.onopen = function() {
+      // Subscribe to ships in current map bounds
+      var b = map.getBounds();
+      var sub = {
+        APIKey: key,
+        BoundingBoxes: [[
+          [b.getSouth(), b.getWest()],
+          [b.getNorth(), b.getEast()]
+        ]],
+        FilterMessageTypes: ['PositionReport', 'ShipStaticData']
+      };
+      _aisWs.send(JSON.stringify(sub));
+      statusEl.innerText = 'Connected · 0 ships';
+    };
+    _aisWs.onmessage = function(ev) {
+      try {
+        var m = JSON.parse(ev.data);
+        if (m.MessageType === 'PositionReport' && m.Message && m.Message.PositionReport) {
+          var pr = m.Message.PositionReport;
+          var meta = m.MetaData || {};
+          var mmsi = meta.MMSI || pr.UserID;
+          if (!mmsi || !pr.Latitude || !pr.Longitude) return;
+          if (!_aisShips[mmsi]) {
+            _aisShips[mmsi] = { mmsi: mmsi, marker: null };
+          }
+          var s = _aisShips[mmsi];
+          s.lat = pr.Latitude; s.lon = pr.Longitude;
+          s.cog = pr.Cog; s.sog = pr.Sog; s.name = meta.ShipName || '';
+          s.ts = Date.now();
+          renderShip(s);
+          statusEl.innerText = 'Connected · ' + Object.keys(_aisShips).length + ' ships';
+        } else if (m.MessageType === 'ShipStaticData' && m.Message && m.Message.ShipStaticData) {
+          var sd = m.Message.ShipStaticData;
+          var meta = m.MetaData || {};
+          var mmsi = meta.MMSI || sd.UserID;
+          if (_aisShips[mmsi]) {
+            _aisShips[mmsi].name = sd.Name || _aisShips[mmsi].name;
+            _aisShips[mmsi].destination = sd.Destination;
+            _aisShips[mmsi].callsign = sd.CallSign;
+          }
+        }
+      } catch(e) { console.warn('AIS parse:', e); }
+    };
+    _aisWs.onerror = function() {
+      statusEl.innerText = 'AIS connection error - check API key';
+    };
+    _aisWs.onclose = function() {
+      statusEl.innerText = 'AIS disconnected';
+    };
+  } catch(e) {
+    statusEl.innerText = 'AIS failed: ' + e.message;
+  }
+}
+
+function renderShip(s) {
+  if (s.marker) {
+    s.marker.setLatLng([s.lat, s.lon]);
+  } else {
+    var rotation = (s.cog && s.cog < 360) ? s.cog : 0;
+    var icon = L.divIcon({
+      html: '<div style="transform:rotate('+rotation+'deg);font-size:18px;color:#60a5fa;text-shadow:0 0 3px #000">🚢</div>',
+      className: '', iconSize: [22,22], iconAnchor: [11,11]
+    });
+    s.marker = L.marker([s.lat, s.lon], { icon: icon })
+      .bindPopup(function() {
+        return '<div style="font-family:monospace;font-size:12px;min-width:200px">'
+          + '<div style="color:#60a5fa;font-weight:bold;font-size:14px">🚢 ' + (s.name || 'Unknown') + '</div>'
+          + (s.callsign ? '<div>Callsign: ' + s.callsign + '</div>' : '')
+          + '<div>MMSI: ' + s.mmsi + '</div>'
+          + (s.sog ? '<div>Speed: ' + s.sog.toFixed(1) + ' kn (' + (s.sog*1.852*0.621371).toFixed(0) + ' mph)</div>' : '')
+          + (s.cog ? '<div>Course: ' + s.cog.toFixed(0) + '°</div>' : '')
+          + (s.destination ? '<div>Dest: ' + s.destination + '</div>' : '')
+          + '<div style="font-size:10px;color:#6b7280;margin-top:4px">Last update: ' + Math.floor((Date.now()-s.ts)/1000) + 's ago</div>'
+          + '</div>';
+      });
+    s.marker.addTo(_aisLayer);
+  }
+}
+
+// Reset AIS subscription on map move (so new area gets ships)
+setTimeout(function() {
+  if (typeof map !== 'undefined' && map.on) {
+    map.on('moveend', function() {
+      if (_aisWs && _aisWs.readyState === WebSocket.OPEN) {
+        var b = map.getBounds();
+        var key = localStorage.getItem('aisstream-key');
+        if (key) {
+          _aisWs.send(JSON.stringify({
+            APIKey: key,
+            BoundingBoxes: [[[b.getSouth(), b.getWest()],[b.getNorth(), b.getEast()]]],
+            FilterMessageTypes: ['PositionReport', 'ShipStaticData']
+          }));
+        }
+      }
+    });
+  }
+}, 2000);
+
+
+
+// ─── Smart Alert Rules ────────────────────────────────────────────────────────
+// Stored in localStorage. Evaluated on each incoming packet (cheap).
+var _alertRules = [];
+function loadAlertRules() {
+  try {
+    var saved = localStorage.getItem('aprs-alert-rules');
+    _alertRules = saved ? JSON.parse(saved) : [];
+  } catch(e) { _alertRules = []; }
+  renderAlertRules();
+}
+function saveAlertRulesStorage() {
+  localStorage.setItem('aprs-alert-rules', JSON.stringify(_alertRules));
+}
+function renderAlertRules() {
+  var el = document.getElementById('alert-rules-list');
+  if (!el) return;
+  if (!_alertRules.length) {
+    el.innerHTML = '<p class="text-gray-600 text-center py-3">No alert rules - click "+ Add Rule" to create one</p>';
+    return;
+  }
+  el.innerHTML = _alertRules.map(function(r, i) {
+    var desc = describeRule(r);
+    return '<div class="bg-gray-900 rounded p-2 flex items-center justify-between">'
+      + '<div class="flex-1 min-w-0">'
+      + '<div class="font-bold text-amber-300">' + escapeHtml(r.name || ('Rule '+(i+1))) + '</div>'
+      + '<div class="text-gray-500 text-[10px]">' + desc + '</div>'
+      + '</div>'
+      + '<div class="flex items-center gap-1">'
+      + '<label class="text-[10px] cursor-pointer"><input type="checkbox" ' + (r.enabled !== false ? 'checked' : '') + ' onchange="toggleRule(' + i + ',this.checked)"> on</label>'
+      + '<button onclick="deleteRule(' + i + ')" class="text-red-400 hover:text-red-300 ml-1">✕</button>'
+      + '</div>'
+      + '</div>';
+  }).join('');
+}
+function describeRule(r) {
+  switch(r.type) {
+    case 'callsign_appears': return 'Callsign appears: ' + (r.callsign||'?');
+    case 'callsign_silent':  return (r.callsign||'?') + ' silent for ' + (r.minutes||60) + ' min';
+    case 'geofence_enter':   return 'Enter zone: ' + (r.callsign||'any') + ' near ' + (r.lat||'?').toString().slice(0,7) + ',' + (r.lon||'?').toString().slice(0,7) + ' (' + (r.radius||5) + ' mi)';
+    case 'geofence_exit':    return 'Exit zone: ' + (r.callsign||'any') + ' from ' + (r.lat||'?').toString().slice(0,7) + ',' + (r.lon||'?').toString().slice(0,7);
+    case 'comment_contains': return 'Comment contains: "' + (r.keyword||'') + '"';
+    case 'wx_threshold':     return 'WX ' + (r.callsign||'any') + ' ' + (r.field||'tempC') + ' ' + (r.op||'<') + ' ' + (r.value||0);
+    default: return r.type;
+  }
+}
+function addAlertRule() {
+  document.getElementById('alert-rule-modal').classList.remove('hidden');
+  document.getElementById('rule-name').value = '';
+  document.getElementById('rule-type').value = 'callsign_appears';
+  updateRuleForm();
+}
+function closeRuleModal() {
+  document.getElementById('alert-rule-modal').classList.add('hidden');
+}
+function updateRuleForm() {
+  var t = document.getElementById('rule-type').value;
+  var p = document.getElementById('rule-params');
+  if (t === 'callsign_appears') {
+    p.innerHTML = '<div><label class="text-xs text-gray-400 block mb-1">Callsign (wildcards OK: G*, M0ABC*)</label>'
+      + '<input type="text" id="r-callsign" class="w-full bg-gray-800 border border-gray-700 rounded p-2 uppercase outline-none"></div>';
+  } else if (t === 'callsign_silent') {
+    p.innerHTML = '<div class="grid grid-cols-2 gap-2">'
+      + '<div><label class="text-xs text-gray-400 block mb-1">Callsign</label><input type="text" id="r-callsign" class="w-full bg-gray-800 border border-gray-700 rounded p-2 uppercase outline-none"></div>'
+      + '<div><label class="text-xs text-gray-400 block mb-1">Silent for (min)</label><input type="number" id="r-minutes" value="60" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none"></div>'
+      + '</div>';
+  } else if (t === 'geofence_enter' || t === 'geofence_exit') {
+    p.innerHTML = '<div><label class="text-xs text-gray-400 block mb-1">Callsign (or * for any)</label>'
+      + '<input type="text" id="r-callsign" value="*" class="w-full bg-gray-800 border border-gray-700 rounded p-2 uppercase outline-none"></div>'
+      + '<div class="grid grid-cols-3 gap-2 mt-2">'
+      + '<div><label class="text-xs text-gray-400 block mb-1">Lat</label><input type="number" step="any" id="r-lat" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none"></div>'
+      + '<div><label class="text-xs text-gray-400 block mb-1">Lon</label><input type="number" step="any" id="r-lon" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none"></div>'
+      + '<div><label class="text-xs text-gray-400 block mb-1">Radius mi</label><input type="number" id="r-radius" value="5" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none"></div>'
+      + '</div>'
+      + '<button onclick="useMapCentre()" class="text-xs bg-blue-700 hover:bg-blue-600 px-2 py-1 rounded mt-1">Use current map centre</button>';
+  } else if (t === 'comment_contains') {
+    p.innerHTML = '<div><label class="text-xs text-gray-400 block mb-1">Keyword (case-insensitive)</label>'
+      + '<input type="text" id="r-keyword" placeholder="e.g. emergency, sar, qrt" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none"></div>';
+  } else if (t === 'wx_threshold') {
+    p.innerHTML = '<div class="grid grid-cols-2 gap-2">'
+      + '<div><label class="text-xs text-gray-400 block mb-1">WX Callsign (or * for any)</label><input type="text" id="r-callsign" value="*" class="w-full bg-gray-800 border border-gray-700 rounded p-2 uppercase outline-none"></div>'
+      + '<div><label class="text-xs text-gray-400 block mb-1">Field</label><select id="r-field" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none"><option value="tempC">Temperature °C</option><option value="windSpd">Wind km/h</option><option value="windGust">Gust km/h</option><option value="humidity">Humidity %</option><option value="pressure">Pressure hPa</option><option value="rain1h">Rain mm/h</option></select></div>'
+      + '<div><label class="text-xs text-gray-400 block mb-1">Operator</label><select id="r-op" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none"><option value="<">below</option><option value=">">above</option><option value="=">equals</option></select></div>'
+      + '<div><label class="text-xs text-gray-400 block mb-1">Value</label><input type="number" step="any" id="r-value" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none"></div>'
+      + '</div>';
+  }
+}
+function useMapCentre() {
+  try {
+    var c = map.getCenter();
+    document.getElementById('r-lat').value = c.lat.toFixed(4);
+    document.getElementById('r-lon').value = c.lng.toFixed(4);
+  } catch(e) {}
+}
+function saveAlertRule() {
+  var r = {
+    name: document.getElementById('rule-name').value.trim(),
+    type: document.getElementById('rule-type').value,
+    action: document.getElementById('rule-action').value,
+    enabled: true,
+    created: Date.now()
+  };
+  var typeFields = {
+    'callsign_appears': ['callsign'],
+    'callsign_silent':  ['callsign', 'minutes'],
+    'geofence_enter':   ['callsign', 'lat', 'lon', 'radius'],
+    'geofence_exit':    ['callsign', 'lat', 'lon', 'radius'],
+    'comment_contains': ['keyword'],
+    'wx_threshold':     ['callsign', 'field', 'op', 'value']
+  };
+  (typeFields[r.type] || []).forEach(function(f) {
+    var el = document.getElementById('r-' + f);
+    if (el) {
+      var v = el.value;
+      if (el.type === 'number') v = parseFloat(v);
+      if (f === 'callsign' || f === 'keyword') v = (v||'').toString().toUpperCase().trim();
+      r[f] = v;
+    }
+  });
+  if (!r.name) r.name = describeRule(r);
+  _alertRules.push(r);
+  saveAlertRulesStorage();
+  renderAlertRules();
+  closeRuleModal();
+}
+function deleteRule(i) {
+  if (!confirm('Delete this alert rule?')) return;
+  _alertRules.splice(i, 1);
+  saveAlertRulesStorage();
+  renderAlertRules();
+}
+function toggleRule(i, on) {
+  _alertRules[i].enabled = on;
+  saveAlertRulesStorage();
+}
+
+// Evaluate rules - called from handleIncoming via a hook
+var _ruleState = {};  // per-rule state (last-seen positions, last-trigger times)
+function checkAlertRules(call, st) {
+  if (!_alertRules.length || !st) return;
+  _alertRules.forEach(function(r, idx) {
+    if (r.enabled === false) return;
+    var key = 'r' + idx + '_' + call;
+    var now = Date.now();
+    // Throttle: same rule for same call max once per 5 min
+    if (_ruleState[key] && now - _ruleState[key] < 300000) return;
+    var fired = false, msg = '';
+
+    if (r.type === 'callsign_appears') {
+      if (!matchCall(call, r.callsign)) return;
+      if (!_ruleState['seen_'+call]) {
+        fired = true; msg = call + ' is now online';
+        _ruleState['seen_'+call] = now;
+      }
+    } else if (r.type === 'comment_contains') {
+      if (!st.raw) return;
+      if (st.raw.toUpperCase().includes(r.keyword)) {
+        fired = true; msg = call + ': "' + r.keyword + '" detected';
+      }
+    } else if (r.type === 'geofence_enter' || r.type === 'geofence_exit') {
+      if (!matchCall(call, r.callsign === '*' ? '*' : r.callsign)) return;
+      if (!st.positions || !st.positions.length) return;
+      var p = st.positions[st.positions.length-1];
+      var d = haversineKm(p.lat, p.lon, r.lat, r.lon) * 0.621371; // mi
+      var inside = d <= r.radius;
+      var prev = _ruleState['fence_'+call+'_'+idx];
+      if (prev !== undefined) {
+        if (r.type === 'geofence_enter' && !prev && inside) {
+          fired = true; msg = call + ' entered zone (' + d.toFixed(1) + ' mi from centre)';
+        } else if (r.type === 'geofence_exit' && prev && !inside) {
+          fired = true; msg = call + ' left zone (' + d.toFixed(1) + ' mi from centre)';
+        }
+      }
+      _ruleState['fence_'+call+'_'+idx] = inside;
+    } else if (r.type === 'wx_threshold') {
+      if (!matchCall(call, r.callsign === '*' ? '*' : r.callsign)) return;
+      if (!st.raw) return;
+      var wx = parseWXPacket ? parseWXPacket(st.raw) : null;
+      if (!wx || wx[r.field] === undefined) return;
+      var v = wx[r.field];
+      var hit = (r.op === '<') ? v < r.value : (r.op === '>') ? v > r.value : Math.abs(v - r.value) < 0.5;
+      if (hit) { fired = true; msg = call + ' WX: ' + r.field + ' = ' + v + ' (threshold ' + r.op + ' ' + r.value + ')'; }
+    }
+
+    if (fired) {
+      _ruleState[key] = now;
+      triggerAlert(r, msg);
+    }
+  });
+}
+function matchCall(call, pattern) {
+  if (!pattern) return false;
+  if (pattern === '*' || pattern === call) return true;
+  if (pattern.endsWith('*')) return call.startsWith(pattern.slice(0,-1));
+  return false;
+}
+function triggerAlert(rule, msg) {
+  console.log('🔔 Alert:', rule.name, '-', msg);
+  if (rule.action === 'notify' || rule.action === 'both') {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('APRS Alert: ' + rule.name, { body: msg, icon: '/favicon.ico' });
+    }
+  }
+  if (rule.action === 'beep' || rule.action === 'both') {
+    try {
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      var osc = ctx.createOscillator(); osc.frequency.value = 800;
+      var gain = ctx.createGain(); gain.gain.value = 0.15;
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + 0.2);
+    } catch(e) {}
+  }
+}
+
+// Periodic check for callsign_silent rules
+setInterval(function() {
+  if (!_alertRules.length) return;
+  var now = Date.now();
+  _alertRules.forEach(function(r, idx) {
+    if (r.enabled === false || r.type !== 'callsign_silent') return;
+    var st = stations[r.callsign];
+    if (!st) return;
+    var silentMs = now - (st.lastHeard*1000);
+    var threshold = r.minutes * 60 * 1000;
+    var key = 'silent_'+idx;
+    if (silentMs > threshold && !_ruleState[key]) {
+      _ruleState[key] = now;
+      triggerAlert(r, r.callsign + ' silent for ' + r.minutes + '+ minutes');
+    } else if (silentMs <= threshold) {
+      _ruleState[key] = 0; // reset
+    }
+  });
+}, 60000);
+
+// Hook into updateStation
+(function() {
+  var _origUS = updateStation;
+  updateStation = function(call, path, lat, lon, phg, ts, raw, sym) {
+    _origUS.apply(this, arguments);
+    try { checkAlertRules(call, stations[call]); } catch(e) {}
+  };
+})();
+
+// Load on init
+loadAlertRules();
+
+
+
+// ─── Trip Reconstruction ──────────────────────────────────────────────────────
+var _tripLayers = [];
+
+function showTripHistory() {
+  if (!_detailCall) return;
+  var st = stations[_detailCall];
+  if (!st || !st.positions || st.positions.length < 2) {
+    alert('No movement history for ' + _detailCall);
+    return;
+  }
+  var trip = computeTrip(st.positions);
+  document.getElementById('trip-call').innerText = _detailCall;
+  document.getElementById('trip-dist').innerText  = (trip.distKm*0.621371).toFixed(1) + ' mi (' + trip.distKm.toFixed(1) + ' km)';
+  document.getElementById('trip-dur').innerText   = formatDuration(trip.durationSec);
+  document.getElementById('trip-avg').innerText   = trip.avgKph > 0 ? Math.round(trip.avgKph*0.621371) + ' mph' : '-';
+  document.getElementById('trip-stops').innerText = trip.stops.length;
+  var stopsList = document.getElementById('trip-stops-list');
+  if (trip.stops.length) {
+    stopsList.innerHTML = '<div class="font-bold text-amber-400 mb-1">Detected stops:</div>' + trip.stops.map(function(s, i) {
+      var dur = formatDuration((s.endTs - s.startTs));
+      return '<div class="bg-gray-800 rounded p-2">'
+        + '<span class="text-amber-300 font-bold">Stop ' + (i+1) + ':</span> '
+        + '<span class="text-gray-300">' + dur + '</span> '
+        + '<span class="text-gray-500">at ' + s.lat.toFixed(4) + ',' + s.lon.toFixed(4) + '</span>'
+        + ' <span class="text-gray-500">from ' + new Date(s.startTs*1000).toLocaleTimeString() + ' to ' + new Date(s.endTs*1000).toLocaleTimeString() + '</span>'
+        + '</div>';
+    }).join('');
+  } else {
+    stopsList.innerHTML = '<p class="text-gray-500 text-center py-2">No stops detected (continuous movement)</p>';
+  }
+  // Save trip for "View on Map"
+  window._currentTrip = { call: _detailCall, positions: st.positions, stops: trip.stops };
+  document.getElementById('trip-modal').classList.remove('hidden');
+}
+
+function computeTrip(positions) {
+  if (!positions || positions.length < 2) return { distKm: 0, durationSec: 0, avgKph: 0, stops: [] };
+  // Sort by time
+  var pts = positions.slice().sort(function(a,b){ return a.ts - b.ts; });
+  var distKm = 0;
+  for (var i = 1; i < pts.length; i++) {
+    distKm += haversineKm(pts[i-1].lat, pts[i-1].lon, pts[i].lat, pts[i].lon);
+  }
+  var durationSec = pts[pts.length-1].ts - pts[0].ts;
+  var avgKph = (durationSec > 0) ? (distKm / (durationSec / 3600)) : 0;
+
+  // Detect stops: consecutive points within 50m for 5+ min
+  var stops = [];
+  var i = 0;
+  while (i < pts.length) {
+    var clusterStart = i;
+    var j = i + 1;
+    while (j < pts.length) {
+      var d = haversineKm(pts[clusterStart].lat, pts[clusterStart].lon, pts[j].lat, pts[j].lon);
+      if (d > 0.05) break; // 50m
+      j++;
+    }
+    var dur = pts[j-1].ts - pts[clusterStart].ts;
+    if (dur >= 300 && j - clusterStart >= 2) { // 5+ min and 2+ points
+      stops.push({
+        lat: pts[clusterStart].lat, lon: pts[clusterStart].lon,
+        startTs: pts[clusterStart].ts, endTs: pts[j-1].ts
+      });
+    }
+    i = Math.max(j, i+1);
+  }
+  return { distKm: distKm, durationSec: durationSec, avgKph: avgKph, stops: stops };
+}
+
+function formatDuration(sec) {
+  if (sec < 60) return Math.round(sec) + 's';
+  if (sec < 3600) return Math.round(sec/60) + 'm';
+  var h = Math.floor(sec/3600);
+  var m = Math.round((sec%3600)/60);
+  return h + 'h ' + m + 'm';
+}
+
+function closeTripModal() {
+  document.getElementById('trip-modal').classList.add('hidden');
+}
+function closeTripModalShowMap() {
+  closeTripModal();
+  closeDetail();
+  togglePanel('map');
+  setTimeout(drawTripOnMap, 200);
+}
+function drawTripOnMap() {
+  clearTripFromMap();
+  var trip = window._currentTrip;
+  if (!trip) return;
+  var pts = trip.positions.slice().sort(function(a,b){ return a.ts - b.ts; });
+  var coords = pts.map(function(p){ return [p.lat, p.lon]; });
+  // Main trip line - thick rainbow gradient effect by drawing segments
+  for (var i = 1; i < coords.length; i++) {
+    var t = i / coords.length;
+    var color = 'hsl(' + Math.round(140 - t * 70) + ', 80%, 50%)'; // green to orange
+    var seg = L.polyline([coords[i-1], coords[i]], { color: color, weight: 5, opacity: 0.85 });
+    seg.addTo(map); _tripLayers.push(seg);
+  }
+  // Start marker - green flag
+  var startM = L.marker(coords[0], { icon: L.divIcon({
+    html: '<div style="background:#22c55e;color:#000;padding:3px 8px;border:2px solid #000;border-radius:4px;font-weight:bold;font-size:11px;font-family:monospace">START</div>',
+    iconSize: [60,22], iconAnchor: [30, 11], className: ''
+  })}).bindPopup('Trip start: ' + new Date(pts[0].ts*1000).toLocaleString()).addTo(map);
+  _tripLayers.push(startM);
+  // End marker - red flag
+  var endM = L.marker(coords[coords.length-1], { icon: L.divIcon({
+    html: '<div style="background:#ef4444;color:#000;padding:3px 8px;border:2px solid #000;border-radius:4px;font-weight:bold;font-size:11px;font-family:monospace">END</div>',
+    iconSize: [50,22], iconAnchor: [25, 11], className: ''
+  })}).bindPopup('Trip end: ' + new Date(pts[pts.length-1].ts*1000).toLocaleString()).addTo(map);
+  _tripLayers.push(endM);
+  // Stops - yellow circles
+  trip.stops.forEach(function(s, i) {
+    var c = L.circleMarker([s.lat, s.lon], {
+      radius: 10, color: '#fbbf24', fillColor: '#fef3c7', fillOpacity: 0.9, weight: 3
+    }).bindPopup('<b>Stop ' + (i+1) + '</b><br>Duration: ' + formatDuration(s.endTs - s.startTs) + '<br>' + new Date(s.startTs*1000).toLocaleTimeString() + ' - ' + new Date(s.endTs*1000).toLocaleTimeString());
+    c.addTo(map); _tripLayers.push(c);
+  });
+  // Fit bounds
+  if (coords.length) map.fitBounds(L.latLngBounds(coords), { padding: [50, 50] });
+  // Toast
+  var toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:#065f46;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:bold;z-index:99999;box-shadow:0 4px 12px rgba(0,0,0,0.5)';
+  toast.innerText = '🛣 Trip drawn for ' + trip.call + ' — click stops for details';
+  document.body.appendChild(toast);
+  setTimeout(function(){ toast.remove(); }, 5000);
+}
+function clearTripFromMap() {
+  _tripLayers.forEach(function(l){ try { map.removeLayer(l); } catch(e){} });
+  _tripLayers = [];
+}
+
+
 // ─── LoRa-APRS Integration ────────────────────────────────────────────────────
 // Global LoRa-APRS network overlay using lora-aprs.live API
 // Markers and signal-quality lines colour-coded by SNR
@@ -9500,6 +10811,71 @@ setInterval(checkForUpdates, 3600000); // re-check every hour
         <button onclick="stopTimelapse()"  id="tl-stop"  class="flex-1 bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded font-bold text-sm">⏹ Stop</button>
       </div>
       <p class="text-[10px] text-gray-500 text-center">Note: Live packets pause during replay and resume after</p>
+    </div>
+  </div>
+</div>
+<!-- Smart Alert Rule Modal -->
+<div id="alert-rule-modal" class="hidden fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/70" onclick="if(event.target===this)closeRuleModal()">
+  <div class="bg-gray-900 border border-amber-700 rounded-xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between p-4 border-b border-gray-700">
+      <h2 class="text-lg font-bold text-amber-400">⚡ New Alert Rule</h2>
+      <button onclick="closeRuleModal()" class="text-gray-400 hover:text-white">✕</button>
+    </div>
+    <div class="p-4 space-y-3 text-sm">
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Rule Name</label>
+        <input type="text" id="rule-name" placeholder="e.g. Friend arrives in London" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Trigger Type</label>
+        <select id="rule-type" onchange="updateRuleForm()" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none">
+          <option value="callsign_appears">Callsign appears (first heard / online)</option>
+          <option value="callsign_silent">Callsign silent (no beacon for X minutes)</option>
+          <option value="geofence_enter">Station enters geographic area</option>
+          <option value="geofence_exit">Station exits geographic area</option>
+          <option value="comment_contains">Comment contains keyword</option>
+          <option value="wx_threshold">Weather threshold crossed</option>
+        </select>
+      </div>
+      <div id="rule-params" class="space-y-2"></div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Action</label>
+        <select id="rule-action" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none">
+          <option value="notify">Browser notification</option>
+          <option value="beep">Audio beep</option>
+          <option value="both">Both (notification + beep)</option>
+        </select>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="saveAlertRule()" class="flex-1 bg-amber-700 hover:bg-amber-600 px-4 py-2 rounded font-bold">Save Rule</button>
+        <button onclick="closeRuleModal()" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- Trip History Modal -->
+<div id="trip-modal" class="hidden fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/70" onclick="if(event.target===this)closeTripModal()">
+  <div class="bg-gray-900 border border-emerald-700 rounded-xl shadow-2xl w-full max-w-2xl">
+    <div class="flex items-center justify-between p-4 border-b border-gray-700">
+      <div>
+        <h2 class="text-lg font-bold text-emerald-400">🛣 Trip Reconstruction</h2>
+        <p id="trip-call" class="text-xs text-gray-500 font-mono"></p>
+      </div>
+      <button onclick="closeTripModal()" class="text-gray-400 hover:text-white">✕</button>
+    </div>
+    <div class="p-4 space-y-3 text-sm">
+      <div class="grid grid-cols-4 gap-2 text-xs">
+        <div class="bg-gray-800 rounded p-2"><div class="text-gray-400">Distance</div><div id="trip-dist" class="font-mono font-bold text-emerald-300">-</div></div>
+        <div class="bg-gray-800 rounded p-2"><div class="text-gray-400">Duration</div><div id="trip-dur" class="font-mono font-bold text-emerald-300">-</div></div>
+        <div class="bg-gray-800 rounded p-2"><div class="text-gray-400">Avg Speed</div><div id="trip-avg" class="font-mono font-bold text-emerald-300">-</div></div>
+        <div class="bg-gray-800 rounded p-2"><div class="text-gray-400">Stops</div><div id="trip-stops" class="font-mono font-bold text-amber-300">-</div></div>
+      </div>
+      <p class="text-xs text-gray-500">A stop is detected when the station stays within ~50m for 5+ minutes. Stops are shown as yellow circles on the map.</p>
+      <div id="trip-stops-list" class="space-y-1 text-xs max-h-48 overflow-y-auto"></div>
+      <div class="flex gap-2 pt-2 border-t border-gray-700">
+        <button onclick="closeTripModalShowMap()" class="flex-1 bg-emerald-700 hover:bg-emerald-600 px-4 py-2 rounded font-bold">View on Map</button>
+        <button onclick="clearTripFromMap()" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-sm">Clear</button>
+      </div>
     </div>
   </div>
 </div></body>

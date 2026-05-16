@@ -72,6 +72,7 @@ var (
 	}
 
 	upstreamConnected int32
+	upstreamTx        = make(chan string, 100)
 
 	metrics = struct {
 		StartTime   time.Time
@@ -267,6 +268,7 @@ func main() {
 	http.HandleFunc("/api/member/profile",  handleMemberProfile)
 	http.HandleFunc("/api/member/messages", handleMemberMessages)
 	http.HandleFunc("/api/member/password", handleMemberPassword)
+	http.HandleFunc("/api/member/object", handleMemberObject)
 	// Public MOTD
 	http.HandleFunc("/api/motd", handlePublicMOTD)
 	// Admin features
@@ -460,6 +462,24 @@ func connectUpstream() {
 	}
 	atomic.StoreInt32(&upstreamConnected, 1)
 	log.Printf("Connected to APRS-IS upstream: %s (verified=%v)", addr, verified)
+
+	// Goroutine to forward any pending TX packets (e.g. member-created objects)
+	txDone := make(chan struct{})
+	go func() {
+		defer close(txDone)
+		for {
+			select {
+			case pkt := <-upstreamTx:
+				if _, err := fmt.Fprintf(conn, "%s\r\n", pkt); err != nil {
+					log.Printf("Upstream TX failed: %v", err)
+					return
+				}
+				log.Printf("Upstream TX: %s", pkt)
+			case <-time.After(1 * time.Hour):
+				return // safety exit
+			}
+		}
+	}()
 
 	done := make(chan struct{})
 	go func() {
@@ -2601,6 +2621,126 @@ func handleMemberPassword(w http.ResponseWriter, r *http.Request) {
 }
 
 // storeMessageForMember stores an incoming APRS message for a registered member
+
+// handleMemberObject lets a logged-in member transmit an APRS object
+// (or item, or kill packet) to the APRS-IS network with their callsign.
+func handleMemberObject(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	token := r.Header.Get("X-Member-Token")
+	if token == "" {
+		if ck, err := r.Cookie("aprs-member-token"); err == nil { token = ck.Value }
+	}
+	memberStore.RLock()
+	sess, ok := memberStore.Sessions[token]
+	memberStore.RUnlock()
+	if !ok || time.Now().After(sess.Expiry) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":"not authenticated"}`))
+		return
+	}
+
+	var req struct {
+		Name    string  `json:"name"`
+		Lat     float64 `json:"lat"`
+		Lon     float64 `json:"lon"`
+		Sym     string  `json:"sym"`
+		Comment string  `json:"comment"`
+		Killed  bool    `json:"killed"`
+		Type    string  `json:"type"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"bad json"}`, 400)
+		return
+	}
+
+	req.Name = strings.ToUpper(strings.TrimSpace(req.Name))
+	if len(req.Name) == 0 || len(req.Name) > 9 {
+		http.Error(w, `{"error":"name 1-9 chars required"}`, 400)
+		return
+	}
+	if req.Lat < -90 || req.Lat > 90 || req.Lon < -180 || req.Lon > 180 {
+		http.Error(w, `{"error":"invalid coordinates"}`, 400)
+		return
+	}
+	if len(req.Sym) != 2 {
+		req.Sym = "/-"
+	}
+	if len(req.Comment) > 36 {
+		req.Comment = req.Comment[:36]
+	}
+
+	name := req.Name
+	for len(name) < 9 {
+		name = name + " "
+	}
+
+	latStr, lonStr := formatAPRSPosition(req.Lat, req.Lon)
+
+	indicator := "*"
+	if req.Killed {
+		indicator = "_"
+	}
+
+	ts := time.Now().UTC().Format("021504") + "z"
+
+	payload := fmt.Sprintf(";%s%s%s%s%s%s%s",
+		name, indicator, ts, latStr, string(req.Sym[0]), lonStr, string(req.Sym[1]))
+	if req.Comment != "" {
+		payload += req.Comment
+	}
+
+	srcCall := strings.ToUpper(sess.Callsign)
+	packet := fmt.Sprintf("%s>APAGOR,TCPIP*:%s", srcCall, payload)
+
+	// Inject into broadcast (so local clients see it immediately)
+	select {
+	case broadcast <- packet:
+	default:
+	}
+
+	// Send upstream to APRS-IS via the upstreamTx channel (consumed by connectUpstream)
+	select {
+	case upstreamTx <- packet:
+	default:
+	}
+
+	auditLog(sess.Callsign, "member_object", req.Name,
+		fmt.Sprintf("lat=%.4f lon=%.4f sym=%s killed=%v", req.Lat, req.Lon, req.Sym, req.Killed),
+		r.RemoteAddr)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":     true,
+		"packet": packet,
+	})
+}
+
+// formatAPRSPosition converts decimal lat/lon to APRS uncompressed text format.
+
+func formatAPRSPosition(lat, lon float64) (string, string) {
+	latNS := "N"
+	if lat < 0 {
+		latNS = "S"
+		lat = -lat
+	}
+	lonEW := "E"
+	if lon < 0 {
+		lonEW = "W"
+		lon = -lon
+	}
+	latDeg := int(lat)
+	latMin := (lat - float64(latDeg)) * 60
+	lonDeg := int(lon)
+	lonMin := (lon - float64(lonDeg)) * 60
+	return fmt.Sprintf("%02d%05.2f%s", latDeg, latMin, latNS),
+		fmt.Sprintf("%03d%05.2f%s", lonDeg, lonMin, lonEW)
+}
+
+
 func storeMessageForMember(to, from, text, raw string, ts int64) {
 	toUpper := strings.ToUpper(strings.TrimSpace(to))
 	memberStoreMu.Lock()
