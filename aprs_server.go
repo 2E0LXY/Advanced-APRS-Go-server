@@ -217,6 +217,7 @@ type wsMessage struct {
 	Status   string      `json:"status,omitempty"`
 	Packet   string      `json:"packet,omitempty"`
 	Data     interface{} `json:"data,omitempty"`
+	Minutes  int         `json:"minutes,omitempty"`
 }
 
 
@@ -856,6 +857,12 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		switch in.Type {
+		case "replay_request":
+			// Client wants historical packets - send up to in.Minutes minutes back
+			minutes := in.Minutes
+			if minutes <= 0 { minutes = 60 }
+			if minutes > 120 { minutes = 120 }
+			go sendReplayToClient(client, minutes)
 		case "auth":
 			if verifyPasscode(in.Callsign, in.Passcode) {
 				client.authenticated = true
@@ -894,6 +901,74 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+
+// sendReplayToClient streams the last N minutes of packets to a single client
+// in response to a replay_request message. Non-blocking on the send channel.
+func sendReplayToClient(client *Client, minutes int) {
+	cutoff := time.Now().Add(-time.Duration(minutes) * time.Minute).Unix()
+
+	// Raw packet replay - filter by timestamp
+	rawRingMu.RLock()
+	replay := make([]RawEntry, 0, len(rawRing))
+	for _, e := range rawRing {
+		if e.Timestamp >= cutoff {
+			replay = append(replay, e)
+		}
+	}
+	rawRingMu.RUnlock()
+
+	// Tell client how many to expect
+	startData, _ := json.Marshal(wsMessage{
+		Type: "replay_start",
+		Data: map[string]int{"total": len(replay), "minutes": minutes},
+	})
+	select {
+	case client.send <- startData:
+	default:
+	}
+
+	for _, e := range replay {
+		msg := wsMessage{Type: "rx", Packet: e.Packet}
+		if parsed, ok := parsePacket(e.Packet); ok {
+			msg.Data = parsed
+		}
+		data, _ := json.Marshal(msg)
+		select {
+		case client.send <- data:
+		case <-time.After(2 * time.Second):
+			// Client too slow - abort this replay
+			return
+		}
+	}
+
+	// Message replay (also filtered)
+	msgStoreMu.RLock()
+	msgs := make([]MsgEntry, 0, len(msgStore))
+	for _, m := range msgStore {
+		if m.Timestamp >= cutoff {
+			msgs = append(msgs, m)
+		}
+	}
+	msgStoreMu.RUnlock()
+
+	for _, m := range msgs {
+		data, _ := json.Marshal(wsMessage{Type: "msg_history", Packet: m.Packet,
+			Callsign: m.From, Data: m})
+		select {
+		case client.send <- data:
+		default:
+		}
+	}
+
+	// Signal end of replay
+	doneData, _ := json.Marshal(wsMessage{Type: "replay_done",
+		Data: map[string]int{"packets": len(replay)}})
+	select {
+	case client.send <- doneData:
+	default:
+	}
+}
+
 
 func listenUDP() {
 	addr, err := net.ResolveUDPAddr("udp", ":14580")

@@ -339,6 +339,24 @@ body { background: var(--bg-base); color: var(--text-base); }
         <option value="21600">6 Hours</option>
       </select>
     </div>
+
+    <!-- Load History -->
+    <div>
+      <h3 class="text-xs uppercase text-gray-400 font-bold mb-2">📜 Load History</h3>
+      <div class="flex items-center space-x-2">
+        <select id="history-minutes" class="flex-1 bg-gray-700 p-1.5 rounded outline-none text-sm">
+          <option value="10">Last 10 Min</option>
+          <option value="30">Last 30 Min</option>
+          <option value="60" selected>Last 1 Hour</option>
+          <option value="120">Last 2 Hours</option>
+        </select>
+        <button onclick="requestReplay()" id="load-history-btn"
+                class="bg-blue-700 hover:bg-blue-600 disabled:bg-gray-600 disabled:cursor-not-allowed px-3 py-1.5 rounded text-sm font-bold">
+          Load
+        </button>
+      </div>
+      <p class="text-[10px] text-gray-500 mt-1">Map loads live packets only by default. Click Load to fetch history.</p>
+    </div>
     <div>
       <h3 class="text-xs uppercase text-gray-400 font-bold mb-2">Station Filters</h3>
       <div class="space-y-1">
@@ -3417,7 +3435,19 @@ function connectWS() {
       handleIncoming(d);
     } else if (d.type==='msg_history') {
       if (d.data) logMsgHistory(d.data);
+    } else if (d.type==='replay_start') {
+      // Server announced replay starting - set the total for progress bar
+      if (d.data && d.data.total) {
+        _replayTotal = d.data.total;
+        var lbl = document.getElementById('replay-label');
+        if (lbl) lbl.innerText = 'Loading ' + d.data.total + ' packets...';
+      }
+    } else if (d.type==='ws_ready') {
+      // Server is ready - we can request replay if needed
+      console.log('WebSocket ready, replay available on demand');
     } else if (d.type==='replay_done') {
+      var lbl = document.getElementById('replay-label');
+      if (lbl) lbl.innerText = 'Loaded ' + _replayPackets + ' packets ✓';
       finishReplay();
     }
   };
@@ -3625,9 +3655,37 @@ function redrawMap() {
       st.marker.off('click');
       st.marker.on('click',function(){openDetail(call);});
     }
-    const trailColor = st.type==='cwop'?'#10b981':st.type==='ogn'?'#f59e0b':st.type==='lora'?'#e879f9':'#3b82f6';
-    if (!st.polyline) st.polyline=L.polyline(lls,{color:trailColor,weight:2,opacity:0.5}).addTo(map);
-    else st.polyline.setLatLngs(lls);
+    // Trail rendering: only show for stations that have actually moved
+    // and have at least 2 positions. Use a thick blue line for visibility.
+    var hasMoved = false;
+    if (lls.length >= 2) {
+      // Check if total distance is meaningful (> 100m)
+      var totalKm = 0;
+      for (var li = 1; li < lls.length; li++) {
+        totalKm += haversineKm(lls[li-1][0], lls[li-1][1], lls[li][0], lls[li][1]);
+        if (totalKm > 0.1) { hasMoved = true; break; }
+      }
+    }
+    if (hasMoved) {
+      // Thick blue trail for moving stations - colour varies by type
+      var trailColor = st.type === 'cwop' ? '#10b981' :
+                       st.type === 'ogn'  ? '#f59e0b' :
+                       st.type === 'lora' ? '#e879f9' :
+                       '#2563eb';  // strong blue for regular APRS movers
+      if (!st.polyline) {
+        st.polyline = L.polyline(lls, {
+          color: trailColor, weight: 4, opacity: 0.75,
+          lineJoin: 'round', lineCap: 'round'
+        }).bindTooltip(call + ' trail', { sticky: true }).addTo(map);
+      } else {
+        st.polyline.setLatLngs(lls);
+        st.polyline.setStyle({ color: trailColor, weight: 4, opacity: 0.75 });
+      }
+    } else if (st.polyline) {
+      // Station no longer moving - remove trail
+      map.removeLayer(st.polyline);
+      st.polyline = null;
+    }
     // Course/speed leader arrow
     if (st.movement && st.movement.spd > 0) {
       const rad = st.movement.cse * Math.PI / 180;
@@ -6493,15 +6551,64 @@ setInterval(function() {
 }, 30000);
 
 
-// ─── Replay Loading Overlay ───────────────────────────────────────────────────
-var _replayActive  = true;
-var _replayStart   = Date.now();
+// ─── Replay (User-Triggered) ──────────────────────────────────────────────────
+// Replay no longer runs automatically - user selects time window and clicks Load.
+var _replayActive  = false;
+var _replayStart   = 0;
 var _replayPackets = 0;
+var _replayTotal   = 0;
 var _replayTimer   = null;
 
-// Estimate ring buffer size from /api/status for progress bar
-// If we can't get it, animate indefinitely
+function requestReplay() {
+  if (_replayActive) {
+    console.log('Replay already in progress');
+    return;
+  }
+  var sel = document.getElementById('history-minutes');
+  var minutes = sel ? parseInt(sel.value, 10) : 60;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    alert('Not connected to server. Wait for connection then try again.');
+    return;
+  }
+  // Disable button while loading
+  var btn = document.getElementById('load-history-btn');
+  if (btn) { btn.disabled = true; btn.innerText = 'Loading...'; }
+
+  _replayActive = true;
+  _replayStart  = Date.now();
+  _replayPackets = 0;
+  _replayTotal  = 0;
+
+  // Show the small bottom-right indicator
+  var ov = document.getElementById('replay-overlay');
+  if (ov) ov.classList.remove('hidden');
+  var lbl = document.getElementById('replay-label');
+  if (lbl) lbl.innerText = 'Loading last ' + minutes + ' min...';
+
+  // Elapsed timer
+  if (_replayTimer) clearInterval(_replayTimer);
+  _replayTimer = setInterval(function() {
+    var el = document.getElementById('replay-elapsed');
+    if (el) el.innerText = ((Date.now() - _replayStart)/1000).toFixed(0) + 's';
+  }, 500);
+
+  // Hard timeout safety: 60 seconds max
+  setTimeout(function() {
+    if (_replayActive) {
+      console.warn('Replay timeout - force closing');
+      finishReplay();
+    }
+  }, 60000);
+
+  // Send request to server
+  ws.send(JSON.stringify({ type: 'replay_request', minutes: minutes }));
+}
+
+// Legacy auto-replay function - now a no-op (replay is user-triggered)
 async function initReplayProgress() {
+  return; // Replay is now triggered manually via the Load button
+}
+async function _unusedReplayInit() {
   // Show the small progress indicator (hidden by default)
   var ov = document.getElementById('replay-overlay');
   if (ov) ov.classList.remove('hidden');
@@ -6541,7 +6648,7 @@ async function initReplayProgress() {
 
 function updateReplayProgress() {
   _replayPackets++;
-  var total = window._replayTotal || 500;
+  var total = _replayTotal || window._replayTotal || 500;
   var pct   = Math.min(95, (_replayPackets / total) * 100);
   var bar   = document.getElementById('replay-bar');
   var pkts  = document.getElementById('replay-packets');
@@ -6555,6 +6662,10 @@ function finishReplay() {
   if (!_replayActive) return;  // Already done
   _replayActive = false;
   if (_replayTimer) { clearInterval(_replayTimer); _replayTimer = null; }
+
+  // Re-enable the Load button
+  var btn = document.getElementById('load-history-btn');
+  if (btn) { btn.disabled = false; btn.innerText = 'Load'; }
 
   // Complete the bar (turns green briefly)
   var bar = document.getElementById('replay-bar');
@@ -8494,7 +8605,7 @@ function renderLoRaData(results) {
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
-initReplayProgress();
+// initReplayProgress();  // disabled - user triggers replay via sidebar
 console.log('APRS Net JS loaded - build cache-bust-1');
 initTheme();
 initMemberSession();
