@@ -262,6 +262,8 @@ body { background: var(--bg-base); color: var(--text-base); }
   <div class="flex space-x-1 text-xs font-medium">
     <button onclick="togglePanel('map')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Map</button>
     <button onclick="togglePanel('search')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Stations</button>
+    <button onclick="shareCurrentView()" title="Copy link to this map view" class="px-2 py-1.5 bg-gray-800 hover:bg-cyan-700 rounded transition-colors text-xs">🔗</button>
+    <button onclick="openSearchModal()" title="Smart Search (Ctrl+K)" class="px-2 py-1.5 bg-gray-800 hover:bg-cyan-700 rounded transition-colors text-xs">🔍 <kbd class="hidden md:inline-block ml-1 px-1 py-0.5 bg-gray-700 rounded text-[10px] border border-gray-600">⌘K</kbd></button>
     <button onclick="togglePanel('messages')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Messages</button>
     <button onclick="togglePanel('status')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Status</button>
     <button onclick="togglePanel('wx')" class="px-3 py-1.5 bg-sky-900 hover:bg-sky-700 rounded transition-colors">🌦 Weather</button>
@@ -356,6 +358,7 @@ body { background: var(--bg-base); color: var(--text-base); }
         </button>
       </div>
       <p class="text-[10px] text-gray-500 mt-1">Map loads live packets only by default. Click Load to fetch history.</p>
+      <button onclick="openTimelapse()" class="w-full mt-2 bg-purple-800 hover:bg-purple-700 px-2 py-1.5 rounded text-xs font-bold">⏯ Time-Lapse Replay</button>
     </div>
     <div>
       <h3 class="text-xs uppercase text-gray-400 font-bold mb-2">Station Filters</h3>
@@ -634,6 +637,30 @@ body { background: var(--bg-base); color: var(--text-base); }
             <a id="stat-upstream-link" href="#" target="_blank" class="text-xs bg-blue-900 hover:bg-blue-800 px-2 py-1 rounded hidden">Monitor</a>
           </div>
         </div>
+        <!-- Activity Trends -->
+        <div class="bg-gray-800 rounded border border-gray-700 p-4">
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-sm font-bold text-cyan-400">📈 Activity Trends (last 60 min, this session)</p>
+            <span id="trend-summary" class="text-xs text-gray-500 font-mono"></span>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <p class="text-xs text-gray-400 mb-1">Packets / minute</p>
+              <canvas id="trend-pps" width="400" height="80" class="w-full h-20 bg-gray-900 rounded"></canvas>
+            </div>
+            <div>
+              <p class="text-xs text-gray-400 mb-1">Unique stations / minute</p>
+              <canvas id="trend-stations" width="400" height="80" class="w-full h-20 bg-gray-900 rounded"></canvas>
+            </div>
+          </div>
+          <div class="grid grid-cols-4 gap-2 mt-3 text-xs">
+            <div class="bg-gray-900 rounded p-2"><div class="text-gray-500">Peak pkts/min</div><div id="trend-peak-pps" class="font-mono text-cyan-300 font-bold">0</div></div>
+            <div class="bg-gray-900 rounded p-2"><div class="text-gray-500">Avg pkts/min</div><div id="trend-avg-pps" class="font-mono text-cyan-300 font-bold">0</div></div>
+            <div class="bg-gray-900 rounded p-2"><div class="text-gray-500">Total stations seen</div><div id="trend-total-stations" class="font-mono text-blue-300 font-bold">0</div></div>
+            <div class="bg-gray-900 rounded p-2"><div class="text-gray-500">Total packets</div><div id="trend-total-pkts" class="font-mono text-green-300 font-bold">0</div></div>
+          </div>
+        </div>
+
         <div class="bg-gray-800 rounded border border-gray-700">
           <div class="p-2 bg-gray-700 border-b border-gray-600 font-bold uppercase text-xs tracking-widest text-gray-300">Connected Clients <span id="client-count" class="text-gray-500 normal-case font-normal"></span></div>
           <table class="w-full text-left text-xs"><thead class="bg-gray-800 text-gray-400 uppercase"><tr><th class="p-2">Callsign</th><th class="p-2">Type</th><th class="p-2">Software</th><th class="p-2">Address</th><th class="p-2">Status</th></tr></thead>
@@ -2711,6 +2738,7 @@ body { background: var(--bg-base); color: var(--text-base); }
         </div>
       </div>
       <div class="flex items-center space-x-2">
+        <button id="detail-share" onclick="shareStation(_detailCall)" class="text-xs bg-cyan-900 hover:bg-cyan-700 px-3 py-1.5 rounded text-cyan-200" title="Copy link to this station">🔗</button>
         <a id="detail-qrz" href="#" target="_blank" class="text-xs bg-blue-900 hover:bg-blue-800 px-2 py-1 rounded text-blue-300">QRZ ↗</a>
         <a id="detail-aprsfi" href="#" target="_blank" class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-gray-300">aprs.fi ↗</a>
         <button id="detail-watch-btn" onclick="toggleWatchFromDetail()" class="text-xs bg-amber-800 hover:bg-amber-700 px-2 py-1 rounded text-amber-300">👁 Watch</button>
@@ -3161,6 +3189,30 @@ let currentTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.p
 let gridLayer = null, nightLayer = null, statusInterval = null, adminAuth = null;
 let stations = {}, ws, myCallsign = '', msgCounter = 1, packetCount = 0;
 
+// ─── Performance: Throttled redraw ────────────────────────────────────────────
+// redrawMap is expensive (iterates all stations, updates Leaflet markers).
+// Without throttling it's called on every packet - bursts of 100+ packets/sec
+// from APRS-IS would queue up redundant work. Throttle to max 4x/second.
+var _redrawPending = false;
+var _redrawLast    = 0;
+function redrawMapThrottled() {
+  if (_redrawPending) return;
+  var now = Date.now();
+  var minGap = 250;
+  var elapsed = now - _redrawLast;
+  if (elapsed >= minGap) {
+    _redrawLast = now;
+    redrawMap();
+  } else {
+    _redrawPending = true;
+    setTimeout(function() {
+      _redrawPending = false;
+      _redrawLast = Date.now();
+      redrawMap();
+    }, minGap - elapsed);
+  }
+}
+
 // ─── Unit Conversion Helpers ──────────────────────────────────────────────────
 // Display values in Miles (km), MPH (km/h), C (F)
 function fmtDist(km) {
@@ -3532,7 +3584,7 @@ function handleIncoming(data) {
       var _wx = parseWXPacket(p.raw);
       if (_wx && Object.keys(_wx).length) updateWXHistory(p.call, _wx, p.ts);
     }
-    redrawMap();
+    redrawMapThrottled();
   }
 }
 
@@ -3552,6 +3604,7 @@ function parseCseSpd(raw) {
 }
 
 function updateStation(call,path,lat,lon,phg,ts,raw,sym) {
+  if (typeof trendTrack === 'function') trendTrack(call);
   if (!stations[call]) stations[call]={positions:[],lastHeard:0,raw:'',type:determineType(call,raw||''),sym:sym||''};
   const pa = stations[call].positions;
   if (!pa.length||pa[pa.length-1].ts!==ts) pa.push({lat,lon,ts});
@@ -3611,6 +3664,11 @@ function redrawMap() {
   const showPiStar = (document.getElementById('show-pistar')||{checked:false}).checked;
   const showLoraIS = (document.getElementById('show-lora-aprsis')||{checked:true}).checked;
 
+  // Viewport culling - only render markers for stations within visible bounds
+  // (padded 50% to allow smooth pan without re-creating markers immediately)
+  var _viewBounds = null;
+  try { _viewBounds = map.getBounds().pad(0.5); } catch(e) {}
+
   Object.keys(stations).forEach(call=>{
     const st = stations[call];
     // Re-classify if type might be wrong (e.g. existing stations before LoRa detection added)
@@ -3618,6 +3676,17 @@ function redrawMap() {
       st.type = 'lora';
     }
     st.positions = st.positions.filter(p=>now-p.ts<=tail);
+    // Cull off-screen stations - remove their markers but keep data
+    if (_viewBounds && st.positions.length) {
+      var _vpLatest = st.positions[st.positions.length-1];
+      if (!_viewBounds.contains([_vpLatest.lat, _vpLatest.lon])) {
+        if (st.marker)    { try { clusterGroup.removeLayer(st.marker); map.removeLayer(st.marker); } catch(e){} st.marker = null; }
+        if (st.polyline)  { try { map.removeLayer(st.polyline); } catch(e){}  st.polyline = null; }
+        if (st.arrow)     { try { map.removeLayer(st.arrow); } catch(e){}     st.arrow = null; }
+        if (st.phgCircle) { try { map.removeLayer(st.phgCircle); } catch(e){} st.phgCircle = null; }
+        return;
+      }
+    }
     const isStatic = st.positions.length<=1 || (() => {
       const a=st.positions[0], b=st.positions[st.positions.length-1];
       return Math.sqrt(Math.pow(a.lat-b.lat,2)+Math.pow(a.lon-b.lon,2))<0.0005;
@@ -8170,6 +8239,478 @@ if (typeof map !== 'undefined' && map.on) {
 }
 
 
+
+// ─── Smart Search (Ctrl+K) ────────────────────────────────────────────────────
+var _searchResults = [];
+var _searchIdx = -1;
+
+function openSearchModal() {
+  document.getElementById('search-modal').classList.remove('hidden');
+  var inp = document.getElementById('ss-input');
+  inp.value = '';
+  inp.focus();
+  renderSearch();
+}
+function closeSearchModal() {
+  document.getElementById('search-modal').classList.add('hidden');
+  _searchResults = []; _searchIdx = -1;
+}
+function renderSearch() {
+  var q = document.getElementById('ss-input').value.trim().toUpperCase();
+  var resEl = document.getElementById('ss-results');
+  _searchResults = [];
+  if (q.length < 1) {
+    resEl.innerHTML = '<div class="text-gray-500 text-center py-6 text-xs">'
+      + 'Start typing to search...<br><br>'
+      + 'Try: <span class="text-cyan-400">callsign</span>, '
+      + '<span class="text-cyan-400">device name</span>, '
+      + '<span class="text-cyan-400">comment text</span>, '
+      + '<span class="text-cyan-400">message content</span></div>';
+    document.getElementById('ss-count').innerText = '';
+    return;
+  }
+  // 1. Search callsigns
+  Object.keys(stations).forEach(function(c) {
+    if (c.toUpperCase().includes(q)) {
+      _searchResults.push({ type:'station', call:c, st:stations[c], score: c.toUpperCase().indexOf(q) === 0 ? 0 : 1 });
+    }
+  });
+  // 2. Search comments
+  Object.keys(stations).forEach(function(c) {
+    var st = stations[c];
+    if (!st.raw) return;
+    var cmt = st.raw.toUpperCase();
+    if (!c.toUpperCase().includes(q) && cmt.includes(q)) {
+      _searchResults.push({ type:'comment', call:c, st:st, snippet:extractContext(st.raw, q), score:3 });
+    }
+  });
+  // 3. Search messages (msgStore)
+  if (typeof msgStore !== 'undefined') {
+    msgStore.slice(-100).forEach(function(m) {
+      var fromMatch = (m.from||'').toUpperCase().includes(q);
+      var toMatch   = (m.to||'').toUpperCase().includes(q);
+      var textMatch = (m.text||'').toUpperCase().includes(q);
+      if (fromMatch || toMatch || textMatch) {
+        _searchResults.push({ type:'message', msg:m, score: textMatch ? 4 : 5 });
+      }
+    });
+  }
+  // 4. Search devices (from device DB)
+  if (_deviceDB && _deviceDB.tocalls) {
+    _deviceDB.tocalls.slice(0, 1000).forEach(function(d) {
+      var blob = ((d.vendor||'') + ' ' + (d.model||'') + ' ' + (d.tocall||'')).toUpperCase();
+      if (blob.includes(q)) {
+        _searchResults.push({ type:'device', dev:d, score:6 });
+      }
+    });
+  }
+  // Sort + dedupe
+  _searchResults.sort(function(a,b){ return a.score - b.score; });
+  _searchResults = _searchResults.slice(0, 50);
+  _searchIdx = _searchResults.length ? 0 : -1;
+  document.getElementById('ss-count').innerText = _searchResults.length + ' result' + (_searchResults.length===1?'':'s');
+  resEl.innerHTML = _searchResults.map(function(r, i) {
+    var sel = i === _searchIdx ? 'bg-cyan-900/50 border-cyan-600' : 'border-transparent hover:bg-gray-800';
+    if (r.type === 'station') {
+      var ago = secondsAgo(r.st.lastHeard);
+      var typeBadge = r.st.type === 'lora' ? '<span class="text-fuchsia-400">L</span> ' : '';
+      return '<div data-idx="' + i + '" onclick="searchPick(' + i + ')" class="cursor-pointer border rounded p-2 mb-1 ' + sel + '">'
+        + '<div class="flex items-center justify-between">'
+        + '<span class="font-mono font-bold text-cyan-300">' + typeBadge + r.call + '</span>'
+        + '<span class="text-xs text-gray-500">Station · ' + ago + ' ago</span>'
+        + '</div>'
+        + (r.st.raw ? '<div class="text-xs text-gray-400 mt-1 truncate">' + escapeHtml(r.st.raw.slice(0,120)) + '</div>' : '')
+        + '</div>';
+    } else if (r.type === 'comment') {
+      return '<div data-idx="' + i + '" onclick="searchPick(' + i + ')" class="cursor-pointer border rounded p-2 mb-1 ' + sel + '">'
+        + '<div class="flex items-center justify-between">'
+        + '<span class="font-mono font-bold text-cyan-300">' + r.call + '</span>'
+        + '<span class="text-xs text-gray-500">Comment</span>'
+        + '</div>'
+        + '<div class="text-xs text-gray-400 mt-1">' + r.snippet + '</div>'
+        + '</div>';
+    } else if (r.type === 'message') {
+      return '<div data-idx="' + i + '" onclick="searchPick(' + i + ')" class="cursor-pointer border rounded p-2 mb-1 ' + sel + '">'
+        + '<div class="flex items-center justify-between">'
+        + '<span class="font-mono"><span class="text-blue-400">' + r.msg.from + '</span> <span class="text-gray-600">→</span> <span class="text-green-400">' + r.msg.to + '</span></span>'
+        + '<span class="text-xs text-gray-500">Message</span>'
+        + '</div>'
+        + '<div class="text-xs text-gray-300 mt-1">' + escapeHtml(r.msg.text||'') + '</div>'
+        + '</div>';
+    } else if (r.type === 'device') {
+      return '<div data-idx="' + i + '" onclick="searchPick(' + i + ')" class="cursor-pointer border rounded p-2 mb-1 ' + sel + '">'
+        + '<div class="flex items-center justify-between">'
+        + '<span class="font-mono"><span class="text-purple-400">📟 ' + (r.dev.vendor||'') + '</span> ' + (r.dev.model||'') + '</span>'
+        + '<span class="text-xs text-gray-500">Device · ' + r.dev.tocall + '</span>'
+        + '</div>'
+        + '</div>';
+    }
+    return '';
+  }).join('');
+}
+function searchPick(i) {
+  var r = _searchResults[i];
+  if (!r) return;
+  closeSearchModal();
+  if (r.type === 'station' || r.type === 'comment') {
+    openDetail(r.call);
+  } else if (r.type === 'message') {
+    if (r.msg.from) openDetail(r.msg.from);
+  } else if (r.type === 'device') {
+    // Find all stations using this device and filter the list
+    togglePanel('search'); // open stations panel
+    setTimeout(function() {
+      var box = document.getElementById('search-box');
+      if (box) { box.value = r.dev.tocall; renderList(); }
+    }, 100);
+  }
+}
+function searchKey(e) {
+  if (e.key === 'Escape') { closeSearchModal(); e.preventDefault(); return; }
+  if (e.key === 'ArrowDown') {
+    _searchIdx = Math.min(_searchIdx + 1, _searchResults.length - 1);
+    renderSearch();
+    e.preventDefault();
+  } else if (e.key === 'ArrowUp') {
+    _searchIdx = Math.max(_searchIdx - 1, 0);
+    renderSearch();
+    e.preventDefault();
+  } else if (e.key === 'Enter') {
+    if (_searchIdx >= 0) searchPick(_searchIdx);
+    e.preventDefault();
+  }
+}
+function extractContext(raw, q) {
+  var u = raw.toUpperCase();
+  var i = u.indexOf(q);
+  if (i < 0) return escapeHtml(raw.slice(0,120));
+  var s = Math.max(0, i - 30);
+  var e = Math.min(raw.length, i + q.length + 60);
+  var pre = (s > 0 ? '...' : '') + escapeHtml(raw.slice(s, i));
+  var mid = '<span class="bg-yellow-700 text-yellow-100">' + escapeHtml(raw.slice(i, i+q.length)) + '</span>';
+  var post = escapeHtml(raw.slice(i+q.length, e)) + (e < raw.length ? '...' : '');
+  return pre + mid + post;
+}
+function escapeHtml(s) {
+  return (s||'').replace(/[&<>"']/g, function(c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+// Global keyboard shortcut: Ctrl+K or Cmd+K to open search
+document.addEventListener('keydown', function(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+    e.preventDefault();
+    if (document.getElementById('search-modal').classList.contains('hidden')) {
+      openSearchModal();
+    } else {
+      closeSearchModal();
+    }
+  }
+});
+
+
+
+// ─── Time-Lapse Replay ────────────────────────────────────────────────────────
+var _tlData     = [];        // packets to play
+var _tlIdx      = 0;
+var _tlTimer    = null;
+var _tlSpeed    = 30;
+var _tlRunning  = false;
+var _tlStartTs  = 0;
+var _tlEndTs    = 0;
+var _tlLiveWasOn = false;
+var _tlStations = {};        // snapshot to restore
+
+function openTimelapse() {
+  document.getElementById('timelapse-modal').classList.remove('hidden');
+}
+function closeTimelapse() {
+  if (_tlRunning) stopTimelapse();
+  document.getElementById('timelapse-modal').classList.add('hidden');
+}
+function updTlSpeed() {
+  ['10','30','60','120','240'].forEach(function(s) {
+    var b = document.getElementById('tlspd-' + s);
+    if (b) b.className = 'tlspd flex-1 py-1.5 rounded text-xs ' + (parseInt(s) === _tlSpeed ? 'bg-purple-700' : 'bg-gray-800');
+  });
+}
+async function startTimelapse() {
+  var minutes = parseInt(document.getElementById('tl-window').value, 10);
+  document.getElementById('tl-start').classList.add('hidden');
+  document.getElementById('tl-pause').classList.remove('hidden');
+  document.getElementById('tl-progress').classList.remove('hidden');
+
+  // Snapshot current stations and clear map for clean replay
+  _tlLiveWasOn = (ws && ws.readyState === WebSocket.OPEN);
+  _tlStations = Object.assign({}, stations);
+  // Clear visible markers
+  Object.keys(stations).forEach(function(c) {
+    var st = stations[c];
+    if (st.marker)   { try{clusterGroup.removeLayer(st.marker); map.removeLayer(st.marker);}catch(e){} st.marker = null; }
+    if (st.polyline) { try{map.removeLayer(st.polyline);}catch(e){} st.polyline = null; }
+    if (st.arrow)    { try{map.removeLayer(st.arrow);}catch(e){} st.arrow = null; }
+  });
+  stations = {};
+
+  // Fetch the packets via a one-shot WS replay - we need them in array form
+  // Simplest: subscribe to replay messages temporarily and collect them
+  _tlData = [];
+  var collected = 0, expected = 0;
+  var origHandle = ws.onmessage;
+  ws.onmessage = function(ev) {
+    try {
+      var d = JSON.parse(ev.data);
+      if (d.type === 'replay_start' && d.data) {
+        expected = d.data.total;
+      } else if (d.type === 'rx' && d.data) {
+        // Collect for replay
+        _tlData.push(d);
+        collected++;
+        document.getElementById('tl-count').innerText = collected + ' / ' + (expected || '?') + ' loaded...';
+      } else if (d.type === 'replay_done') {
+        ws.onmessage = origHandle;  // restore
+        // Now play it back
+        _tlData.sort(function(a,b){ return (a.data.ts||0) - (b.data.ts||0); });
+        if (!_tlData.length) {
+          alert('No packets in that window');
+          stopTimelapse();
+          return;
+        }
+        _tlStartTs = _tlData[0].data.ts;
+        _tlEndTs   = _tlData[_tlData.length-1].data.ts;
+        _tlIdx = 0;
+        _tlRunning = true;
+        tlTick();
+      }
+    } catch(e) { console.warn('TL parse:', e); }
+  };
+  ws.send(JSON.stringify({ type: 'replay_request', minutes: minutes }));
+}
+function tlTick() {
+  if (!_tlRunning || _tlIdx >= _tlData.length) {
+    if (_tlIdx >= _tlData.length) {
+      document.getElementById('tl-count').innerText = 'Complete! ' + _tlData.length + ' packets';
+    }
+    return;
+  }
+  // Process next packet
+  var pkt = _tlData[_tlIdx++];
+  try { handleIncoming(pkt); } catch(e) {}
+  // Update clock + bar
+  var t = new Date((pkt.data.ts || 0) * 1000);
+  document.getElementById('tl-clock').innerText = t.toLocaleTimeString();
+  var pct = ((pkt.data.ts - _tlStartTs) / Math.max(1, _tlEndTs - _tlStartTs)) * 100;
+  document.getElementById('tl-bar').style.width = pct + '%';
+  document.getElementById('tl-count').innerText = _tlIdx + ' / ' + _tlData.length + ' packets';
+
+  // Calc delay until next packet, accelerated by speed
+  var nextDelay = 50;  // default
+  if (_tlIdx < _tlData.length) {
+    var gap = (_tlData[_tlIdx].data.ts || 0) - (pkt.data.ts || 0);
+    nextDelay = Math.max(10, Math.min(2000, (gap * 1000) / _tlSpeed));
+  }
+  _tlTimer = setTimeout(tlTick, nextDelay);
+}
+function pauseTimelapse() {
+  if (_tlTimer) { clearTimeout(_tlTimer); _tlTimer = null; }
+  _tlRunning = false;
+  document.getElementById('tl-start').classList.remove('hidden');
+  document.getElementById('tl-start').innerText = '▶ Resume';
+  document.getElementById('tl-pause').classList.add('hidden');
+  // Resume just restarts the tick
+  document.getElementById('tl-start').onclick = function() {
+    document.getElementById('tl-start').onclick = startTimelapse;
+    document.getElementById('tl-start').classList.add('hidden');
+    document.getElementById('tl-pause').classList.remove('hidden');
+    document.getElementById('tl-start').innerText = '▶ Start';
+    _tlRunning = true;
+    tlTick();
+  };
+}
+function stopTimelapse() {
+  if (_tlTimer) { clearTimeout(_tlTimer); _tlTimer = null; }
+  _tlRunning = false;
+  _tlData = [];
+  _tlIdx = 0;
+  document.getElementById('tl-progress').classList.add('hidden');
+  document.getElementById('tl-start').classList.remove('hidden');
+  document.getElementById('tl-start').innerText = '▶ Start';
+  document.getElementById('tl-start').onclick = startTimelapse;
+  document.getElementById('tl-pause').classList.add('hidden');
+  // Restore stations
+  stations = _tlStations;
+  _tlStations = {};
+  redrawMap();
+}
+
+
+// ─── Permalink / Sharable URLs ────────────────────────────────────────────────
+// URL params:
+//   ?call=G7XYZ     - open detail modal for this callsign
+//   ?lat=X&lon=Y    - centre map at this position
+//   ?zoom=N         - set zoom level
+//   ?filter=lora    - apply filter preset
+
+function parseURLParams() {
+  var params = {};
+  var s = location.search.substring(1);
+  if (!s) return params;
+  s.split('&').forEach(function(p) {
+    var kv = p.split('=');
+    params[decodeURIComponent(kv[0])] = decodeURIComponent(kv[1]||'');
+  });
+  return params;
+}
+
+function applyURLParams() {
+  var p = parseURLParams();
+  if (p.lat && p.lon) {
+    var lat = parseFloat(p.lat), lon = parseFloat(p.lon);
+    var zoom = p.zoom ? parseInt(p.zoom, 10) : 8;
+    if (!isNaN(lat) && !isNaN(lon)) {
+      try { map.setView([lat, lon], zoom); } catch(e) {}
+    }
+  }
+  if (p.call) {
+    // Wait for some history then try to open
+    var attempts = 0;
+    var tryOpen = function() {
+      if (stations[p.call]) {
+        openDetail(p.call);
+      } else if (attempts++ < 20) {
+        setTimeout(tryOpen, 500);
+      }
+    };
+    setTimeout(tryOpen, 1000);
+  }
+}
+
+function shareCurrentView() {
+  try {
+    var c = map.getCenter();
+    var z = map.getZoom();
+    var url = location.origin + location.pathname
+      + '?lat=' + c.lat.toFixed(4)
+      + '&lon=' + c.lng.toFixed(4)
+      + '&zoom=' + z;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(url).then(function() {
+        // Show toast
+        var toast = document.createElement('div');
+        toast.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:#0e7490;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:bold;z-index:99999;box-shadow:0 4px 12px rgba(0,0,0,0.5)';
+        toast.innerText = '🔗 Map URL copied to clipboard';
+        document.body.appendChild(toast);
+        setTimeout(function(){ toast.remove(); }, 2500);
+      });
+    } else {
+      prompt('Copy this URL:', url);
+    }
+  } catch(e) { console.warn('Share failed:', e); }
+}
+
+function shareStation(call) {
+  var url = location.origin + location.pathname + '?call=' + encodeURIComponent(call);
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(url).then(function() {
+      var toast = document.createElement('div');
+      toast.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:#0e7490;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:bold;z-index:99999;box-shadow:0 4px 12px rgba(0,0,0,0.5)';
+      toast.innerText = '🔗 Link to ' + call + ' copied';
+      document.body.appendChild(toast);
+      setTimeout(function(){ toast.remove(); }, 2500);
+    });
+  } else {
+    prompt('Copy this URL:', url);
+  }
+}
+
+// Apply URL params after map is initialised
+setTimeout(applyURLParams, 1500);
+
+
+// ─── Activity Trends ──────────────────────────────────────────────────────────
+// Tracks packets/minute and unique-stations/minute for the last 60 minutes.
+// Stored client-side only - rolls over after page refresh.
+var _trendBuckets = [];      // [{ minute: epoch_min, packets: N, stations: Set }]
+var _trendStartTs = Date.now();
+var _trendTotalPkts = 0;
+var _trendAllStations = new Set();
+
+function trendTrack(call) {
+  var mn = Math.floor(Date.now() / 60000);
+  var b = _trendBuckets[_trendBuckets.length - 1];
+  if (!b || b.minute !== mn) {
+    b = { minute: mn, packets: 0, stations: new Set() };
+    _trendBuckets.push(b);
+    // Keep last 60 minutes
+    while (_trendBuckets.length > 60) _trendBuckets.shift();
+  }
+  b.packets++;
+  if (call) { b.stations.add(call); _trendAllStations.add(call); }
+  _trendTotalPkts++;
+}
+
+function renderTrends() {
+  if (document.getElementById('status-panel').classList.contains('hidden')) return;
+  var ppsArr = _trendBuckets.map(function(b){ return b.packets; });
+  var stnArr = _trendBuckets.map(function(b){ return b.stations.size; });
+  drawTrendChart('trend-pps',     ppsArr, '#22d3ee');
+  drawTrendChart('trend-stations', stnArr, '#60a5fa');
+  var peakPps = ppsArr.reduce(function(a,b){return Math.max(a,b);}, 0);
+  var avgPps  = ppsArr.length ? Math.round(ppsArr.reduce(function(a,b){return a+b;},0) / ppsArr.length) : 0;
+  document.getElementById('trend-peak-pps').innerText = peakPps;
+  document.getElementById('trend-avg-pps').innerText  = avgPps;
+  document.getElementById('trend-total-stations').innerText = _trendAllStations.size;
+  document.getElementById('trend-total-pkts').innerText = _trendTotalPkts.toLocaleString();
+  var ms = (Date.now() - _trendStartTs) / 1000;
+  var mins = Math.floor(ms/60);
+  document.getElementById('trend-summary').innerText = 'Tracking for ' + mins + ' min · ' + _trendBuckets.length + ' buckets';
+}
+
+function drawTrendChart(canvasId, data, color) {
+  var c = document.getElementById(canvasId);
+  if (!c) return;
+  var ctx = c.getContext('2d');
+  var W = c.width, H = c.height;
+  ctx.clearRect(0, 0, W, H);
+  if (!data.length) return;
+  var max = Math.max.apply(null, data) || 1;
+  var step = W / Math.max(60, data.length);
+  // Grid lines
+  ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 0.5;
+  for (var g = 1; g < 4; g++) {
+    var y = (H / 4) * g;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+  // Fill area under curve
+  ctx.fillStyle = color + '33';
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+  data.forEach(function(v, i) {
+    var x = i * step;
+    var y = H - (v / max) * (H - 5) - 2;
+    ctx.lineTo(x, y);
+  });
+  ctx.lineTo((data.length - 1) * step, H);
+  ctx.closePath();
+  ctx.fill();
+  // Line
+  ctx.strokeStyle = color; ctx.lineWidth = 2;
+  ctx.beginPath();
+  data.forEach(function(v, i) {
+    var x = i * step;
+    var y = H - (v / max) * (H - 5) - 2;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  // Max label
+  ctx.fillStyle = '#94a3b8'; ctx.font = '10px monospace';
+  ctx.fillText('Peak: ' + max, 4, 12);
+}
+
+// Hook trendTrack into handleIncoming via updateStation
+// Just call trendTrack from anywhere we see a packet
+setInterval(renderTrends, 5000);
+
 // ─── LoRa-APRS Integration ────────────────────────────────────────────────────
 // Global LoRa-APRS network overlay using lora-aprs.live API
 // Markers and signal-quality lines colour-coded by SNR
@@ -8900,5 +9441,66 @@ setInterval(checkForUpdates, 3600000); // re-check every hour
 </div>
 
 
-</body>
+
+<!-- Smart Search Modal (Ctrl+K) -->
+<div id="search-modal" class="hidden fixed inset-0 z-[100000] flex items-start justify-center pt-20 p-4 bg-black/60" onclick="if(event.target===this)closeSearchModal()">
+  <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl flex flex-col" style="max-height:75vh">
+    <div class="flex items-center border-b border-gray-700 p-3">
+      <span class="text-gray-500 text-lg mr-3">🔍</span>
+      <input type="text" id="ss-input" placeholder="Search callsigns, comments, messages, devices..." autocomplete="off"
+        class="flex-1 bg-transparent outline-none text-white text-base"
+        oninput="renderSearch()" onkeydown="searchKey(event)">
+      <span class="text-gray-600 text-xs ml-3 hidden md:inline">ESC to close</span>
+    </div>
+    <div id="ss-results" class="overflow-y-auto flex-1 p-2 text-sm"></div>
+    <div class="border-t border-gray-700 p-2 text-[10px] text-gray-500 flex items-center justify-between">
+      <span>↑↓ navigate · Enter to open · Ctrl+K to toggle</span>
+      <span id="ss-count"></span>
+    </div>
+  </div>
+</div>
+
+<!-- Time-Lapse Replay Modal -->
+<div id="timelapse-modal" class="hidden fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/70" onclick="if(event.target===this)closeTimelapse()">
+  <div class="bg-gray-900 border border-purple-700 rounded-xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between p-4 border-b border-gray-700">
+      <h2 class="text-lg font-bold text-purple-400">⏯ Time-Lapse Replay</h2>
+      <button onclick="closeTimelapse()" class="text-gray-400 hover:text-white">✕</button>
+    </div>
+    <div class="p-4 space-y-3 text-sm">
+      <p class="text-gray-400 text-xs">Watch APRS activity unfold visually. Stations appear in chronological order at the chosen speed. Use this to spot movement patterns, peak times, and net activity.</p>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Window</label>
+        <select id="tl-window" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white text-sm">
+          <option value="10">Last 10 Minutes</option>
+          <option value="30">Last 30 Minutes</option>
+          <option value="60" selected>Last 1 Hour</option>
+          <option value="120">Last 2 Hours</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Speed</label>
+        <div class="flex gap-1">
+          <button onclick="_tlSpeed=10;updTlSpeed()"  id="tlspd-10"  class="tlspd flex-1 py-1.5 rounded text-xs bg-gray-800">10×</button>
+          <button onclick="_tlSpeed=30;updTlSpeed()"  id="tlspd-30"  class="tlspd flex-1 py-1.5 rounded text-xs bg-purple-700">30×</button>
+          <button onclick="_tlSpeed=60;updTlSpeed()"  id="tlspd-60"  class="tlspd flex-1 py-1.5 rounded text-xs bg-gray-800">60×</button>
+          <button onclick="_tlSpeed=120;updTlSpeed()" id="tlspd-120" class="tlspd flex-1 py-1.5 rounded text-xs bg-gray-800">120×</button>
+          <button onclick="_tlSpeed=240;updTlSpeed()" id="tlspd-240" class="tlspd flex-1 py-1.5 rounded text-xs bg-gray-800">240×</button>
+        </div>
+      </div>
+      <div id="tl-progress" class="hidden">
+        <div class="text-xs text-gray-400 mb-1 flex justify-between"><span id="tl-clock">--:--</span><span id="tl-count">0 packets shown</span></div>
+        <div class="w-full bg-gray-800 rounded-full h-2 overflow-hidden">
+          <div id="tl-bar" class="bg-purple-500 h-2" style="width:0%"></div>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="startTimelapse()" id="tl-start" class="flex-1 bg-purple-700 hover:bg-purple-600 px-3 py-2 rounded font-bold text-sm">▶ Start</button>
+        <button onclick="pauseTimelapse()" id="tl-pause" class="hidden flex-1 bg-amber-700 hover:bg-amber-600 px-3 py-2 rounded font-bold text-sm">⏸ Pause</button>
+        <button onclick="stopTimelapse()"  id="tl-stop"  class="flex-1 bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded font-bold text-sm">⏹ Stop</button>
+      </div>
+      <p class="text-[10px] text-gray-500 text-center">Note: Live packets pause during replay and resume after</p>
+    </div>
+  </div>
+</div></body>
 </html>

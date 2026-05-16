@@ -785,7 +785,7 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	client := &wsClient{
 		conn:        conn,
-		send:        make(chan []byte, 256),
+		send:        make(chan []byte, 1024),
 		remoteAddr:  r.RemoteAddr,
 		connectedAt: time.Now().Unix(),
 		lastTx:      time.Now(),
