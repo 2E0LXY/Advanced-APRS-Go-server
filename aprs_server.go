@@ -904,7 +904,7 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 
 // sendReplayToClient streams the last N minutes of packets to a single client
 // in response to a replay_request message. Non-blocking on the send channel.
-func sendReplayToClient(client *Client, minutes int) {
+func sendReplayToClient(client *wsClient, minutes int) {
 	cutoff := time.Now().Add(-time.Duration(minutes) * time.Minute).Unix()
 
 	// Raw packet replay - filter by timestamp
