@@ -2633,10 +2633,14 @@ func handleMemberObject(w http.ResponseWriter, r *http.Request) {
 	if token == "" {
 		if ck, err := r.Cookie("aprs-member-token"); err == nil { token = ck.Value }
 	}
-	memberStore.RLock()
+	memberStoreMu.RLock()
 	sess, ok := memberStore.Sessions[token]
-	memberStore.RUnlock()
-	if !ok || time.Now().After(sess.Expiry) {
+	var mem *Member
+	if ok {
+		mem = memberStore.Members[sess.MemberID]
+	}
+	memberStoreMu.RUnlock()
+	if !ok || sess.Expires < time.Now().Unix() || mem == nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		w.Write([]byte(`{"error":"not authenticated"}`))
@@ -2693,7 +2697,7 @@ func handleMemberObject(w http.ResponseWriter, r *http.Request) {
 		payload += req.Comment
 	}
 
-	srcCall := strings.ToUpper(sess.Callsign)
+	srcCall := strings.ToUpper(mem.Callsign)
 	packet := fmt.Sprintf("%s>APAGOR,TCPIP*:%s", srcCall, payload)
 
 	// Inject into broadcast (so local clients see it immediately)
@@ -2708,7 +2712,7 @@ func handleMemberObject(w http.ResponseWriter, r *http.Request) {
 	default:
 	}
 
-	auditLog(sess.Callsign, "member_object", req.Name,
+	auditLog(mem.Callsign, "member_object", req.Name,
 		fmt.Sprintf("lat=%.4f lon=%.4f sym=%s killed=%v", req.Lat, req.Lon, req.Sym, req.Killed),
 		r.RemoteAddr)
 
