@@ -9240,6 +9240,8 @@ var _meshSvg   = null;
 function rebuildMesh() {
   if (document.getElementById('mesh-panel').classList.contains('hidden')) return;
   var filter = document.getElementById('mesh-filter').value;
+  // Reset placement state so initial layout runs again
+  Object.values(_meshNodes).forEach(function(n){ n._placed = false; });
   buildMeshGraph(filter);
   renderMesh();
   if (!_meshAnim) startMeshAnim();
@@ -9267,8 +9269,10 @@ function buildMeshGraph(filter) {
       return true;
     }).map(function(h){ return h.replace('*',''); });
 
+    // Skip orphan stations always - they have no edges so they drift to corners.
+    // The mesh is about relationships, not just presence.
+    if (!usedHops.length) return;
     if (filter === 'digi' && !usedHops.length) return;
-    if (!usedHops.length && filter !== 'all') return;
 
     // Add station node
     if (!_meshNodes[call]) {
@@ -9325,12 +9329,23 @@ function renderMesh() {
   var rect = svg.getBoundingClientRect();
   var W = rect.width, H = rect.height;
 
-  // Initialise positions near centre if all at origin
-  Object.values(_meshNodes).forEach(function(n){
-    if (n.x === 0 && n.y === 0) {
-      n.x = W/2 + (Math.random()-0.5) * 400;
-      n.y = H/2 + (Math.random()-0.5) * 300;
-    }
+  // Initial layout: arrange nodes on a circle around centre.
+  // Hubs in the middle, regular stations on the outer ring - gives the force
+  // algorithm a sensible starting point so it converges in seconds not minutes.
+  var nodeArr = Object.values(_meshNodes);
+  var radius = Math.min(W, H) * 0.35;
+  // Sort by activity score so hubs are placed first (and end up near centre)
+  nodeArr.sort(function(a,b){ return b.count - a.count; });
+  nodeArr.forEach(function(n, i) {
+    if (n._placed) return;
+    var angle = (i / nodeArr.length) * Math.PI * 2;
+    // First few (hubs) go very close to centre
+    var r = (i < 3) ? radius * 0.15 : radius * (0.5 + Math.random() * 0.5);
+    n.x = W/2 + Math.cos(angle) * r;
+    n.y = H/2 + Math.sin(angle) * r;
+    n.vx = 0;
+    n.vy = 0;
+    n._placed = true;
   });
 
   // Build SVG
@@ -9374,44 +9389,61 @@ function physicsStep() {
   var rect = _meshSvg.getBoundingClientRect();
   var W = rect.width, H = rect.height;
   var nodes = Object.values(_meshNodes);
+  var N = nodes.length;
+  if (N === 0) return;
 
-  // Repulsion - all-pairs O(n^2) but n is capped at 200
+  // Repulsion: stronger constant, gentler distance falloff with floor
+  // The force constant scales with node count so bigger graphs spread out more
+  var repulsion = 4500 + N * 30;
   nodes.forEach(function(a) {
+    if (a === _meshDrag) return;
     nodes.forEach(function(b) {
       if (a === b) return;
       var dx = a.x - b.x, dy = a.y - b.y;
-      var d2 = dx*dx + dy*dy + 0.01;
-      var force = 1200 / d2;
-      a.vx += dx * force * 0.05;
-      a.vy += dy * force * 0.05;
+      var d2 = dx*dx + dy*dy;
+      if (d2 < 25) d2 = 25; // floor at 5px distance to avoid singularity blast
+      var dist = Math.sqrt(d2);
+      var force = repulsion / d2;
+      a.vx += (dx / dist) * force;
+      a.vy += (dy / dist) * force;
     });
   });
 
-  // Attraction along links
+  // Attraction along links: target spring length, Hookean
+  var targetLen = 80;
   _meshLinks.forEach(function(l) {
     var a = _meshNodes[l.source], b = _meshNodes[l.target];
     if (!a || !b) return;
     var dx = b.x - a.x, dy = b.y - a.y;
-    var k = 0.005 * Math.log(1 + l.weight);
-    a.vx += dx * k;
-    a.vy += dy * k;
-    b.vx -= dx * k;
-    b.vy -= dy * k;
+    var dist = Math.sqrt(dx*dx + dy*dy) || 1;
+    var displacement = dist - targetLen;
+    var k = 0.05 * Math.log(1 + l.weight); // stronger pull for repeated links
+    var fx = (dx / dist) * displacement * k;
+    var fy = (dy / dist) * displacement * k;
+    if (a !== _meshDrag) { a.vx += fx; a.vy += fy; }
+    if (b !== _meshDrag) { b.vx -= fx; b.vy -= fy; }
   });
 
-  // Centring + damping + clip
+  // Centring - stronger and proportional to distance from centre
+  // Damping - moderate so motion isn't sluggish but converges
+  var cx = W / 2, cy = H / 2;
   nodes.forEach(function(n) {
     if (n === _meshDrag) { n.vx = 0; n.vy = 0; return; }
-    n.vx += (W/2 - n.x) * 0.0008;
-    n.vy += (H/2 - n.y) * 0.0008;
-    n.vx *= 0.85;
-    n.vy *= 0.85;
+    n.vx += (cx - n.x) * 0.02;
+    n.vy += (cy - n.y) * 0.02;
+    n.vx *= 0.7;
+    n.vy *= 0.7;
+    // Cap velocity to avoid jitter explosions
+    var v = Math.sqrt(n.vx*n.vx + n.vy*n.vy);
+    if (v > 30) { n.vx = (n.vx / v) * 30; n.vy = (n.vy / v) * 30; }
     n.x += n.vx;
     n.y += n.vy;
-    if (n.x < 20) { n.x = 20; n.vx = 0; }
-    if (n.y < 20) { n.y = 20; n.vy = 0; }
-    if (n.x > W-20) { n.x = W-20; n.vx = 0; }
-    if (n.y > H-20) { n.y = H-20; n.vy = 0; }
+    // Soft boundary
+    var pad = 30;
+    if (n.x < pad)    { n.x = pad;    n.vx = Math.abs(n.vx) * 0.3; }
+    if (n.y < pad)    { n.y = pad;    n.vy = Math.abs(n.vy) * 0.3; }
+    if (n.x > W-pad)  { n.x = W-pad;  n.vx = -Math.abs(n.vx) * 0.3; }
+    if (n.y > H-pad)  { n.y = H-pad;  n.vy = -Math.abs(n.vy) * 0.3; }
   });
 }
 
