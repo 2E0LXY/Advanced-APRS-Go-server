@@ -266,6 +266,7 @@ type qrzSession struct {
 		Error   string `xml:"Error"`
 		Message string `xml:"Message"`
 		SubExp  string `xml:"SubExp"`
+		Remark  string `xml:"Remark"`
 	} `xml:"Session"`
 	Callsign struct {
 		Call    string `xml:"call"`
@@ -437,8 +438,14 @@ func handleQRZLookup(w http.ResponseWriter, r *http.Request) {
 	}
 	qrzC.Unlock()
 
+	// Determine subscription tier - useful for UI to show 'partial data' badge
+	subscriber := s.Session.SubExp != "" && s.Session.SubExp != "non-subscriber"
+	msg := s.Session.Message  // QRZ shows "A subscription is required" for non-subscribers
+
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"call": call, "cached": false, "data": data,
+		"subscriber": subscriber,
+		"message": msg,
 	})
 }
 

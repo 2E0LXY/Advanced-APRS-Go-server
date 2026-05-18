@@ -3004,7 +3004,10 @@ body { background: var(--bg-base); color: var(--text-base); }
         <div id="d-qrz-block" class="hidden bg-purple-900/15 border border-purple-700 rounded p-3">
           <div class="flex items-center justify-between mb-2">
             <p class="text-purple-300 text-xs font-bold uppercase">👤 Operator Profile (QRZ.com)</p>
-            <span id="d-qrz-cached" class="hidden text-[10px] text-gray-500">cached</span>
+            <div class="flex items-center gap-2">
+              <span id="d-qrz-partial" class="hidden text-[10px] text-amber-400" title="Limited data - QRZ subscription required for full record">partial</span>
+              <span id="d-qrz-cached" class="hidden text-[10px] text-gray-500">cached</span>
+            </div>
           </div>
           <div id="d-qrz-loading" class="text-xs text-gray-400">Looking up…</div>
           <div id="d-qrz-content" class="hidden flex items-start gap-3">
@@ -10295,6 +10298,8 @@ async function loadQRZProfile(call) {
   photoImg.classList.add('hidden');
   photoFallback.classList.add('hidden');
   document.getElementById('d-qrz-cached').classList.add('hidden');
+  var partialEl = document.getElementById('d-qrz-partial');
+  if (partialEl) partialEl.classList.add('hidden');
 
   try {
     var r = await fetch(location.origin + '/api/qrz/lookup?call=' + encodeURIComponent(call));
@@ -10316,6 +10321,11 @@ async function loadQRZProfile(call) {
       return;
     }
     if (j.cached) document.getElementById('d-qrz-cached').classList.remove('hidden');
+    if (j.subscriber === false) {
+      document.getElementById('d-qrz-partial').classList.remove('hidden');
+    } else {
+      document.getElementById('d-qrz-partial').classList.add('hidden');
+    }
 
     var d = j.data || {};
     if (Object.keys(d).length === 0) {
