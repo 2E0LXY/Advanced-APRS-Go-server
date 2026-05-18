@@ -43,6 +43,7 @@ type AppConfig struct {
 	CenterLat      float64 `json:"center_lat"`
 	CenterLon      float64 `json:"center_lon"`
 	RadiusKm       float64 `json:"radius_km"`
+	AISStreamKey   string  `json:"ais_stream_key"`
 	sync.RWMutex   `json:"-"`
 }
 
@@ -1253,6 +1254,7 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	metrics.RUnlock()
 	config.RLock()
 	res["upstream_addr"] = config.UpstreamAddr
+	res["ais_stream_key"] = config.AISStreamKey
 	config.RUnlock()
 	res["upstream_connected"] = atomic.LoadInt32(&upstreamConnected) == 1
 	rawRingMu.RLock()
@@ -1313,6 +1315,9 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 	config.CenterLat = n.CenterLat
 	config.CenterLon = n.CenterLon
 	config.RadiusKm = n.RadiusKm
+	if n.AISStreamKey != "" {
+		config.AISStreamKey = strings.TrimSpace(n.AISStreamKey)
+	}
 	config.Unlock()
 	if err := saveConfig(); err != nil {
 		log.Printf("Warning: config applied but failed to persist: %v", err)
@@ -1619,6 +1624,7 @@ func loadSavedConfig() {
 	config.CenterLat      = saved.CenterLat
 	config.CenterLon      = saved.CenterLon
 	config.RadiusKm       = saved.RadiusKm
+	if saved.AISStreamKey != "" { config.AISStreamKey = saved.AISStreamKey }
 	config.Unlock()
 	log.Printf("Server config loaded: callsign=%s upstream=%s filter=%s",
 		saved.Callsign, saved.UpstreamAddr, saved.ServerFilter)

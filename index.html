@@ -2692,6 +2692,18 @@ body { background: var(--bg-base); color: var(--text-base); }
           </div>
         </div>
 
+        <!-- Third-Party API Keys -->
+        <div class="bg-gray-800 p-4 rounded border border-cyan-900">
+          <h3 class="text-sm font-bold text-cyan-400 uppercase mb-3">🔑 Third-Party API Keys</h3>
+          <div class="space-y-2">
+            <div>
+              <label class="block text-gray-400 text-xs mb-1">aisstream.io API key (Live Ships overlay)</label>
+              <input type="text" id="admAISKey" placeholder="Enter aisstream.io API key" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white text-sm outline-none focus:border-cyan-500 font-mono">
+              <p class="text-xs text-gray-500 mt-1">Free key from <a href="https://aisstream.io" target="_blank" class="text-cyan-400 underline">aisstream.io</a>. Used when users enable the Live Ships overlay. Defaults to a built-in fallback key if blank.</p>
+            </div>
+          </div>
+        </div>
+
         <!-- Change Password -->
         <div class="bg-gray-800 p-4 rounded border border-yellow-900">
           <h3 class="text-sm font-bold text-yellow-400 uppercase mb-3">Change Admin Password</h3>
@@ -4164,6 +4176,7 @@ function populateAdmin(d) {
     document.getElementById('admLat').value=d.center_lat;
     document.getElementById('admLon').value=d.center_lon;
     document.getElementById('admRad').value=d.radius_km;
+    if (document.getElementById('admAISKey')) document.getElementById('admAISKey').value = d.ais_stream_key || '';
     const sel=document.getElementById('admUpstreamSelect');
     let matched=false;
     for (let o of sel.options) { if (o.value===d.upstream_addr){sel.value=d.upstream_addr;matched=true;break;} }
@@ -4191,6 +4204,7 @@ async function saveAdmin() {
     center_lat: parseFloat(document.getElementById('admLat').value)||0,
     center_lon: parseFloat(document.getElementById('admLon').value)||0,
     radius_km: parseFloat(document.getElementById('admRad').value)||100,
+    ais_stream_key: (document.getElementById('admAISKey')||{value:''}).value.trim(),
   };
   try {
     const r = await fetch(location.origin + '/api/config',{method:'POST',headers:h,body:JSON.stringify(payload)});
@@ -9580,18 +9594,24 @@ function toggleShips() {
   }
 }
 
-function setupAISFeed() {
-  var key = localStorage.getItem('aisstream-key');
-  if (!key) {
-    key = prompt('AIS Stream needs a free API key from aisstream.io.\n\nGet one at: https://aisstream.io (takes 30 seconds)\n\nPaste it here:');
-    if (!key || key.length < 10) {
-      document.getElementById('show-ships').checked = false;
-      toggleShips();
-      return;
+async function setupAISFeed() {
+  // Key resolution order:
+  // 1. Server-configured key (from admin panel via /api/config)
+  // 2. Hardcoded fallback (built-in default)
+  // 3. localStorage (legacy user-supplied keys)
+  var key = '5807276bd8081e2ff5833925e91f49fbcc7a6b45';  // hardcoded fallback
+  try {
+    var r = await fetch(location.origin + '/api/status');
+    if (r.ok) {
+      var d = await r.json();
+      if (d && d.ais_stream_key && d.ais_stream_key.length >= 10) {
+        key = d.ais_stream_key;
+      }
     }
-    localStorage.setItem('aisstream-key', key.trim());
-    key = key.trim();
-  }
+  } catch(e) {}
+  // localStorage override if user explicitly set one
+  var ls = localStorage.getItem('aisstream-key');
+  if (ls && ls.length >= 10) key = ls;
   startAISWebSocket(key);
 }
 
