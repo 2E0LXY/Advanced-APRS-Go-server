@@ -2701,6 +2701,21 @@ body { background: var(--bg-base); color: var(--text-base); }
               <input type="text" id="admAISKey" placeholder="Enter aisstream.io API key" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white text-sm outline-none focus:border-cyan-500 font-mono">
               <p class="text-xs text-gray-500 mt-1">Free key from <a href="https://aisstream.io" target="_blank" class="text-cyan-400 underline">aisstream.io</a>. Used when users enable the Live Ships overlay. Defaults to a built-in fallback key if blank.</p>
             </div>
+            <div class="pt-3 border-t border-gray-700">
+              <p class="text-xs text-cyan-300 font-bold mb-2">QRZ.com XML Lookup (operator profile data)</p>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block text-gray-400 text-xs mb-1">QRZ Username</label>
+                  <input type="text" id="admQRZUser" placeholder="callsign or login" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white text-sm outline-none focus:border-cyan-500 font-mono">
+                </div>
+                <div>
+                  <label class="block text-gray-400 text-xs mb-1">QRZ Password</label>
+                  <input type="password" id="admQRZPass" placeholder="QRZ.com password" autocomplete="off" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white text-sm outline-none focus:border-cyan-500">
+                </div>
+              </div>
+              <p class="text-xs text-gray-500 mt-1">QRZ XML subscription credentials. When configured, clicking any callsign on the map shows their QRZ photo, address, name, grid, license class etc. Cached 24h per callsign. Server keeps password in <code>server_config.json</code> (plain text - keep that file readable only by root).</p>
+              <p id="qrz-status" class="text-xs mt-1 hidden"></p>
+            </div>
           </div>
         </div>
 
@@ -2985,6 +3000,38 @@ body { background: var(--bg-base); color: var(--text-base); }
           <div class="bg-gray-800 rounded p-3"><p class="text-gray-400 text-xs mb-1">Speed / Course</p><p id="d-speed" class="font-mono text-xs text-white"></p></div>
           <div class="bg-gray-800 rounded p-3"><p class="text-gray-400 text-xs mb-1">Packets heard</p><p id="d-pkt-count" class="font-mono text-xs text-white"></p></div>
         </div>
+        <!-- QRZ Operator Profile (loads asynchronously when modal opens) -->
+        <div id="d-qrz-block" class="hidden bg-purple-900/15 border border-purple-700 rounded p-3">
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-purple-300 text-xs font-bold uppercase">👤 Operator Profile (QRZ.com)</p>
+            <span id="d-qrz-cached" class="hidden text-[10px] text-gray-500">cached</span>
+          </div>
+          <div id="d-qrz-loading" class="text-xs text-gray-400">Looking up…</div>
+          <div id="d-qrz-content" class="hidden flex items-start gap-3">
+            <div class="flex-shrink-0">
+              <img id="d-qrz-photo" class="w-24 h-24 object-cover rounded border border-purple-700 hidden" alt="">
+              <div id="d-qrz-nophoto" class="hidden w-24 h-24 bg-gray-800 rounded border border-gray-700 flex items-center justify-center text-gray-600 text-3xl">👤</div>
+            </div>
+            <div class="flex-1 min-w-0 text-xs space-y-1">
+              <div id="d-qrz-name" class="text-base font-bold text-white"></div>
+              <div id="d-qrz-addr" class="text-gray-300"></div>
+              <div class="grid grid-cols-2 gap-x-3 gap-y-0.5 pt-1">
+                <div id="d-qrz-class-row" class="hidden"><span class="text-gray-500">Class:</span> <span id="d-qrz-class" class="text-white"></span></div>
+                <div id="d-qrz-grid-row" class="hidden"><span class="text-gray-500">Grid:</span> <span id="d-qrz-grid" class="font-mono text-white"></span></div>
+                <div id="d-qrz-country-row" class="hidden"><span class="text-gray-500">Country:</span> <span id="d-qrz-country" class="text-white"></span></div>
+                <div id="d-qrz-county-row" class="hidden"><span class="text-gray-500">County:</span> <span id="d-qrz-county" class="text-white"></span></div>
+                <div id="d-qrz-born-row" class="hidden"><span class="text-gray-500">Born:</span> <span id="d-qrz-born" class="text-white"></span></div>
+                <div id="d-qrz-qsl-row" class="hidden"><span class="text-gray-500">QSL:</span> <span id="d-qrz-qsl" class="text-white"></span></div>
+              </div>
+              <div class="pt-1 flex flex-wrap gap-1">
+                <a id="d-qrz-link" href="#" target="_blank" class="text-purple-300 hover:text-purple-200 underline text-[11px]">View on QRZ.com →</a>
+                <span id="d-qrz-aliases" class="hidden text-[10px] text-gray-500"></span>
+              </div>
+            </div>
+          </div>
+          <div id="d-qrz-error" class="hidden text-xs text-gray-500"></div>
+        </div>
+
         <div id="d-wx-block" class="hidden bg-blue-900/20 border border-blue-800 rounded p-3">
           <p class="text-blue-300 text-xs font-bold uppercase mb-2">Weather Data</p>
           <div id="d-wx-data" class="grid grid-cols-3 gap-2 text-xs"></div>
@@ -4177,6 +4224,14 @@ function populateAdmin(d) {
     document.getElementById('admLon').value=d.center_lon;
     document.getElementById('admRad').value=d.radius_km;
     if (document.getElementById('admAISKey')) document.getElementById('admAISKey').value = d.ais_stream_key || '';
+    if (document.getElementById('admQRZUser')) document.getElementById('admQRZUser').value = d.qrz_username || '';
+    // QRZ password is write-only - never returned from server
+    var qst = document.getElementById('qrz-status');
+    if (qst) {
+      if (d.qrz_configured) { qst.innerText = '✓ QRZ configured and active'; qst.className = 'text-xs mt-1 text-green-400'; }
+      else { qst.innerText = '⚠ QRZ not configured - operator profiles will not show extra info'; qst.className = 'text-xs mt-1 text-amber-400'; }
+      qst.classList.remove('hidden');
+    }
     const sel=document.getElementById('admUpstreamSelect');
     let matched=false;
     for (let o of sel.options) { if (o.value===d.upstream_addr){sel.value=d.upstream_addr;matched=true;break;} }
@@ -4205,6 +4260,8 @@ async function saveAdmin() {
     center_lon: parseFloat(document.getElementById('admLon').value)||0,
     radius_km: parseFloat(document.getElementById('admRad').value)||100,
     ais_stream_key: (document.getElementById('admAISKey')||{value:''}).value.trim(),
+    qrz_username: (document.getElementById('admQRZUser')||{value:''}).value.trim(),
+    qrz_password: (document.getElementById('admQRZPass')||{value:''}).value,
   };
   try {
     const r = await fetch(location.origin + '/api/config',{method:'POST',headers:h,body:JSON.stringify(payload)});
@@ -5162,6 +5219,8 @@ updateStation = function(call, path, lat, lon, phg, ts, raw, sym) {
 
 function openDetail(call) {
   _detailCall = call;
+  // Trigger QRZ lookup asynchronously - won't block UI
+  try { loadQRZProfile(call); } catch(e) {}
   document.getElementById('detail-modal').classList.remove('hidden');
   detailTab('overview');
   refreshDetailData();
@@ -5169,6 +5228,8 @@ function openDetail(call) {
 
 function closeDetail() {
   document.getElementById('detail-modal').classList.add('hidden');
+  var qb = document.getElementById('d-qrz-block');
+  if (qb) qb.classList.add('hidden');
   _detailCall = null;
 }
 
@@ -7489,6 +7550,8 @@ function initMemberSession() {
       if (!d) return;
       _memberSession.unread = d.unread_messages;
       updateMemberBtn();
+      // SSO: fill in credentials throughout the app
+      setTimeout(autoFillAPRSCredentials, 200);
       // Merge server watchlist with local
       if (d.watchlist && d.watchlist.length) {
         mergeWatchlists(d.watchlist);
@@ -7580,6 +7643,8 @@ async function memberLogin() {
     localStorage.setItem('aprs-member-session', JSON.stringify(_memberSession));
     updateMemberBtn();
     mergeWatchlists(d.watchlist || []);
+    // SSO: pre-fill callsign + passcode in messaging panel
+    autoFillAPRSCredentials();
     showMMView('dashboard');
     loadMemberDashboard();
   } catch(e) { err.innerText = 'Network error'; err.classList.remove('hidden'); }
@@ -10139,6 +10204,186 @@ function clearTripFromMap() {
   _tripLayers = [];
 }
 
+
+
+// ─── Single sign-on: propagate member credentials to APRS messaging ───────────
+// When a user logs in (or session is restored), automatically fill the
+// messaging panel's callsign and passcode fields, mark them as auto-filled,
+// and trigger the WS auth so they can immediately send messages without
+// re-entering credentials.
+function autoFillAPRSCredentials() {
+  if (!_memberSession || !_memberSession.callsign) return;
+  var callEl = document.getElementById('myCall');
+  var passEl = document.getElementById('myPass');
+  if (callEl && !callEl.value) {
+    callEl.value = _memberSession.callsign;
+    callEl.readOnly = true;
+    callEl.title = 'Auto-filled from your member account';
+    callEl.classList.add('bg-cyan-900/30');
+  }
+  if (passEl && !passEl.value && _memberSession.passcode) {
+    passEl.value = _memberSession.passcode;
+    passEl.readOnly = true;
+    passEl.title = 'Auto-calculated APRS-IS passcode for your callsign';
+    passEl.classList.add('bg-cyan-900/30');
+  }
+  // Also fill any object-creation defaults
+  myCallsign = _memberSession.callsign;
+  // Auto-authenticate the WebSocket so messaging works without clicking Connect
+  if (ws && ws.readyState === WebSocket.OPEN && _memberSession.passcode) {
+    try {
+      ws.send(JSON.stringify({
+        type: 'auth',
+        callsign: _memberSession.callsign,
+        passcode: _memberSession.passcode,
+        software: 'WebNOC 2.0 (SSO)'
+      }));
+      // Update messaging panel UI to show authenticated state
+      var authS = document.getElementById('auth-section');
+      var loggedS = document.getElementById('logged-in-section');
+      var compose = document.getElementById('compose-section');
+      if (authS) authS.classList.add('hidden');
+      if (loggedS) {
+        loggedS.classList.remove('hidden');
+        var spanCall = loggedS.querySelector('span.font-bold');
+        if (spanCall) spanCall.innerText = _memberSession.callsign;
+      }
+      if (compose) {
+        compose.classList.remove('opacity-50','pointer-events-none');
+        ['destCall','msgText'].forEach(function(id){
+          var e = document.getElementById(id);
+          if (e) e.disabled = false;
+        });
+        var btn = compose.querySelector('button');
+        if (btn) btn.disabled = false;
+      }
+    } catch(e) { console.warn('SSO auth failed:', e); }
+  }
+}
+// Re-attempt after WS opens (e.g. on page load if WS connects after restore)
+(function(){
+  var _origConnect = connectWS;
+  if (typeof _origConnect === 'function') {
+    connectWS = function() {
+      _origConnect.apply(this, arguments);
+      if (ws) {
+        ws.addEventListener('open', function() {
+          setTimeout(autoFillAPRSCredentials, 300);
+        });
+      }
+    };
+  }
+})();
+
+
+
+// ─── QRZ Operator Profile in Detail Modal ─────────────────────────────────────
+async function loadQRZProfile(call) {
+  if (!call) return;
+  var block = document.getElementById('d-qrz-block');
+  var loading = document.getElementById('d-qrz-loading');
+  var content = document.getElementById('d-qrz-content');
+  var errEl = document.getElementById('d-qrz-error');
+  var photoImg = document.getElementById('d-qrz-photo');
+  var photoFallback = document.getElementById('d-qrz-nophoto');
+  if (!block) return;
+  // Reset UI
+  block.classList.remove('hidden');
+  loading.classList.remove('hidden');
+  content.classList.add('hidden');
+  errEl.classList.add('hidden');
+  photoImg.classList.add('hidden');
+  photoFallback.classList.add('hidden');
+  document.getElementById('d-qrz-cached').classList.add('hidden');
+
+  try {
+    var r = await fetch(location.origin + '/api/qrz/lookup?call=' + encodeURIComponent(call));
+    var j = await r.json();
+    loading.classList.add('hidden');
+    if (!r.ok) {
+      if (r.status === 503) {
+        // QRZ not configured - hide block entirely so it doesn't clutter
+        block.classList.add('hidden');
+        return;
+      }
+      if (r.status === 404) {
+        errEl.innerText = 'QRZ: ' + (j.error || 'callsign not found');
+        errEl.classList.remove('hidden');
+        return;
+      }
+      errEl.innerText = 'QRZ lookup failed';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    if (j.cached) document.getElementById('d-qrz-cached').classList.remove('hidden');
+
+    var d = j.data || {};
+    if (Object.keys(d).length === 0) {
+      block.classList.add('hidden');
+      return;
+    }
+    content.classList.remove('hidden');
+
+    // Photo
+    if (d.image) {
+      photoImg.src = d.image;
+      photoImg.classList.remove('hidden');
+      photoImg.onerror = function() {
+        photoImg.classList.add('hidden');
+        photoFallback.classList.remove('hidden');
+      };
+    } else {
+      photoFallback.classList.remove('hidden');
+    }
+
+    // Name
+    var name = d.name_fmt || ((d.fname||'') + ' ' + (d.name||'')).trim() || (d.call||call);
+    document.getElementById('d-qrz-name').innerText = name;
+
+    // Address
+    var addrParts = [];
+    if (d.addr1) addrParts.push(d.addr1);
+    if (d.addr2) addrParts.push(d.addr2);
+    if (d.state) addrParts.push(d.state);
+    if (d.zip)   addrParts.push(d.zip);
+    document.getElementById('d-qrz-addr').innerText = addrParts.join(', ');
+
+    // Detail rows
+    function setRow(rowId, valueId, value) {
+      var row = document.getElementById(rowId);
+      var val = document.getElementById(valueId);
+      if (value) { val.innerText = value; row.classList.remove('hidden'); }
+      else row.classList.add('hidden');
+    }
+    setRow('d-qrz-class-row', 'd-qrz-class', d.class);
+    setRow('d-qrz-grid-row', 'd-qrz-grid', d.grid);
+    setRow('d-qrz-country-row', 'd-qrz-country', d.country || d.land);
+    setRow('d-qrz-county-row', 'd-qrz-county', d.county);
+    setRow('d-qrz-born-row', 'd-qrz-born', d.born);
+    var qslParts = [];
+    if (d.lotw === '1') qslParts.push('LOTW');
+    if (d.eqsl === '1') qslParts.push('eQSL');
+    if (d.mqsl === '1') qslParts.push('Paper');
+    setRow('d-qrz-qsl-row', 'd-qrz-qsl', qslParts.join(', '));
+
+    // Link
+    var link = document.getElementById('d-qrz-link');
+    link.href = d.url || ('https://www.qrz.com/db/' + (d.call || call));
+
+    // Aliases
+    var aliasEl = document.getElementById('d-qrz-aliases');
+    if (d.aliases) {
+      aliasEl.innerText = '· also: ' + d.aliases;
+      aliasEl.classList.remove('hidden');
+    } else aliasEl.classList.add('hidden');
+  } catch(e) {
+    loading.classList.add('hidden');
+    errEl.innerText = 'QRZ lookup error: ' + e.message;
+    errEl.classList.remove('hidden');
+  }
+}
+
+// Hook into openDetail - look for what's called when detail opens
 
 // ─── LoRa-APRS Integration ────────────────────────────────────────────────────
 // Global LoRa-APRS network overlay using lora-aprs.live API

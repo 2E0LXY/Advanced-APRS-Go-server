@@ -5,6 +5,7 @@ import (
 	"bytes"
 	_ "embed"
 	"encoding/json"
+	"encoding/xml"
 	"os"
 	"os/exec"
 	"fmt"
@@ -44,6 +45,8 @@ type AppConfig struct {
 	CenterLon      float64 `json:"center_lon"`
 	RadiusKm       float64 `json:"radius_km"`
 	AISStreamKey   string  `json:"ais_stream_key"`
+	QRZUsername    string  `json:"qrz_username"`
+	QRZPassword    string  `json:"qrz_password"`
 	sync.RWMutex   `json:"-"`
 }
 
@@ -232,6 +235,213 @@ func handleTocalls(w http.ResponseWriter, r *http.Request) {
 	w.Write(embeddedTocallsJSON)
 }
 
+
+
+// ─── QRZ.com XML API proxy ────────────────────────────────────────────────────
+// QRZ XML API requires login (username+password) to get a session key, then
+// session key + callsign to look up. We do this server-side and:
+//   1. Cache the session key (rotates when expires)
+//   2. Cache lookup results (24h TTL)
+//   3. Strip sensitive fields before returning to client
+// Spec: https://www.qrz.com/docs/xml/current_spec.html
+
+type qrzCache struct {
+	sync.RWMutex
+	SessionKey  string
+	SessionExp  int64
+	Lookups     map[string]qrzCachedLookup
+}
+
+type qrzCachedLookup struct {
+	Data    map[string]string
+	Fetched int64
+}
+
+var qrzC = &qrzCache{Lookups: make(map[string]qrzCachedLookup)}
+
+type qrzSession struct {
+	XMLName xml.Name `xml:"QRZDatabase"`
+	Session struct {
+		Key     string `xml:"Key"`
+		Error   string `xml:"Error"`
+		Message string `xml:"Message"`
+		SubExp  string `xml:"SubExp"`
+	} `xml:"Session"`
+	Callsign struct {
+		Call    string `xml:"call"`
+		Fname   string `xml:"fname"`
+		Name    string `xml:"name"`
+		Addr1   string `xml:"addr1"`
+		Addr2   string `xml:"addr2"`
+		State   string `xml:"state"`
+		Zip     string `xml:"zip"`
+		Country string `xml:"country"`
+		Grid    string `xml:"grid"`
+		County  string `xml:"county"`
+		Land    string `xml:"land"`
+		Class   string `xml:"class"`
+		Email   string `xml:"email"`
+		URL     string `xml:"url"`
+		Image   string `xml:"image"`
+		Aliases string `xml:"aliases"`
+		Lat     string `xml:"lat"`
+		Lon     string `xml:"lon"`
+		Bio     string `xml:"bio"`
+		QSLMgr  string `xml:"qslmgr"`
+		EQSL    string `xml:"eqsl"`
+		MQSL    string `xml:"mqsl"`
+		LOTW    string `xml:"lotw"`
+		Born    string `xml:"born"`
+		NameFmt string `xml:"name_fmt"`
+		NickN   string `xml:"nickname"`
+	} `xml:"Callsign"`
+}
+
+// qrzLogin obtains a new session key from QRZ. Holds qrzC write lock.
+func qrzLogin() (string, error) {
+	config.RLock()
+	user, pass := config.QRZUsername, config.QRZPassword
+	config.RUnlock()
+	if user == "" || pass == "" {
+		return "", fmt.Errorf("QRZ not configured")
+	}
+	url := fmt.Sprintf("https://xmldata.qrz.com/xml/current/?username=%s;password=%s;agent=AdvancedAPRS/1.4",
+		url_encode(user), url_encode(pass))
+	resp, err := httpClient.Get(url)
+	if err != nil { return "", err }
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var s qrzSession
+	if err := xml.Unmarshal(body, &s); err != nil { return "", err }
+	if s.Session.Error != "" { return "", fmt.Errorf("QRZ login: %s", s.Session.Error) }
+	if s.Session.Key == "" { return "", fmt.Errorf("QRZ login: empty key") }
+	return s.Session.Key, nil
+}
+
+// url_encode minimally percent-encodes a string for QRZ URL parameter use
+func url_encode(s string) string {
+	r := strings.NewReplacer(
+		" ", "%20", "&", "%26", "?", "%3F", "=", "%3D", "#", "%23",
+		";", "%3B", "+", "%2B", "/", "%2F")
+	return r.Replace(s)
+}
+
+// handleQRZLookup proxies a QRZ callsign lookup with caching.
+func handleQRZLookup(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	call := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("call")))
+	if call == "" {
+		w.WriteHeader(400)
+		w.Write([]byte(`{"error":"call parameter required"}`))
+		return
+	}
+	// Strip SSID suffix - QRZ doesn't know about it
+	if i := strings.Index(call, "-"); i > 0 { call = call[:i] }
+
+	// Check cache (24h TTL)
+	qrzC.RLock()
+	if c, ok := qrzC.Lookups[call]; ok && time.Now().Unix()-c.Fetched < 86400 {
+		qrzC.RUnlock()
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"call": call, "cached": true, "data": c.Data,
+		})
+		return
+	}
+	qrzC.RUnlock()
+
+	// Need to query QRZ - get or refresh session key
+	qrzC.Lock()
+	if qrzC.SessionKey == "" || time.Now().Unix() > qrzC.SessionExp {
+		key, err := qrzLogin()
+		if err != nil {
+			qrzC.Unlock()
+			w.WriteHeader(503)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		qrzC.SessionKey = key
+		qrzC.SessionExp = time.Now().Unix() + 3600 // refresh every hour to be safe
+	}
+	sessKey := qrzC.SessionKey
+	qrzC.Unlock()
+
+	// Do the lookup
+	url := fmt.Sprintf("https://xmldata.qrz.com/xml/current/?s=%s;callsign=%s", sessKey, call)
+	resp, err := httpClient.Get(url)
+	if err != nil {
+		w.WriteHeader(502)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	var s qrzSession
+	if err := xml.Unmarshal(body, &s); err != nil {
+		w.WriteHeader(502)
+		json.NewEncoder(w).Encode(map[string]string{"error": "QRZ XML parse: " + err.Error()})
+		return
+	}
+	if s.Session.Error != "" {
+		// Session expired or callsign not found - distinguish
+		errMsg := s.Session.Error
+		if strings.Contains(strings.ToLower(errMsg), "session") {
+			// Force re-login next time
+			qrzC.Lock()
+			qrzC.SessionKey = ""
+			qrzC.Unlock()
+		}
+		w.WriteHeader(404)
+		json.NewEncoder(w).Encode(map[string]string{"error": errMsg, "call": call})
+		return
+	}
+
+	// Build response data (filter to non-sensitive fields)
+	c := s.Callsign
+	data := map[string]string{}
+	if c.Call != ""    { data["call"]    = c.Call }
+	if c.Fname != ""   { data["fname"]   = c.Fname }
+	if c.Name != ""    { data["name"]    = c.Name }
+	if c.NameFmt != "" { data["name_fmt"] = c.NameFmt }
+	if c.NickN != ""   { data["nickname"] = c.NickN }
+	if c.Addr1 != ""   { data["addr1"]   = c.Addr1 }
+	if c.Addr2 != ""   { data["addr2"]   = c.Addr2 }
+	if c.State != ""   { data["state"]   = c.State }
+	if c.Zip != ""     { data["zip"]     = c.Zip }
+	if c.Country != "" { data["country"] = c.Country }
+	if c.Grid != ""    { data["grid"]    = c.Grid }
+	if c.County != ""  { data["county"]  = c.County }
+	if c.Land != ""    { data["land"]    = c.Land }
+	if c.Class != ""   { data["class"]   = c.Class }
+	if c.Email != ""   { data["email"]   = c.Email }
+	if c.URL != ""     { data["url"]     = c.URL }
+	if c.Image != ""   { data["image"]   = c.Image }
+	if c.Aliases != "" { data["aliases"] = c.Aliases }
+	if c.Lat != ""     { data["lat"]     = c.Lat }
+	if c.Lon != ""     { data["lon"]     = c.Lon }
+	if c.QSLMgr != ""  { data["qslmgr"]  = c.QSLMgr }
+	if c.EQSL != ""    { data["eqsl"]    = c.EQSL }
+	if c.MQSL != ""    { data["mqsl"]    = c.MQSL }
+	if c.LOTW != ""    { data["lotw"]    = c.LOTW }
+	if c.Born != ""    { data["born"]    = c.Born }
+
+	// Cache it
+	qrzC.Lock()
+	qrzC.Lookups[call] = qrzCachedLookup{Data: data, Fetched: time.Now().Unix()}
+	// Prune old entries when cache grows large
+	if len(qrzC.Lookups) > 5000 {
+		cutoff := time.Now().Unix() - 86400
+		for k, v := range qrzC.Lookups {
+			if v.Fetched < cutoff { delete(qrzC.Lookups, k) }
+		}
+	}
+	qrzC.Unlock()
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"call": call, "cached": false, "data": data,
+	})
+}
+
 func main() {
 	loadOrInitCreds()
 	loadSavedConfig()
@@ -291,6 +501,7 @@ func main() {
 	http.HandleFunc("/api/ariss", handleARISS)
 	http.HandleFunc("/api/version", handleVersion)
 	http.HandleFunc("/api/tocalls", handleTocalls)
+	http.HandleFunc("/api/qrz/lookup", handleQRZLookup)
 	http.HandleFunc("/api/messages", handleMessages)
 	http.HandleFunc("/api/iss", handleISSPosition)
 	http.HandleFunc("/api/update", basicAuth(handleUpdate))
@@ -1255,6 +1466,8 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	config.RLock()
 	res["upstream_addr"] = config.UpstreamAddr
 	res["ais_stream_key"] = config.AISStreamKey
+	res["qrz_username"] = config.QRZUsername
+	res["qrz_configured"] = (config.QRZUsername != "" && config.QRZPassword != "")
 	config.RUnlock()
 	res["upstream_connected"] = atomic.LoadInt32(&upstreamConnected) == 1
 	rawRingMu.RLock()
@@ -1317,6 +1530,12 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 	config.RadiusKm = n.RadiusKm
 	if n.AISStreamKey != "" {
 		config.AISStreamKey = strings.TrimSpace(n.AISStreamKey)
+	}
+	if n.QRZUsername != "" {
+		config.QRZUsername = strings.TrimSpace(n.QRZUsername)
+	}
+	if n.QRZPassword != "" {
+		config.QRZPassword = n.QRZPassword
 	}
 	config.Unlock()
 	if err := saveConfig(); err != nil {
@@ -1625,6 +1844,8 @@ func loadSavedConfig() {
 	config.CenterLon      = saved.CenterLon
 	config.RadiusKm       = saved.RadiusKm
 	if saved.AISStreamKey != "" { config.AISStreamKey = saved.AISStreamKey }
+	if saved.QRZUsername != "" { config.QRZUsername = saved.QRZUsername }
+	if saved.QRZPassword != "" { config.QRZPassword = saved.QRZPassword }
 	config.Unlock()
 	log.Printf("Server config loaded: callsign=%s upstream=%s filter=%s",
 		saved.Callsign, saved.UpstreamAddr, saved.ServerFilter)
