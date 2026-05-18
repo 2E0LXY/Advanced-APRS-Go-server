@@ -9496,9 +9496,15 @@ function toggleSeamarks() {
   if (enabled) {
     if (!_seamarkLayer) {
       _seamarkLayer = L.tileLayer(
-        'https://t1.openseamap.org/seamark/{z}/{x}/{y}.png',
-        { maxZoom: 18, opacity: 0.85, attribution: '© OpenSeaMap contributors' }
+        'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',
+        { maxZoom: 18, minZoom: 7, opacity: 0.9, attribution: '© OpenSeaMap contributors',
+          errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=' }
       );
+      // Note: seamarks only render at zoom 7+ - inform user
+      var statusEl = document.getElementById('ais-status');
+      if (statusEl && map.getZoom() < 7) {
+        alert('Sea Marks render best at zoom level 7 or higher. Zoom in on a coastal area to see buoys, lighthouses, harbors, etc.');
+      }
     }
     _seamarkLayer.addTo(map);
   } else if (_seamarkLayer) {
@@ -9542,6 +9548,7 @@ function startAISWebSocket(key) {
   statusEl.innerText = 'Connecting to aisstream.io...';
   try {
     _aisWs = new WebSocket('wss://stream.aisstream.io/v0/stream');
+    _aisWs.binaryType = 'arraybuffer';
     _aisWs.onopen = function() {
       // Subscribe to ships in current map bounds
       var b = map.getBounds();
@@ -9557,33 +9564,15 @@ function startAISWebSocket(key) {
       statusEl.innerText = 'Connected · 0 ships';
     };
     _aisWs.onmessage = function(ev) {
-      try {
-        var m = JSON.parse(ev.data);
-        if (m.MessageType === 'PositionReport' && m.Message && m.Message.PositionReport) {
-          var pr = m.Message.PositionReport;
-          var meta = m.MetaData || {};
-          var mmsi = meta.MMSI || pr.UserID;
-          if (!mmsi || !pr.Latitude || !pr.Longitude) return;
-          if (!_aisShips[mmsi]) {
-            _aisShips[mmsi] = { mmsi: mmsi, marker: null };
-          }
-          var s = _aisShips[mmsi];
-          s.lat = pr.Latitude; s.lon = pr.Longitude;
-          s.cog = pr.Cog; s.sog = pr.Sog; s.name = meta.ShipName || '';
-          s.ts = Date.now();
-          renderShip(s);
-          statusEl.innerText = 'Connected · ' + Object.keys(_aisShips).length + ' ships';
-        } else if (m.MessageType === 'ShipStaticData' && m.Message && m.Message.ShipStaticData) {
-          var sd = m.Message.ShipStaticData;
-          var meta = m.MetaData || {};
-          var mmsi = meta.MMSI || sd.UserID;
-          if (_aisShips[mmsi]) {
-            _aisShips[mmsi].name = sd.Name || _aisShips[mmsi].name;
-            _aisShips[mmsi].destination = sd.Destination;
-            _aisShips[mmsi].callsign = sd.CallSign;
-          }
-        }
-      } catch(e) { console.warn('AIS parse:', e); }
+      var raw = ev.data;
+      if (raw instanceof Blob) {
+        raw.text().then(function(txt) { processAISMessage(txt); });
+      } else if (raw instanceof ArrayBuffer) {
+        var txt = new TextDecoder('utf-8').decode(new Uint8Array(raw));
+        processAISMessage(txt);
+      } else {
+        processAISMessage(raw);
+      }
     };
     _aisWs.onerror = function() {
       statusEl.innerText = 'AIS connection error - check API key';
@@ -9593,6 +9582,48 @@ function startAISWebSocket(key) {
     };
   } catch(e) {
     statusEl.innerText = 'AIS failed: ' + e.message;
+  }
+}
+
+function processAISMessage(txt) {
+  if (!txt) return;
+  try {
+    var m = JSON.parse(txt);
+    var statusEl = document.getElementById('ais-status');
+    if (m.MessageType === 'PositionReport' && m.Message && m.Message.PositionReport) {
+      var pr = m.Message.PositionReport;
+      var meta = m.MetaData || {};
+      var mmsi = meta.MMSI || pr.UserID;
+      if (!mmsi || pr.Latitude == null || pr.Longitude == null) return;
+      if (!_aisShips[mmsi]) {
+        _aisShips[mmsi] = { mmsi: mmsi, marker: null };
+      }
+      var s = _aisShips[mmsi];
+      s.lat = pr.Latitude; s.lon = pr.Longitude;
+      s.cog = pr.Cog; s.sog = pr.Sog;
+      if (meta.ShipName) s.name = meta.ShipName.trim();
+      s.ts = Date.now();
+      renderShip(s);
+      if (statusEl) statusEl.innerText = 'Connected · ' + Object.keys(_aisShips).length + ' ships';
+    } else if (m.MessageType === 'ShipStaticData' && m.Message && m.Message.ShipStaticData) {
+      var sd = m.Message.ShipStaticData;
+      var meta = m.MetaData || {};
+      var mmsi = meta.MMSI || sd.UserID;
+      if (_aisShips[mmsi]) {
+        if (sd.Name) _aisShips[mmsi].name = sd.Name.trim();
+        if (sd.Destination) _aisShips[mmsi].destination = sd.Destination.trim();
+        if (sd.CallSign) _aisShips[mmsi].callsign = sd.CallSign.trim();
+        if (_aisShips[mmsi].marker) {
+          _aisShips[mmsi].marker.unbindPopup();
+          renderShip(_aisShips[mmsi]); // refresh popup binding
+        }
+      }
+    } else if (m.MessageType === 'Error' || m.error) {
+      if (statusEl) statusEl.innerText = 'AIS error: ' + (m.error || JSON.stringify(m).slice(0,80));
+      console.warn('AIS server error:', m);
+    }
+  } catch(e) {
+    console.warn('AIS parse:', e.message, 'data:', (txt||'').slice(0,150));
   }
 }
 
