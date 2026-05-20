@@ -9069,16 +9069,24 @@ function initCesium() {
       geocoder: false, homeButton: false, infoBox: true, sceneModePicker: false,
       selectionIndicator: true, timeline: false, navigationHelpButton: false,
       navigationInstructionsInitiallyVisible: false, scene3DOnly: true,
-      // Use OpenStreetMap-style tiles (works without API key, shows land/borders clearly)
+      // Multiple imagery layers - first one is the basemap
       imageryProvider: new Cesium.UrlTemplateImageryProvider({
-        url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-        credit: '© OpenStreetMap contributors',
-        maximumLevel: 19
+        url: 'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        credit: new Cesium.Credit('© OpenStreetMap contributors', false),
+        maximumLevel: 18,
+        minimumLevel: 0,
+        tilingScheme: new Cesium.WebMercatorTilingScheme()
       })
     });
-    // Add starfield background
+    // Configure globe appearance
     _cesiumViewer.scene.skyAtmosphere.show = true;
     _cesiumViewer.scene.globe.enableLighting = false;
+    _cesiumViewer.scene.globe.show = true;
+    _cesiumViewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#0a1929');
+    _cesiumViewer.scene.backgroundColor = Cesium.Color.BLACK;
+    // Hide the credit container "Data attribution" pop-up that obscures the view
+    var creditContainer = _cesiumViewer._cesiumWidget._creditContainer;
+    if (creditContainer) creditContainer.style.display = 'none';
     // Spin slightly for the wow factor on first load
     _cesiumViewer.camera.flyHome(0);
     document.getElementById('g-stat').innerText = '';
