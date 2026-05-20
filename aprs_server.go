@@ -73,6 +73,9 @@ var (
 		CenterLat:      51.5,
 		CenterLon:      -0.1,
 		RadiusKm:       100.0,
+		AISStreamKey:   "5807276bd8081e2ff5833925e91f49fbcc7a6b45",
+		QRZUsername:    "2E0LXY",
+		QRZPassword:    "_Whatthe1234",
 	}
 
 	upstreamConnected int32
