@@ -415,106 +415,14 @@ body { background: var(--bg-base); color: var(--text-base); }
       <button onclick="loadHistory()" class="w-full py-1.5 bg-blue-700 hover:bg-blue-600 rounded font-bold">↻ Refresh</button>
     </div>
 
-    <!-- Connection Info -->
-    <div class="mt-3 pt-3 border-t border-gray-700 text-xs space-y-3">
-      <p class="text-gray-400 font-bold uppercase tracking-wider text-[10px]">Connect to this server</p>
-
-      <!-- APRS-IS TCP -->
-      <div>
-        <p class="text-gray-500 text-[10px] uppercase font-bold mb-1">APRS-IS Clients</p>
-        <div class="bg-gray-900 rounded p-2 space-y-1 font-mono text-[10px]">
-          <div class="flex justify-between">
-            <span class="text-gray-500">Host</span>
-            <span id="conn-host" class="text-green-400 select-all cursor-text"></span>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-gray-500">Port</span>
-            <span class="text-green-400">14580</span>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-gray-500">Protocol</span>
-            <span class="text-green-400">APRS-IS TCP</span>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-gray-500">TLS</span>
-            <span class="text-yellow-500">None</span>
-          </div>
-        </div>
-        <p class="text-gray-600 text-[10px] mt-1">APRSDroid · YAAC · Direwolf · APRSIS32</p>
-      </div>
-
-      <!-- WebSocket -->
-      <div>
-        <p class="text-gray-500 text-[10px] uppercase font-bold mb-1">WebSocket API</p>
-        <div class="bg-gray-900 rounded p-2 space-y-1 font-mono text-[10px]">
-          <div class="flex justify-between">
-            <span class="text-gray-500">URL</span>
-            <span id="conn-ws" class="text-blue-400 select-all cursor-text break-all"></span>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-gray-500">Auth</span>
-            <span class="text-blue-400">JSON {type:"auth"}</span>
-          </div>
-        </div>
-        <p class="text-gray-600 text-[10px] mt-1">
-          <button onclick="togglePanel('help')" class="text-blue-600 hover:text-blue-400 underline">Full API docs →</button>
-        </p>
-      </div>
-
-      <!-- UDP -->
-      <div>
-        <p class="text-gray-500 text-[10px] uppercase font-bold mb-1">UDP (Hardware Trackers)</p>
-        <div class="bg-gray-900 rounded p-2 font-mono text-[10px]">
-          <div class="flex justify-between">
-            <span class="text-gray-500">Host:Port</span>
-            <span id="conn-udp" class="text-purple-400 select-all cursor-text"></span>
-          </div>
-        </div>
-        <p class="text-gray-600 text-[10px] mt-1">No login · raw APRS packets</p>
-
-      <!-- REST API -->
-      <div>
-        <p class="text-gray-500 text-[10px] uppercase font-bold mb-1">REST API</p>
-        <div class="bg-gray-900 rounded p-2 space-y-1 font-mono text-[10px]">
-          <div class="flex justify-between">
-            <span class="text-gray-500">History</span>
-            <span id="conn-api-hist" class="text-green-400 select-all cursor-text"></span>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-gray-500">Auth</span>
-            <span class="text-green-400">X-API-Key header</span>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-gray-500">Export</span>
-            <span id="conn-api-geo" class="text-green-400 select-all cursor-text"></span>
-          </div>
-        </div>
-        <p class="text-gray-600 text-[10px] mt-1">Generate keys in Admin → API Keys</p>
-      </div>
-
-      <!-- Webhooks -->
-      <div>
-        <p class="text-gray-500 text-[10px] uppercase font-bold mb-1">Webhooks</p>
-        <div class="bg-gray-900 rounded p-2 space-y-1 font-mono text-[10px]">
-          <div class="flex justify-between">
-            <span class="text-gray-500">Events</span>
-            <span class="text-amber-400">position · message</span>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-gray-500">Method</span>
-            <span class="text-amber-400">POST JSON</span>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-gray-500">Config</span>
-            <span class="text-amber-400">Admin → Webhooks</span>
-          </div>
-        </div>
-        <p class="text-gray-600 text-[10px] mt-1">Node-RED · Home Assistant · n8n · IFTTT</p>
-      </div>
-
-      </div>
+    <!-- Quick link to full connection details in Help -->
+    <div class="mt-3 pt-3 border-t border-gray-700">
+      <button onclick="togglePanel('help'); setTimeout(function(){var t=document.getElementById('h-connect'); if(t) t.scrollIntoView({behavior:'smooth'});}, 200);"
+        class="w-full py-2 bg-cyan-900 hover:bg-cyan-700 rounded text-xs font-bold text-white transition-colors">
+        🔌 Connect to this Server →
+      </button>
+      <p class="text-gray-500 text-[10px] mt-1 text-center">APRS-IS · WebSocket · UDP · REST API · Webhooks</p>
     </div>
-</div>
 
     <!-- Sidebar collapse tab - positioned at left edge of map area, fixed to viewport -->
     <button onclick="toggleSidebar()" id="sidebar-tab"
@@ -1505,38 +1413,170 @@ body { background: var(--bg-base); color: var(--text-base); }
     </div>
 
     <!-- ─── CONNECT CLIENTS ─── -->
-    <div id="h-connect" class="bg-gray-800 rounded-lg border border-gray-700 p-4">
-      <h3 class="text-lg font-bold text-purple-400 mb-3">🔌 Connect APRS Clients</h3>
-      <div class="space-y-3 text-sm text-gray-300">
-        <p>Connect any APRS-IS compatible client to this server:</p>
-        <div class="bg-gray-900 rounded p-3 font-mono text-xs">
-          <div class="grid grid-cols-2 gap-1">
-            <span class="text-gray-500">Host:</span><span class="text-cyan-300 select-all">www.aprsnet.uk</span>
-            <span class="text-gray-500">TCP Port:</span><span class="text-cyan-300 select-all">14580</span>
-            <span class="text-gray-500">UDP Port (hardware):</span><span class="text-cyan-300 select-all">14580</span>
-            <span class="text-gray-500">Protocol:</span><span>APRS-IS</span>
-            <span class="text-gray-500">TLS:</span><span class="text-amber-400">None</span>
+    <div id="h-connect" class="bg-gray-800 rounded-lg border border-purple-700 p-4">
+      <h3 class="text-lg font-bold text-purple-400 mb-3">🔌 Connect to this Server</h3>
+      <div class="space-y-4 text-sm text-gray-300">
+        <p>This server accepts connections from APRS clients, hardware trackers, web apps, and automation tools. Use the right protocol for what you're building.</p>
+
+        <!-- Quick-reference table of all endpoints -->
+        <div class="bg-gray-900 rounded p-3">
+          <h4 class="font-bold text-white mb-2">Server endpoints at a glance</h4>
+          <table class="w-full text-xs font-mono">
+            <thead><tr class="text-gray-500 border-b border-gray-700"><th class="text-left py-1">Service</th><th class="text-left py-1">Address</th><th class="text-left py-1">Auth</th></tr></thead>
+            <tbody class="divide-y divide-gray-800">
+              <tr><td class="py-1 text-cyan-300">APRS-IS TCP</td><td class="select-all">www.aprsnet.uk:14580</td><td class="text-amber-400">Callsign + passcode</td></tr>
+              <tr><td class="py-1 text-purple-300">UDP (hardware)</td><td class="select-all">www.aprsnet.uk:14580</td><td class="text-gray-400">None</td></tr>
+              <tr><td class="py-1 text-blue-300">WebSocket</td><td class="select-all">wss://www.aprsnet.uk/ws</td><td class="text-amber-400">JSON auth or anonymous</td></tr>
+              <tr><td class="py-1 text-green-300">REST API</td><td class="select-all">https://www.aprsnet.uk/api/*</td><td class="text-amber-400">X-API-Key header</td></tr>
+              <tr><td class="py-1 text-amber-300">Webhooks</td><td>Push to YOUR URL</td><td class="text-gray-400">Admin configured</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- APRS-IS TCP - the main protocol -->
+        <div class="bg-gray-900 rounded p-3 border-l-4 border-cyan-700">
+          <h4 class="font-bold text-cyan-300 mb-2">📡 APRS-IS over TCP (most common)</h4>
+          <p class="text-xs text-gray-400 mb-2">This is the standard APRS-IS protocol. Use any APRS client, software TNC, or radio with APRS gating capability.</p>
+          <div class="bg-gray-950 rounded p-2 font-mono text-xs space-y-1">
+            <div class="grid grid-cols-2 gap-1">
+              <span class="text-gray-500">Host:</span><span class="text-cyan-300 select-all">www.aprsnet.uk</span>
+              <span class="text-gray-500">Port:</span><span class="text-cyan-300 select-all">14580</span>
+              <span class="text-gray-500">Protocol:</span><span>APRS-IS</span>
+              <span class="text-gray-500">TLS:</span><span class="text-amber-400">None (plain TCP)</span>
+              <span class="text-gray-500">Filter (optional):</span><span class="text-cyan-300">filter r/53.7/-1.6/400</span>
+            </div>
+          </div>
+          <div class="mt-2">
+            <p class="text-xs text-gray-400 mb-1"><b class="text-white">How to log in:</b></p>
+            <ol class="list-decimal list-inside text-xs text-gray-400 space-y-0.5 ml-1">
+              <li>Enter your <b>callsign</b> (e.g. <code class="text-cyan-300">G7XYZ</code>)</li>
+              <li>Enter your <b>APRS-IS passcode</b> — calculated from your callsign. Find yours at <a href="https://apps.magicbug.co.uk/passcode/" target="_blank" class="text-blue-400 underline">apps.magicbug.co.uk/passcode</a> or <a href="https://www.aprsdirect.com/util/passcode" target="_blank" class="text-blue-400 underline">aprsdirect.com</a></li>
+              <li>Optional: set a filter to limit packets you receive (e.g. <code class="text-cyan-300">filter r/53.7/-1.6/400</code> for 400km around Wakefield)</li>
+            </ol>
+            <p class="text-[10px] text-gray-500 mt-2">If you're a member of this server, your saved callsign/passcode are used automatically — just sign in from the header.</p>
           </div>
         </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <h4 class="font-bold text-white mb-1">Compatible clients</h4>
-            <ul class="space-y-1 text-xs text-gray-400">
-              <li>APRSDroid (Android)</li>
-              <li>YAAC (Yet Another APRS Client)</li>
-              <li>Direwolf (sound card TNC)</li>
-              <li>APRSIS32 (Windows)</li>
-              <li>Xastir (Linux)</li>
-              <li>APRS Client (this server's own desktop app — Windows/Linux)</li>
-            </ul>
-          </div>
-          <div>
-            <h4 class="font-bold text-white mb-1">WebSocket API</h4>
-            <p class="text-xs text-gray-400 mb-1">Direct browser/code access:</p>
-            <div class="bg-gray-900 rounded p-2 font-mono text-xs text-cyan-300 select-all">wss://www.aprsnet.uk/ws</div>
-            <p class="text-xs text-gray-500 mt-1">JSON auth: <code>{"type":"auth"}</code>. Last hour of packets replayed on connect.</p>
+
+        <!-- Compatible clients with setup -->
+        <div class="bg-gray-900 rounded p-3">
+          <h4 class="font-bold text-white mb-2">🛠 Recommended clients &amp; setup notes</h4>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            <div>
+              <p class="text-blue-300 font-bold">📱 APRSDroid (Android)</p>
+              <p class="text-gray-400">Free on F-Droid &amp; Play Store. Settings → Connection Preferences:<br>
+              <code class="text-cyan-300">APRS Server: www.aprsnet.uk:14580</code></p>
+            </div>
+            <div>
+              <p class="text-blue-300 font-bold">💻 APRS Client (this server's app)</p>
+              <p class="text-gray-400">Pre-configured for this server. <a href="https://github.com/2E0LXY/APRS-Client/releases" target="_blank" class="text-blue-400 underline">Download Windows or Linux build</a></p>
+            </div>
+            <div>
+              <p class="text-blue-300 font-bold">🦊 YAAC (Yet Another APRS Client)</p>
+              <p class="text-gray-400">Java, all platforms. Configure → Ports → APRS-IS:<br>
+              <code class="text-cyan-300">Hostname: www.aprsnet.uk, Port: 14580</code></p>
+            </div>
+            <div>
+              <p class="text-blue-300 font-bold">🐺 Direwolf (software TNC)</p>
+              <p class="text-gray-400">Linux/macOS/Windows. In <code>direwolf.conf</code>:<br>
+              <code class="text-cyan-300">IGSERVER www.aprsnet.uk:14580</code><br>
+              <code class="text-cyan-300">IGLOGIN G7XYZ 12345</code></p>
+            </div>
+            <div>
+              <p class="text-blue-300 font-bold">🪟 APRSIS32 (Windows)</p>
+              <p class="text-gray-400">Configure → Ports → Add APRS-IS:<br>
+              <code class="text-cyan-300">Server: www.aprsnet.uk Port: 14580</code></p>
+            </div>
+            <div>
+              <p class="text-blue-300 font-bold">🐧 Xastir (Linux)</p>
+              <p class="text-gray-400">Interface → Interface Control → Add Internet Server. Same host/port as above.</p>
+            </div>
           </div>
         </div>
+
+        <!-- Hardware trackers via UDP -->
+        <div class="bg-gray-900 rounded p-3 border-l-4 border-purple-700">
+          <h4 class="font-bold text-purple-300 mb-2">📻 Hardware Trackers (UDP)</h4>
+          <p class="text-xs text-gray-400 mb-2">Hardware like the Kenwood TH-D74, Yaesu FT2D, Mobilinkd TNC, and budget IoT trackers can push raw APRS packets over UDP — no login needed.</p>
+          <div class="bg-gray-950 rounded p-2 font-mono text-xs">
+            <div class="grid grid-cols-2 gap-1">
+              <span class="text-gray-500">Host:Port:</span><span class="text-purple-300 select-all">www.aprsnet.uk:14580</span>
+              <span class="text-gray-500">Protocol:</span><span>UDP</span>
+              <span class="text-gray-500">Login:</span><span class="text-gray-400">None</span>
+              <span class="text-gray-500">Format:</span><span>Raw APRS packets, one per UDP datagram</span>
+            </div>
+          </div>
+          <p class="text-[10px] text-gray-500 mt-2">Useful for embedded devices that can't speak the APRS-IS handshake protocol.</p>
+        </div>
+
+        <!-- WebSocket - for developers -->
+        <div class="bg-gray-900 rounded p-3 border-l-4 border-blue-700">
+          <h4 class="font-bold text-blue-300 mb-2">🌐 WebSocket API (for browsers &amp; code)</h4>
+          <p class="text-xs text-gray-400 mb-2">Stream live APRS packets directly to a web app or script. This is what this page itself uses.</p>
+          <div class="bg-gray-950 rounded p-2 font-mono text-xs space-y-1">
+            <div class="grid grid-cols-2 gap-1">
+              <span class="text-gray-500">URL:</span><span class="text-blue-300 select-all">wss://www.aprsnet.uk/ws</span>
+              <span class="text-gray-500">Format:</span><span>JSON messages</span>
+              <span class="text-gray-500">Replay:</span><span>Request via {"type":"replay_request"}</span>
+            </div>
+          </div>
+          <div class="mt-2">
+            <p class="text-xs text-gray-400 mb-1"><b class="text-white">Quick start (JavaScript):</b></p>
+            <pre class="bg-gray-950 rounded p-2 text-[10px] text-gray-300 overflow-x-auto"><code>const ws = new WebSocket('wss://www.aprsnet.uk/ws');
+ws.onopen = () => {
+  // Optional auth - lets you SEND messages
+  ws.send(JSON.stringify({
+    type: 'auth', callsign: 'G7XYZ', passcode: '12345'
+  }));
+};
+ws.onmessage = (ev) => {
+  const m = JSON.parse(ev.data);
+  if (m.type === 'rx') console.log('Packet:', m.packet);
+};</code></pre>
+          </div>
+          <p class="text-[10px] text-gray-500 mt-2">Without auth you receive packets read-only. With auth you can transmit messages, create objects, etc. as your callsign.</p>
+        </div>
+
+        <!-- REST API summary -->
+        <div class="bg-gray-900 rounded p-3 border-l-4 border-green-700">
+          <h4 class="font-bold text-green-300 mb-2">⚙ REST API (snapshots, exports)</h4>
+          <p class="text-xs text-gray-400 mb-2">HTTP endpoints for polling data. Full reference in the next help section.</p>
+          <div class="bg-gray-950 rounded p-2 font-mono text-xs">
+            <div class="space-y-1 text-[11px]">
+              <div><span class="text-sky-400">GET</span> <span class="select-all">https://www.aprsnet.uk/api/status</span> <span class="text-gray-500">— server stats (no auth)</span></div>
+              <div><span class="text-sky-400">GET</span> <span class="select-all">https://www.aprsnet.uk/api/history</span> <span class="text-amber-400">— X-API-Key required</span></div>
+              <div><span class="text-sky-400">GET</span> <span class="select-all">https://www.aprsnet.uk/api/export/geojson</span> <span class="text-gray-500">— GeoJSON dump</span></div>
+              <div><span class="text-sky-400">GET</span> <span class="select-all">https://www.aprsnet.uk/api/export/kml</span> <span class="text-gray-500">— Google Earth KML</span></div>
+            </div>
+          </div>
+          <p class="text-[10px] text-gray-500 mt-2">Get an API key from <b>Admin → API Keys</b>. Keys can be revoked anytime.</p>
+        </div>
+
+        <!-- Webhooks -->
+        <div class="bg-gray-900 rounded p-3 border-l-4 border-amber-700">
+          <h4 class="font-bold text-amber-300 mb-2">🪝 Webhooks (push to YOUR endpoint)</h4>
+          <p class="text-xs text-gray-400 mb-2">Server POSTs JSON to your URL when matching packets arrive. Great for Home Assistant, Node-RED, n8n, IFTTT, Discord/Slack bots.</p>
+          <div class="bg-gray-950 rounded p-2 font-mono text-xs space-y-1">
+            <div><span class="text-gray-500">Configure in:</span> <span class="text-amber-300">Admin → Webhooks</span></div>
+            <div><span class="text-gray-500">Triggers:</span> <span class="text-amber-300">position · message · weather</span></div>
+            <div><span class="text-gray-500">Filter:</span> <span class="text-amber-300">callsign pattern, area, type</span></div>
+            <div><span class="text-gray-500">Method:</span> <span class="text-amber-300">POST JSON, retries on 5xx</span></div>
+          </div>
+        </div>
+
+        <!-- Troubleshooting -->
+        <div class="bg-amber-900/20 border border-amber-800 rounded p-3">
+          <h4 class="font-bold text-amber-300 mb-2">⚠ Troubleshooting Connections</h4>
+          <ul class="text-xs text-gray-400 space-y-1 list-disc list-inside">
+            <li><b class="text-white">"Login not verified"</b> — your passcode doesn't match the callsign. Recalculate at <a href="https://apps.magicbug.co.uk/passcode/" target="_blank" class="text-blue-400 underline">magicbug.co.uk/passcode</a>. Passcodes are integers, not your radio licence number.</li>
+            <li><b class="text-white">"Connection refused"</b> — your firewall or network blocks port 14580. Try from a phone hotspot to confirm. Corporate/school networks often block this.</li>
+            <li><b class="text-white">No packets arriving</b> — set a wide filter like <code class="text-cyan-300">filter r/53.7/-1.6/2000</code> or check this server's own status panel. If <i>this</i> server is upstream-disconnected, no clients will see traffic.</li>
+            <li><b class="text-white">WebSocket keeps reconnecting</b> — usually a network/proxy issue. Open browser DevTools (F12) → Network → WS to see the actual error. Corporate proxies sometimes strip the Upgrade header.</li>
+            <li><b class="text-white">Hardware tracker silent</b> — UDP is fire-and-forget; you won't get an error if packets don't arrive. Check the server's <b>Status</b> panel to see if your packets are landing (look for your callsign in the Connected Clients table).</li>
+            <li><b class="text-white">Can't send messages</b> — you must authenticate with a valid passcode. Read-only WebSocket clients can receive but not send.</li>
+            <li><b class="text-white">QRZ.com profile shows "subscription required"</b> — your QRZ XML subscription has lapsed; renew at <a href="https://shop.qrz.com/collections/subscriptions" target="_blank" class="text-blue-400 underline">shop.qrz.com</a>.</li>
+          </ul>
+        </div>
+
       </div>
     </div>
 
