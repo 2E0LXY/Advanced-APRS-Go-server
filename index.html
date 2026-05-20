@@ -3460,6 +3460,14 @@ function getSymbolInfo(sym) {
 
 // ─── Map Init ────────────────────────────────────────────────────────────────
 const map = L.map('map', {maxZoom: 19}).setView([53.7, -1.5], 9);
+// Defensive: ensure map-panel is visible (in case any panel logic accidentally hid it)
+(function() {
+  var mp = document.getElementById('map-panel');
+  if (mp) mp.classList.remove('hidden');
+  // Tile rendering sometimes needs a kick after the container has its final size
+  setTimeout(function() { try { map.invalidateSize(); } catch(e) {} }, 100);
+  setTimeout(function() { try { map.invalidateSize(); } catch(e) {} }, 1000);
+})();
 // Marker cluster group — safe init with fallback if plugin not loaded
 let clusterGroup;
 if (typeof L.markerClusterGroup === 'function') {
@@ -10956,7 +10964,7 @@ function renderLoRaData(results) {
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 // initReplayProgress();  // disabled - user triggers replay via sidebar
-console.log('APRS Net JS loaded - build cache-bust-4 (unread message notifications)');
+console.log('APRS Net JS loaded - build cache-bust-5 (map visibility defensive)');
 initTheme();
 initMemberSession();
 loadMOTDBanner();
