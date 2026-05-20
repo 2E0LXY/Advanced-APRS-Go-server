@@ -193,6 +193,20 @@ body { background: var(--bg-base); color: var(--text-base); }
 .marker-cluster-large { background-clip:padding-box; border-radius:20px; background-color:rgba(185,28,28,0.6); }
 .marker-cluster-large div { background-color:rgba(185,28,28,0.9); border-radius:15px; color:#fff; font-weight:bold; font-size:12px; line-height:28px; text-align:center; }
 
+/* Unread message indicator pulse */
+@keyframes unreadSlideIn {
+  from { transform: translateX(120%); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+@keyframes unreadSlideOut {
+  from { transform: translateX(0); opacity: 1; }
+  to   { transform: translateX(120%); opacity: 0; }
+}
+@keyframes unreadPulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 2px #111827, 0 0 0 0 rgba(220,38,38,0.7); }
+  50%      { transform: scale(1.15); box-shadow: 0 0 0 2px #111827, 0 0 0 6px rgba(220,38,38,0); }
+}
+
 /* ─── Animated P2P connection lines ───────────────────────────────────────── */
 /* Uses Leaflet's stroke-dasharray to create a marching-ants effect */
 @keyframes connFlow {
@@ -7573,10 +7587,15 @@ function initMemberSession() {
       return r.json();
     }).then(function(d) {
       if (!d) return;
-      _memberSession.unread = d.unread_messages;
+      var newUnread = d.unread_messages || 0;
+      var oldUnread = _memberSession.unread || 0;
+      _memberSession.unread = newUnread;
       updateMemberBtn();
-      // SSO: fill in credentials throughout the app
       setTimeout(autoFillAPRSCredentials, 200);
+      // If there are unread messages on restore, show notification
+      if (newUnread > 0) {
+        showUnreadNotification(newUnread);
+      }
       // Merge server watchlist with local
       if (d.watchlist && d.watchlist.length) {
         mergeWatchlists(d.watchlist);
@@ -7596,11 +7615,25 @@ function updateMemberBtn() {
   var lbl = document.getElementById('member-btn-label');
   var btn = document.getElementById('member-btn');
   if (!lbl) return;
+  // Remove any existing unread badge
+  var existing = document.getElementById('member-unread-badge');
+  if (existing) existing.remove();
   if (_memberSession) {
     lbl.innerText = _memberSession.callsign;
     var unread = _memberSession.unread || 0;
-    if (unread > 0) lbl.innerText += ' (' + unread + ')';
-    if (btn) btn.style.background = '#164e63';
+    if (unread > 0 && btn) {
+      // Pulsing red badge with count
+      var badge = document.createElement('span');
+      badge.id = 'member-unread-badge';
+      badge.innerText = unread > 99 ? '99+' : unread;
+      badge.style.cssText = 'position:absolute;top:-5px;right:-5px;background:#dc2626;color:#fff;'
+        + 'border-radius:9999px;min-width:18px;height:18px;padding:0 5px;font-size:10px;'
+        + 'font-weight:bold;display:flex;align-items:center;justify-content:center;'
+        + 'box-shadow:0 0 0 2px #111827;animation:unreadPulse 1.5s ease-in-out infinite';
+      btn.style.position = 'relative';
+      btn.appendChild(badge);
+    }
+    if (btn) btn.style.background = unread > 0 ? '#7f1d1d' : '#164e63';
   } else {
     lbl.innerText = 'Login';
     if (btn) btn.style.background = '';
@@ -7664,12 +7697,16 @@ async function memberLogin() {
     if (!r.ok) { err.innerText = d.error || 'Login failed'; err.classList.remove('hidden'); return; }
     err.classList.add('hidden');
     _memberSession = { token: d.token, callsign: d.callsign, name: d.name,
-      passcode: d.passcode, callsigns: d.callsigns, watchlist: d.watchlist };
+      passcode: d.passcode, callsigns: d.callsigns, watchlist: d.watchlist,
+      unread: d.unread_messages || 0 };
     localStorage.setItem('aprs-member-session', JSON.stringify(_memberSession));
     updateMemberBtn();
     mergeWatchlists(d.watchlist || []);
-    // SSO: pre-fill callsign + passcode in messaging panel
     autoFillAPRSCredentials();
+    // Show unread notification if any messages waiting
+    if (d.unread_messages && d.unread_messages > 0) {
+      showUnreadNotification(d.unread_messages);
+    }
     showMMView('dashboard');
     loadMemberDashboard();
   } catch(e) { err.innerText = 'Network error'; err.classList.remove('hidden'); }
@@ -10285,6 +10322,192 @@ async function loadQRZProfile(call) {
 
 // Hook into openDetail - look for what's called when detail opens
 
+
+// ─── Unread Message Notifications ─────────────────────────────────────────────
+// Shows a prominent toast + (if permitted) browser notification when offline
+// messages are detected for a logged-in member. Also requests notification
+// permission on first login so future alerts can show even when tab inactive.
+
+var _unreadNotifyShown = false;
+
+function showUnreadNotification(count) {
+  if (_unreadNotifyShown) return;  // Only once per session start
+  _unreadNotifyShown = true;
+
+  // Remove any existing toast
+  var prev = document.getElementById('unread-toast');
+  if (prev) prev.remove();
+
+  // Build a rich toast with action button
+  var toast = document.createElement('div');
+  toast.id = 'unread-toast';
+  toast.style.cssText = 'position:fixed;top:80px;right:20px;background:linear-gradient(135deg,#7f1d1d,#991b1b);'
+    + 'border:2px solid #dc2626;border-radius:12px;padding:16px 20px;z-index:99999;'
+    + 'box-shadow:0 8px 24px rgba(0,0,0,0.6);max-width:380px;color:#fff;'
+    + 'animation:unreadSlideIn 0.4s ease-out;font-family:system-ui,sans-serif';
+  toast.innerHTML =
+      '<div style="display:flex;align-items:flex-start;gap:12px">'
+    +   '<div style="font-size:32px;line-height:1">📬</div>'
+    +   '<div style="flex:1;min-width:0">'
+    +     '<div style="font-weight:bold;font-size:15px;margin-bottom:4px">'
+    +       'You have ' + count + ' new APRS message' + (count===1?'':'s')
+    +     '</div>'
+    +     '<div style="font-size:12px;opacity:0.9;margin-bottom:10px">'
+    +       'Received while you were offline. Click below to read.'
+    +     '</div>'
+    +     '<div style="display:flex;gap:8px">'
+    +       '<button onclick="openMessagesFromToast()" '
+    +         'style="background:#fff;color:#7f1d1d;border:none;padding:6px 14px;'
+    +         'border-radius:6px;font-weight:bold;cursor:pointer;font-size:12px">'
+    +         '📖 Read Now</button>'
+    +       '<button onclick="dismissUnreadToast()" '
+    +         'style="background:rgba(255,255,255,0.15);color:#fff;border:none;'
+    +         'padding:6px 14px;border-radius:6px;font-weight:bold;cursor:pointer;font-size:12px">'
+    +         'Later</button>'
+    +     '</div>'
+    +   '</div>'
+    + '</div>';
+  document.body.appendChild(toast);
+
+  // Also play a soft notification beep
+  playMessageBeep();
+
+  // Also fire browser notification if permitted
+  if ('Notification' in window) {
+    if (Notification.permission === 'granted') {
+      try {
+        var n = new Notification('📬 ' + count + ' new APRS message' + (count===1?'':'s'),
+          { body: 'You have offline messages waiting on APRS Net', tag: 'aprs-unread',
+            requireInteraction: false });
+        n.onclick = function() { window.focus(); openMessagesFromToast(); n.close(); };
+      } catch(e) {}
+    } else if (Notification.permission === 'default') {
+      // First time - ask politely after a moment so it doesn't block the toast
+      setTimeout(function() {
+        Notification.requestPermission().then(function(p) {
+          if (p === 'granted') {
+            try { new Notification('Notifications enabled',
+              { body: 'You will be alerted to new APRS messages even when this tab is inactive.' }); } catch(e) {}
+          }
+        });
+      }, 4000);
+    }
+  }
+}
+
+function dismissUnreadToast() {
+  var t = document.getElementById('unread-toast');
+  if (t) { t.style.animation = 'unreadSlideOut 0.3s ease-in'; setTimeout(function(){ t.remove(); }, 300); }
+}
+
+function openMessagesFromToast() {
+  dismissUnreadToast();
+  openMemberPanel();
+  // Wait for panel to open then switch to Messages tab
+  setTimeout(function() { if (typeof mmTab === 'function') mmTab('messages'); }, 200);
+}
+
+// Small audio beep for new messages (no external file - pure Web Audio API)
+function playMessageBeep() {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // Two-tone beep: high then low
+    [
+      { freq: 880, start: 0,    dur: 0.15 },
+      { freq: 660, start: 0.18, dur: 0.20 }
+    ].forEach(function(n) {
+      var osc = ctx.createOscillator();
+      osc.frequency.value = n.freq;
+      osc.type = 'sine';
+      var gain = ctx.createGain();
+      gain.gain.setValueAtTime(0, ctx.currentTime + n.start);
+      gain.gain.linearRampToValueAtTime(0.15, ctx.currentTime + n.start + 0.02);
+      gain.gain.linearRampToValueAtTime(0,    ctx.currentTime + n.start + n.dur);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(ctx.currentTime + n.start);
+      osc.stop(ctx.currentTime + n.start + n.dur + 0.05);
+    });
+  } catch(e) {}
+}
+
+// Live notification for messages arriving WHILE logged in.
+// Hook into the existing WebSocket message handler to detect 'msg' packets
+// addressed to one of the member's callsigns and pop a small toast.
+function checkLiveMessageForMember(msgData) {
+  if (!_memberSession || !msgData || !msgData.to) return;
+  var to = msgData.to.toUpperCase().trim();
+  var ownedCalls = (_memberSession.callsigns || [_memberSession.callsign])
+    .map(function(c){ return c.toUpperCase(); });
+  // Match exact OR base callsign (ignoring SSID)
+  var isForMe = ownedCalls.some(function(own) {
+    if (own === to) return true;
+    if (to.indexOf('-') > 0 && own === to.split('-')[0]) return true;
+    if (own.indexOf('-') > 0 && own.split('-')[0] === to) return true;
+    return false;
+  });
+  if (!isForMe) return;
+  // It's for us! Show live toast + increment unread + play beep
+  _memberSession.unread = (_memberSession.unread || 0) + 1;
+  updateMemberBtn();
+  showLiveMessageToast(msgData.from, msgData.text);
+  playMessageBeep();
+  // Browser notification if backgrounded
+  if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+    try {
+      var n = new Notification('💬 ' + msgData.from + ' → ' + to, {
+        body: msgData.text || '(no text)',
+        tag: 'aprs-msg-' + (msgData.id || Date.now()),
+        requireInteraction: false
+      });
+      n.onclick = function() { window.focus(); openMessagesFromToast(); n.close(); };
+    } catch(e) {}
+  }
+}
+
+function showLiveMessageToast(from, text) {
+  var toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;top:80px;right:20px;background:linear-gradient(135deg,#1e40af,#1e3a8a);'
+    + 'border:2px solid #3b82f6;border-radius:10px;padding:12px 16px;z-index:99998;'
+    + 'box-shadow:0 6px 16px rgba(0,0,0,0.5);max-width:360px;color:#fff;'
+    + 'animation:unreadSlideIn 0.4s ease-out;cursor:pointer;font-family:system-ui,sans-serif';
+  toast.onclick = function() { toast.remove(); openMessagesFromToast(); };
+  toast.innerHTML =
+      '<div style="display:flex;align-items:flex-start;gap:10px">'
+    +   '<div style="font-size:24px">💬</div>'
+    +   '<div style="flex:1;min-width:0">'
+    +     '<div style="font-weight:bold;font-size:13px;margin-bottom:2px">New message from ' + escapeHtml(from) + '</div>'
+    +     '<div style="font-size:12px;opacity:0.95;word-break:break-word">' + escapeHtml(text || '') + '</div>'
+    +     '<div style="font-size:10px;opacity:0.6;margin-top:4px">Click to open</div>'
+    +   '</div>'
+    + '</div>';
+  document.body.appendChild(toast);
+  setTimeout(function() {
+    toast.style.animation = 'unreadSlideOut 0.3s ease-in';
+    setTimeout(function(){ if(toast.parentNode) toast.remove(); }, 300);
+  }, 8000);
+}
+
+// Re-fetch profile periodically while tab is open so unread count stays fresh
+// (in case server stored messages from another source)
+setInterval(function() {
+  if (!_memberSession || document.hidden) return;
+  fetch(location.origin + '/api/member/profile', {
+    headers: { 'X-Member-Token': _memberSession.token }
+  }).then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(d) {
+      if (!d) return;
+      var newUnread = d.unread_messages || 0;
+      var diff = newUnread - (_memberSession.unread || 0);
+      _memberSession.unread = newUnread;
+      updateMemberBtn();
+      if (diff > 0) {
+        // New messages arrived since last poll - silent badge update
+        playMessageBeep();
+      }
+    }).catch(function(){});
+}, 60000);
+
+
 // ─── LoRa-APRS Integration ────────────────────────────────────────────────────
 // Global LoRa-APRS network overlay using lora-aprs.live API
 // Markers and signal-quality lines colour-coded by SNR
@@ -10721,7 +10944,7 @@ function renderLoRaData(results) {
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 // initReplayProgress();  // disabled - user triggers replay via sidebar
-console.log('APRS Net JS loaded - build cache-bust-3 (globe removed)');
+console.log('APRS Net JS loaded - build cache-bust-4 (unread message notifications)');
 initTheme();
 initMemberSession();
 loadMOTDBanner();
