@@ -1115,6 +1115,21 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 				client.software = in.Software
 				ack, _ := json.Marshal(wsMessage{Type: "auth_ack", Status: "success", Callsign: client.callsign})
 				client.send <- ack
+				// Deliver any stored offline messages to this callsign
+				go func(c *wsClient, call string) {
+					time.Sleep(500 * time.Millisecond) // small delay so client can finish setup
+					forwardOfflineMessagesToCallsign(call, func(pkt string) {
+						msg := wsMessage{Type: "rx", Packet: pkt}
+						if parsed, ok := parsePacket(pkt); ok {
+							msg.Data = parsed
+						}
+						data, _ := json.Marshal(msg)
+						select {
+						case c.send <- data:
+						case <-time.After(1 * time.Second):
+						}
+					})
+				}(client, client.callsign)
 			} else {
 				ack, _ := json.Marshal(wsMessage{Type: "auth_ack", Status: "fail"})
 				client.send <- ack
@@ -1354,6 +1369,16 @@ func handleTCPClient(conn net.Conn) {
 			fmt.Fprintf(conn, "# logresp %s %s, server %s\r\n", call, status, srv)
 			log.Printf("TCP client login: %s %s from %s", call, status, client.remoteAddr)
 			loggedIn = true
+
+			// Deliver any stored offline messages to this callsign
+			if client.verified {
+				go func(c net.Conn, call string) {
+					time.Sleep(500 * time.Millisecond)
+					forwardOfflineMessagesToCallsign(call, func(pkt string) {
+						_, _ = fmt.Fprintf(c, "%s\r\n", pkt)
+					})
+				}(conn, call)
+			}
 
 			metrics.Lock()
 			metrics.PktsRx++
@@ -3011,6 +3036,127 @@ func storeMessageForMember(to, from, text, raw string, ts int64) {
 		memberStore.Messages[targetCall] = memberStore.Messages[targetCall][len(memberStore.Messages[targetCall])-500:]
 	}
 	saveMemberStore()
+}
+
+
+// ─── Offline Message Delivery on Client Connect ───────────────────────────────
+// When a recognised member callsign connects (TCP or WebSocket), look for any
+// stored offline messages addressed to that callsign and stream them back.
+// Marks delivered messages as Read so they're not re-sent next session.
+//
+// The destination check is loose: an incoming connection from G7XYZ-9 will
+// receive messages stored for G7XYZ (base call) as well as G7XYZ-9 (exact)
+// and any callsign listed in that member's Callsigns array.
+
+type messageWriter func(packet string)
+
+func forwardOfflineMessagesToCallsign(callsign string, write messageWriter) int {
+	callsign = strings.ToUpper(strings.TrimSpace(callsign))
+	if callsign == "" {
+		return 0
+	}
+	baseCall := callsign
+	if i := strings.Index(callsign, "-"); i > 0 {
+		baseCall = callsign[:i]
+	}
+
+	memberStoreMu.Lock()
+	defer memberStoreMu.Unlock()
+
+	// Find the member - look up by exact callsign or any of their owned callsigns
+	var member *Member
+	for _, m := range memberStore.Members {
+		if strings.EqualFold(m.Callsign, callsign) || strings.EqualFold(m.Callsign, baseCall) {
+			member = m
+			break
+		}
+		for _, c := range m.Callsigns {
+			if strings.EqualFold(c, callsign) || strings.EqualFold(c, baseCall) {
+				member = m
+				break
+			}
+		}
+		if member != nil {
+			break
+		}
+	}
+	if member == nil {
+		return 0
+	}
+
+	// Collect unread messages for any of the member's callsigns matching this connection
+	var pending []StoredMessage
+	var deliveredKeys = make(map[string]bool) // call -> any delivered (so we can mark them)
+	for storedCall, msgs := range memberStore.Messages {
+		// Should this storedCall be delivered to the connecting callsign?
+		// Yes if storedCall == callsign, storedCall == baseCall, or member owns both.
+		match := strings.EqualFold(storedCall, callsign) ||
+			strings.EqualFold(storedCall, baseCall) ||
+			strings.EqualFold(storedCall, member.Callsign)
+		if !match {
+			for _, c := range member.Callsigns {
+				if strings.EqualFold(c, storedCall) {
+					match = true
+					break
+				}
+			}
+		}
+		if !match {
+			continue
+		}
+		for _, m := range msgs {
+			if !m.Read {
+				pending = append(pending, m)
+				deliveredKeys[storedCall] = true
+			}
+		}
+	}
+	if len(pending) == 0 {
+		return 0
+	}
+
+	// Sort oldest first (so they arrive in chronological order)
+	for i := 0; i < len(pending); i++ {
+		for j := i + 1; j < len(pending); j++ {
+			if pending[j].Ts < pending[i].Ts {
+				pending[i], pending[j] = pending[j], pending[i]
+			}
+		}
+	}
+
+	// Format and send each message as a standard APRS message packet
+	for _, m := range pending {
+		var pkt string
+		if m.Raw != "" {
+			// We have the original raw packet - send it verbatim
+			pkt = m.Raw
+		} else {
+			// Reconstruct: FROM>APAGOR,TCPIP*::TOCALL___:text{msgid}
+			// Pad TO call to 9 chars
+			toPadded := m.To
+			for len(toPadded) < 9 {
+				toPadded += " "
+			}
+			pkt = fmt.Sprintf("%s>APAGOR,TCPIP*::%s:%s", m.From, toPadded, m.Text)
+			if m.ID != "" {
+				pkt += "{" + m.ID
+			}
+		}
+		write(pkt)
+	}
+
+	// Mark them as Read across all matching keys
+	for storedCall := range deliveredKeys {
+		for i := range memberStore.Messages[storedCall] {
+			if !memberStore.Messages[storedCall][i].Read {
+				memberStore.Messages[storedCall][i].Read = true
+			}
+		}
+	}
+	saveMemberStore()
+
+	log.Printf("Forwarded %d offline messages to %s on connect", len(pending), callsign)
+	return len(pending)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

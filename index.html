@@ -3791,6 +3791,18 @@ function connectWS() {
         ['destCall','msgText'].forEach(id=>document.getElementById(id).disabled=false);
         c.querySelector('button').disabled=false;
         logChat('CLIENT','Authenticated as '+d.callsign,'text-green-500');
+        // Server may forward stored offline messages now - refresh profile
+        // after a short delay so badge reflects delivered state
+        if (_memberSession) {
+          setTimeout(function() {
+            fetch(location.origin + '/api/member/profile', {
+              headers: { 'X-Member-Token': _memberSession.token }
+            }).then(function(r){ return r.ok ? r.json() : null; })
+              .then(function(d) {
+                if (d) { _memberSession.unread = d.unread_messages || 0; updateMemberBtn(); }
+              }).catch(function(){});
+          }, 2000);
+        }
       } else { alert('Authentication failed.'); myCallsign=''; }
     } else if (d.type==='obj') {
       handleObjectPacket(d);
