@@ -3454,7 +3454,7 @@ if (typeof L.markerClusterGroup === 'function') {
   clusterGroup = { addLayer: function(m){ m.addTo(map); }, removeLayer: function(m){ map.removeLayer(m); }, clearLayers: function(){} };
 }
 let currentTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19,attribution:'© OSM'}).addTo(map);
-let gridLayer = null, nightLayer = null, statusInterval = null, adminAuth = null;
+let gridLayer = null, nightLayer = null, statusInterval = null, adminAuth = null, _adminCreds = null;
 let stations = {}, ws, myCallsign = '', msgCounter = 1, packetCount = 0;
 
 // ─── Performance: Throttled redraw ────────────────────────────────────────────
@@ -3607,6 +3607,7 @@ async function doAdminLogin() {
     }
     // Credentials good — now fetch config
     adminAuth = creds;
+    _adminCreds = { user: user, pass: pass };
     const cfgRes = await fetch(location.origin + '/api/config', {headers: {'Authorization': adminAuth}});
     if (!cfgRes.ok) { err.innerText = 'Config load failed'; err.classList.remove('hidden'); return; }
     err.classList.add('hidden');
@@ -3621,6 +3622,7 @@ async function doAdminLogin() {
 
 function doAdminLogout() {
   adminAuth = null;
+  _adminCreds = null;
   document.getElementById('admin-login-gate').classList.remove('hidden');
   document.getElementById('admin-content').classList.add('hidden');
   document.getElementById('adminLoginUser').value = '';
@@ -8024,7 +8026,7 @@ var _adminMembers = [];
 async function loadAdminMembers() {
   try {
     var r = await fetch(location.origin + '/api/admin/members', {
-      headers: { 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) }
+      headers: { 'Authorization': adminAuth }
     });
     if (!r.ok) { alert('Failed to load members: ' + r.status); return; }
     _adminMembers = await r.json();
@@ -8082,14 +8084,14 @@ function editMember(id) {
   if (callsigns === null) return;
   fetch(location.origin + '/api/admin/members/' + id, {
     method: 'PUT',
-    headers: { 'Content-Type':'application/json', 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) },
+    headers: { 'Content-Type':'application/json', 'Authorization': adminAuth },
     body: JSON.stringify({ name: name, email: email, callsigns: callsigns.split(',').map(function(s){return s.trim().toUpperCase();}).filter(Boolean) })
   }).then(function(r){ if (r.ok) loadAdminMembers(); });
 }
 
 async function viewMemberMsgs(id) {
   var r = await fetch(location.origin + '/api/admin/members/' + id + '/messages', {
-    headers: { 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) }
+    headers: { 'Authorization': adminAuth }
   });
   var msgs = await r.json();
   if (!msgs.length) { alert('No stored messages for this member'); return; }
@@ -8104,7 +8106,7 @@ function resetMemberPass(id) {
   if (!newPass || newPass.length < 6) { if(newPass) alert('Must be 6+ chars'); return; }
   fetch(location.origin + '/api/admin/members/' + id, {
     method: 'PUT',
-    headers: { 'Content-Type':'application/json', 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) },
+    headers: { 'Content-Type':'application/json', 'Authorization': adminAuth },
     body: JSON.stringify({ reset_password: newPass })
   }).then(function(r){ if (r.ok) { alert('Password reset for member'); loadAdminMembers(); } });
 }
@@ -8113,7 +8115,7 @@ function forceMemberLogout(id) {
   if (!confirm('Force logout this member from all devices?')) return;
   fetch(location.origin + '/api/admin/members/' + id, {
     method: 'PUT',
-    headers: { 'Content-Type':'application/json', 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) },
+    headers: { 'Content-Type':'application/json', 'Authorization': adminAuth },
     body: JSON.stringify({ force_logout: true })
   }).then(function(r){ if (r.ok) loadAdminMembers(); });
 }
@@ -8123,14 +8125,14 @@ function deleteMember(id) {
   if (!confirm('PERMANENTLY DELETE member ' + (m?m.callsign:id) + '? This deletes all stored messages and watchlist data. Cannot be undone.')) return;
   fetch(location.origin + '/api/admin/members/' + id, {
     method: 'DELETE',
-    headers: { 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) }
+    headers: { 'Authorization': adminAuth }
   }).then(function(r){ if (r.ok) loadAdminMembers(); });
 }
 
 // ─── Admin: Ban List ──────────────────────────────────────────────────────────
 async function loadBans() {
   var r = await fetch(location.origin + '/api/admin/bans', {
-    headers: { 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) }
+    headers: { 'Authorization': adminAuth }
   });
   if (!r.ok) return;
   var bans = await r.json();
@@ -8152,7 +8154,7 @@ function addBan() {
   if (!call) return;
   fetch(location.origin + '/api/admin/bans', {
     method: 'POST',
-    headers: { 'Content-Type':'application/json', 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) },
+    headers: { 'Content-Type':'application/json', 'Authorization': adminAuth },
     body: JSON.stringify({ callsign: call, reason: reason })
   }).then(function(r){
     if (r.ok) {
@@ -8166,14 +8168,14 @@ function addBan() {
 function removeBan(call) {
   fetch(location.origin + '/api/admin/bans?callsign=' + encodeURIComponent(call), {
     method: 'DELETE',
-    headers: { 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) }
+    headers: { 'Authorization': adminAuth }
   }).then(function(r){ if (r.ok) loadBans(); });
 }
 
 // ─── Admin: MOTD ──────────────────────────────────────────────────────────────
 async function loadAdminMOTD() {
   var r = await fetch(location.origin + '/api/admin/motd', {
-    headers: { 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) }
+    headers: { 'Authorization': adminAuth }
   });
   if (!r.ok) return;
   var m = await r.json();
@@ -8192,7 +8194,7 @@ function saveMOTD() {
   };
   fetch(location.origin + '/api/admin/motd', {
     method: 'POST',
-    headers: { 'Content-Type':'application/json', 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) },
+    headers: { 'Content-Type':'application/json', 'Authorization': adminAuth },
     body: JSON.stringify(body)
   }).then(function(r){
     if (r.ok) {
@@ -8208,7 +8210,7 @@ function saveMOTD() {
 async function downloadBackup() {
   try {
     var r = await fetch(location.origin + '/api/admin/backup', {
-      headers: { 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) }
+      headers: { 'Authorization': adminAuth }
     });
     if (!r.ok) { alert('Backup failed: ' + r.status); return; }
     var blob = await r.blob();
@@ -8231,7 +8233,7 @@ async function restoreBackup(event) {
     var text = await file.text();
     var r = await fetch(location.origin + '/api/admin/restore', {
       method: 'POST',
-      headers: { 'Content-Type':'application/json', 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) },
+      headers: { 'Content-Type':'application/json', 'Authorization': adminAuth },
       body: text
     });
     var d = await r.json();
@@ -8253,7 +8255,7 @@ async function restoreBackup(event) {
 // ─── Admin: Audit Log ─────────────────────────────────────────────────────────
 async function loadAudit() {
   var r = await fetch(location.origin + '/api/admin/audit?limit=100', {
-    headers: { 'Authorization': 'Basic ' + btoa(_adminCreds.user + ':' + _adminCreds.pass) }
+    headers: { 'Authorization': adminAuth }
   });
   if (!r.ok) return;
   var entries = await r.json();

@@ -259,6 +259,9 @@ type qrzCachedLookup struct {
 
 var qrzC = &qrzCache{Lookups: make(map[string]qrzCachedLookup)}
 
+// HTTP client for QRZ API - 10 second timeout
+var qrzHTTP = &http.Client{Timeout: 10 * time.Second}
+
 type qrzSession struct {
 	XMLName xml.Name `xml:"QRZDatabase"`
 	Session struct {
@@ -308,7 +311,7 @@ func qrzLogin() (string, error) {
 	}
 	url := fmt.Sprintf("https://xmldata.qrz.com/xml/current/?username=%s;password=%s;agent=AdvancedAPRS/1.4",
 		url_encode(user), url_encode(pass))
-	resp, err := httpClient.Get(url)
+	resp, err := qrzHTTP.Get(url)
 	if err != nil { return "", err }
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
@@ -368,7 +371,7 @@ func handleQRZLookup(w http.ResponseWriter, r *http.Request) {
 
 	// Do the lookup
 	url := fmt.Sprintf("https://xmldata.qrz.com/xml/current/?s=%s;callsign=%s", sessKey, call)
-	resp, err := httpClient.Get(url)
+	resp, err := qrzHTTP.Get(url)
 	if err != nil {
 		w.WriteHeader(502)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
