@@ -194,6 +194,25 @@ body { background: var(--bg-base); color: var(--text-base); }
 .marker-cluster-large div { background-color:rgba(185,28,28,0.9); border-radius:15px; color:#fff; font-weight:bold; font-size:12px; line-height:28px; text-align:center; }
 
 /* Unread message indicator pulse */
+/* Station Ghosting - faded + pulsing dashed border for stale stations */
+.aprs-ghost {
+  filter: grayscale(0.7) brightness(0.85);
+  transition: opacity 0.5s, filter 0.5s;
+}
+.aprs-ghost::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border: 1.5px dashed rgba(156,163,175,0.7);
+  border-radius: 50%;
+  animation: ghostPulse 2s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes ghostPulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50%      { opacity: 0.9; transform: scale(1.08); }
+}
+
 @keyframes unreadSlideIn {
   from { transform: translateX(120%); opacity: 0; }
   to   { transform: translateX(0); opacity: 1; }
@@ -386,6 +405,8 @@ body { background: var(--bg-base); color: var(--text-base); }
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-objects" checked onchange="toggleObjects()"><span class="text-amber-500">●</span><span>Objects/Items</span></label>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="hide-static" onchange="redrawMap()"><span>Hide Static (&gt;5min)</span></label>
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-phg" onchange="redrawMap()"><span>PHG Circles</span></label>
+        <label class="flex items-center space-x-2 cursor-pointer" title="Map auto-zooms to fit all visible stations. Pan or zoom manually to disable."><input type="checkbox" id="autoFit" class="w-4 h-4" onchange="toggleAutoFit(this.checked)"><span>🔍 Auto-Fit Zoom</span></label>
+        <label class="flex items-center space-x-2 cursor-pointer" title="Fade stations that haven't been heard recently (30+ minutes)"><input type="checkbox" id="ghostOld" class="w-4 h-4" onchange="toggleGhosting(this.checked)" checked><span>👻 Ghost Stale Stations</span></label>
         <div class="flex items-center justify-between cursor-pointer">
           <span class="text-xs text-purple-400" id="path-viz-label">No path shown</span>
           <button onclick="clearPathViz();document.getElementById('path-viz-label').innerText='No path shown'" class="text-[10px] text-gray-500 hover:text-red-400 hidden" id="clear-path-btn">✕ Clear</button>
@@ -3742,8 +3763,37 @@ function logMsgHistory(m) {
 function logChat(sender, message, colorClass) {
   const log = document.getElementById('chat-log'); if (!log) return;
   const el = document.createElement('div');
-  el.innerHTML = `<span class="text-gray-600">[${new Date().toLocaleTimeString()}]</span> <span class="font-bold ${colorClass}">${sender}:</span> <span class="text-gray-300 break-words">${message}</span>`;
+  // Detect "FROMCALL→TOCALL" format = received message that can be replied to
+  const m = String(sender).match(/^([A-Z0-9\-]+)\s*→\s*([A-Z0-9\-]+)$/i);
+  const safeMsg = String(message).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const ts = new Date().toLocaleTimeString();
+  if (m && m[1] !== myCallsign) {
+    // Received message - make sender callsign clickable to reply
+    const fromCall = m[1].toUpperCase();
+    el.innerHTML = '<span class="text-gray-600">[' + ts + ']</span> '
+      + '<button onclick="replyToCallsign(\''+ fromCall.replace(/'/g,"\\'") +'\')" '
+      + 'class="font-bold ' + colorClass + ' hover:bg-cyan-900/40 hover:underline px-1 rounded cursor-pointer" '
+      + 'title="Click to reply">' + sender + '</button>: '
+      + '<span class="text-gray-300 break-words">' + safeMsg + '</span>';
+  } else {
+    el.innerHTML = '<span class="text-gray-600">[' + ts + ']</span> '
+      + '<span class="font-bold ' + colorClass + '">' + sender + '</span>: '
+      + '<span class="text-gray-300 break-words">' + safeMsg + '</span>';
+  }
   log.appendChild(el); log.scrollTop = log.scrollHeight;
+}
+
+// Click-to-Reply: populate destCall and focus msgText for fast replies
+function replyToCallsign(call) {
+  const dest = document.getElementById('destCall');
+  const text = document.getElementById('msgText');
+  if (!dest || !text) return;
+  togglePanel('messages');
+  dest.value = call;
+  dest.style.transition = 'background-color 0.5s';
+  dest.style.backgroundColor = '#0e7490';
+  setTimeout(function() { dest.style.backgroundColor = ''; }, 600);
+  setTimeout(function() { text.focus(); }, 300);
 }
 
 function pollUpstreamStatus() {
@@ -3948,6 +3998,15 @@ function updateStation(call,path,lat,lon,phg,ts,raw,sym) {
   if (sym) stations[call].sym=sym;
   const mv=parseCseSpd(raw||''); if(mv) stations[call].movement=mv;
   document.getElementById('station-count').innerText='STN: '+Object.keys(stations).length;
+  // Trigger auto-fit if enabled
+  try { if (typeof scheduleAutoFit === 'function') scheduleAutoFit(); } catch(e) {}
+  // Refresh ghosting on this station (in case it was ghosted)
+  try {
+    if (_ghostingEnabled && stations[call] && stations[call].marker && stations[call].marker._icon) {
+      stations[call].marker._icon.classList.remove('aprs-ghost');
+      stations[call].marker._icon.style.opacity = '';
+    }
+  } catch(e) {}
 }
 
 // ─── PHG radius (proper formula) ─────────────────────────────────────────────
@@ -10390,6 +10449,11 @@ function showUnreadNotification(count) {
     + '</div>';
   document.body.appendChild(toast);
 
+  // Respect quiet hours - update badges but skip audio/toast
+  if (typeof isInQuietHours === 'function' && isInQuietHours()) {
+    console.log('[APRS] Suppressing notification - quiet hours active');
+    return;
+  }
   // Also play a soft notification beep
   playMessageBeep();
 
@@ -10470,6 +10534,8 @@ function checkLiveMessageForMember(msgData) {
   // It's for us! Show live toast + increment unread + play beep
   _memberSession.unread = (_memberSession.unread || 0) + 1;
   updateMemberBtn();
+  // Respect quiet hours
+  if (typeof isInQuietHours === 'function' && isInQuietHours()) return;
   showLiveMessageToast(msgData.from, msgData.text);
   playMessageBeep();
   // Browser notification if backgrounded
@@ -10527,6 +10593,239 @@ setInterval(function() {
       }
     }).catch(function(){});
 }, 60000);
+
+
+
+// ─── Auto-Fit Zoom Feature ────────────────────────────────────────────────────
+var _autoFitEnabled = false;
+var _autoFitTimer = null;
+var _autoFitProgrammatic = false;
+
+function toggleAutoFit(on) {
+  _autoFitEnabled = on;
+  localStorage.setItem('aprs-autofit', on ? '1' : '0');
+  if (on) {
+    performAutoFit();
+    if (typeof map !== 'undefined' && map.on) {
+      map.on('zoomstart movestart', _onUserMoveDisablesAutoFit);
+    }
+  } else {
+    if (typeof map !== 'undefined' && map.off) {
+      map.off('zoomstart movestart', _onUserMoveDisablesAutoFit);
+    }
+  }
+}
+
+function _onUserMoveDisablesAutoFit() {
+  if (_autoFitProgrammatic) return;
+  if (_autoFitEnabled) {
+    _autoFitEnabled = false;
+    var cb = document.getElementById('autoFit');
+    if (cb) cb.checked = false;
+    localStorage.setItem('aprs-autofit', '0');
+  }
+}
+
+function performAutoFit() {
+  if (!_autoFitEnabled) return;
+  var coords = [];
+  for (var call in stations) {
+    var s = stations[call];
+    if (!s || !s.positions || !s.positions.length) continue;
+    if (s.marker && map.hasLayer && map.hasLayer(s.marker)) {
+      var p = s.positions[s.positions.length - 1];
+      coords.push([p.lat, p.lon]);
+    }
+  }
+  if (coords.length < 1) return;
+  if (coords.length === 1) {
+    _autoFitProgrammatic = true;
+    map.setView(coords[0], 11);
+    setTimeout(function() { _autoFitProgrammatic = false; }, 500);
+    return;
+  }
+  try {
+    var bounds = L.latLngBounds(coords);
+    _autoFitProgrammatic = true;
+    map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+    setTimeout(function() { _autoFitProgrammatic = false; }, 500);
+  } catch(e) {}
+}
+
+function scheduleAutoFit() {
+  if (!_autoFitEnabled) return;
+  if (_autoFitTimer) clearTimeout(_autoFitTimer);
+  _autoFitTimer = setTimeout(performAutoFit, 800);
+}
+
+// Restore state on page load
+(function() {
+  try {
+    if (localStorage.getItem('aprs-autofit') === '1') {
+      setTimeout(function() {
+        var cb = document.getElementById('autoFit');
+        if (cb) { cb.checked = true; toggleAutoFit(true); }
+      }, 1500);
+    }
+  } catch(e) {}
+})();
+
+
+// ─── Station Ghosting Feature ─────────────────────────────────────────────────
+var _ghostingEnabled = true;
+var _ghostThresholdSec = 30 * 60;  // 30 minutes
+var _ghostCheckInterval = null;
+
+function toggleGhosting(on) {
+  _ghostingEnabled = on;
+  localStorage.setItem('aprs-ghosting', on ? '1' : '0');
+  if (on) {
+    if (!_ghostCheckInterval) {
+      _ghostCheckInterval = setInterval(applyGhosting, 60000);
+    }
+    applyGhosting();
+  } else {
+    if (_ghostCheckInterval) {
+      clearInterval(_ghostCheckInterval);
+      _ghostCheckInterval = null;
+    }
+    for (var call in stations) {
+      var s = stations[call];
+      if (s && s.marker && s.marker._icon) {
+        s.marker._icon.classList.remove('aprs-ghost');
+        s.marker._icon.style.opacity = '';
+      }
+    }
+  }
+}
+
+function applyGhosting() {
+  if (!_ghostingEnabled) return;
+  var now = Date.now() / 1000;
+  for (var call in stations) {
+    var s = stations[call];
+    if (!s || !s.marker || !s.marker._icon) continue;
+    var age = now - (s.lastHeard || 0);
+    if (age > _ghostThresholdSec) {
+      s.marker._icon.classList.add('aprs-ghost');
+      var hours = age / 3600;
+      var opacity = Math.max(0.3, 1.0 - hours * 0.15);
+      s.marker._icon.style.opacity = opacity.toFixed(2);
+    } else {
+      s.marker._icon.classList.remove('aprs-ghost');
+      s.marker._icon.style.opacity = '';
+    }
+  }
+}
+
+// Restore state on load
+(function() {
+  try {
+    var saved = localStorage.getItem('aprs-ghosting');
+    if (saved === '0') {
+      _ghostingEnabled = false;
+      setTimeout(function() {
+        var cb = document.getElementById('ghostOld');
+        if (cb) cb.checked = false;
+      }, 1500);
+    } else {
+      _ghostingEnabled = true;
+      setTimeout(function() {
+        if (!_ghostCheckInterval) {
+          _ghostCheckInterval = setInterval(applyGhosting, 60000);
+        }
+        applyGhosting();
+      }, 5000);
+    }
+  } catch(e) {}
+})();
+
+
+// ─── Quiet Hours Feature ──────────────────────────────────────────────────────
+function isInQuietHours() {
+  var qh = localStorage.getItem('aprs-quiet-hours');
+  if (!qh || qh === 'off') return false;
+  var parts = qh.split('-');
+  if (parts.length !== 2) return false;
+  var startParts = parts[0].split(':');
+  var endParts = parts[1].split(':');
+  if (startParts.length !== 2 || endParts.length !== 2) return false;
+  var startMin = parseInt(startParts[0]) * 60 + parseInt(startParts[1]);
+  var endMin = parseInt(endParts[0]) * 60 + parseInt(endParts[1]);
+  if (isNaN(startMin) || isNaN(endMin)) return false;
+  if (startMin === endMin) return false;
+  var now = new Date();
+  var nowMin = now.getHours() * 60 + now.getMinutes();
+  if (startMin < endMin) {
+    return nowMin >= startMin && nowMin < endMin;
+  } else {
+    return nowMin >= startMin || nowMin < endMin;
+  }
+}
+
+function loadQuietHoursUI() {
+  var stored = localStorage.getItem('aprs-quiet-hours') || 'off';
+  var enabled = stored !== 'off';
+  var startEl = document.getElementById('qh-start');
+  var endEl = document.getElementById('qh-end');
+  var cbEl = document.getElementById('qh-enabled');
+  if (!startEl) return;
+  if (enabled && stored.indexOf('-') > 0) {
+    var parts = stored.split('-');
+    startEl.value = parts[0];
+    endEl.value = parts[1];
+    cbEl.checked = true;
+  } else {
+    cbEl.checked = false;
+  }
+  updateQuietHoursStatus();
+}
+
+function saveQuietHours() {
+  var startEl = document.getElementById('qh-start');
+  var endEl = document.getElementById('qh-end');
+  var cbEl = document.getElementById('qh-enabled');
+  var statusEl = document.getElementById('qh-status');
+  if (!startEl || !endEl || !cbEl) return;
+  if (cbEl.checked && startEl.value && endEl.value) {
+    localStorage.setItem('aprs-quiet-hours', startEl.value + '-' + endEl.value);
+  } else {
+    localStorage.setItem('aprs-quiet-hours', 'off');
+  }
+  if (statusEl) {
+    statusEl.innerText = '✓ Saved';
+    statusEl.className = 'text-xs mt-2 text-green-400';
+    statusEl.classList.remove('hidden');
+    setTimeout(function() { statusEl.classList.add('hidden'); }, 2000);
+  }
+  updateQuietHoursStatus();
+}
+
+function updateQuietHoursStatus() {
+  var statusEl = document.getElementById('qh-status');
+  if (!statusEl) return;
+  if (isInQuietHours()) {
+    statusEl.innerText = '🌙 Currently in quiet hours - notifications muted';
+    statusEl.className = 'text-xs mt-2 text-amber-400';
+    statusEl.classList.remove('hidden');
+  } else if (localStorage.getItem('aprs-quiet-hours') &&
+             localStorage.getItem('aprs-quiet-hours') !== 'off') {
+    statusEl.innerText = '✓ Quiet hours configured (not active right now)';
+    statusEl.className = 'text-xs mt-2 text-gray-500';
+    statusEl.classList.remove('hidden');
+  }
+}
+
+// Auto-load Quiet Hours UI when settings tab opens
+(function() {
+  var origMmTab = (typeof mmTab === 'function') ? mmTab : null;
+  if (origMmTab) {
+    window.mmTab = function(tab) {
+      origMmTab(tab);
+      if (tab === 'settings') setTimeout(loadQuietHoursUI, 100);
+    };
+  }
+})();
 
 
 // ─── LoRa-APRS Integration ────────────────────────────────────────────────────
@@ -10965,7 +11264,7 @@ function renderLoRaData(results) {
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 // initReplayProgress();  // disabled - user triggers replay via sidebar
-console.log('APRS Net JS loaded - build cache-bust-8 (real sidebar close fix)');
+console.log('APRS Net JS loaded - build cache-bust-9 (phase 1 features)');
 initTheme();
 initMemberSession();
 loadMOTDBanner();
@@ -11241,6 +11540,29 @@ setInterval(checkForUpdates, 3600000); // re-check every hour
               <input type="email" id="mm-set-email" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white text-sm outline-none focus:border-cyan-500">
             </div>
           </div>
+
+          <!-- Quiet Hours -->
+          <div class="bg-gray-800 border border-gray-700 rounded p-3">
+            <p class="text-xs text-cyan-400 font-bold uppercase mb-2">🌙 Quiet Hours</p>
+            <p class="text-xs text-gray-400 mb-2">Suppress notification toasts &amp; beeps during this window. Badges still update silently.</p>
+            <div class="grid grid-cols-2 gap-2 mb-2">
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">Start (HH:MM)</label>
+                <input type="time" id="qh-start" value="22:00" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white text-sm outline-none focus:border-cyan-500">
+              </div>
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">End (HH:MM)</label>
+                <input type="time" id="qh-end" value="07:00" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white text-sm outline-none focus:border-cyan-500">
+              </div>
+            </div>
+            <label class="flex items-center gap-2 cursor-pointer text-xs">
+              <input type="checkbox" id="qh-enabled" class="w-4 h-4">
+              <span class="text-gray-300">Enable quiet hours</span>
+            </label>
+            <button onclick="saveQuietHours()" class="mt-2 bg-cyan-700 hover:bg-cyan-600 px-3 py-1.5 rounded text-xs text-white font-bold">Save Quiet Hours</button>
+            <p id="qh-status" class="text-xs mt-2 hidden"></p>
+          </div>
+
           <button onclick="saveMemberSettings()" class="bg-cyan-700 hover:bg-cyan-600 px-4 py-2 rounded text-sm text-white font-bold">Save Changes</button>
           <hr class="border-gray-700">
           <div>
