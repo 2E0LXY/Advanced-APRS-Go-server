@@ -47,6 +47,7 @@ type AppConfig struct {
 	AISStreamKey   string  `json:"ais_stream_key"`
 	QRZUsername    string  `json:"qrz_username"`
 	QRZPassword    string  `json:"qrz_password"`
+	MetOfficeKey   string  `json:"met_office_key"`
 	sync.RWMutex   `json:"-"`
 }
 
@@ -76,6 +77,7 @@ var (
 		AISStreamKey:   "5807276bd8081e2ff5833925e91f49fbcc7a6b45",
 		QRZUsername:    "2E0LXY",
 		QRZPassword:    "_Whatthe1234",
+		MetOfficeKey:   "",
 	}
 
 	upstreamConnected int32
@@ -674,6 +676,93 @@ func handleAnalytics(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+
+// ─── Met Office Severe Weather Warnings proxy ─────────────────────────────────
+// The Met Office publishes UK National Severe Weather Warnings as a public
+// RSS feed that requires no API key. We proxy it server-side to avoid CORS
+// issues in the browser and to add a short cache. The MetOfficeKey config
+// field is reserved for the optional DataHub site-specific forecast API.
+
+var wxWarnHTTP = &http.Client{Timeout: 12 * time.Second}
+var wxWarnCache struct {
+	sync.RWMutex
+	Body    []byte
+	Fetched int64
+}
+
+func handleWxWarnings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Serve from cache if fresh (5 minutes)
+	wxWarnCache.RLock()
+	if wxWarnCache.Body != nil && time.Now().Unix()-wxWarnCache.Fetched < 300 {
+		body := wxWarnCache.Body
+		wxWarnCache.RUnlock()
+		w.Write(body)
+		return
+	}
+	wxWarnCache.RUnlock()
+
+	// Met Office UK warnings RSS (no key needed)
+	feedURL := "https://www.metoffice.gov.uk/public/data/PWSCache/WarningsRSS/Region/UK"
+	resp, err := wxWarnHTTP.Get(feedURL)
+	if err != nil {
+		w.WriteHeader(502)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+
+	// Parse the RSS - extract warning items
+	type rssItem struct {
+		Title       string `xml:"title"`
+		Description string `xml:"description"`
+		Link        string `xml:"link"`
+		PubDate     string `xml:"pubDate"`
+	}
+	type rssFeed struct {
+		Channel struct {
+			Items []rssItem `xml:"item"`
+		} `xml:"channel"`
+	}
+	var feed rssFeed
+	warnings := []map[string]string{}
+	if err := xml.Unmarshal(raw, &feed); err == nil {
+		for _, it := range feed.Channel.Items {
+			// Derive a severity from the title (Met Office uses Yellow/Amber/Red)
+			level := "yellow"
+			tl := strings.ToLower(it.Title)
+			if strings.Contains(tl, "red warning") {
+				level = "red"
+			} else if strings.Contains(tl, "amber warning") {
+				level = "amber"
+			}
+			warnings = append(warnings, map[string]string{
+				"title":   it.Title,
+				"desc":    it.Description,
+				"link":    it.Link,
+				"pubdate": it.PubDate,
+				"level":   level,
+			})
+		}
+	}
+
+	out, _ := json.Marshal(map[string]interface{}{
+		"source":   "Met Office UK National Severe Weather Warning Service",
+		"fetched":  time.Now().Unix(),
+		"count":    len(warnings),
+		"warnings": warnings,
+	})
+
+	wxWarnCache.Lock()
+	wxWarnCache.Body = out
+	wxWarnCache.Fetched = time.Now().Unix()
+	wxWarnCache.Unlock()
+
+	w.Write(out)
+}
+
 func main() {
 	loadOrInitCreds()
 	loadSavedConfig()
@@ -735,6 +824,7 @@ func main() {
 	http.HandleFunc("/api/tocalls", handleTocalls)
 	http.HandleFunc("/api/qrz/lookup", handleQRZLookup)
 	http.HandleFunc("/api/analytics", handleAnalytics)
+	http.HandleFunc("/api/wx/warnings", handleWxWarnings)
 	http.HandleFunc("/api/messages", handleMessages)
 	http.HandleFunc("/api/iss", handleISSPosition)
 	http.HandleFunc("/api/update", basicAuth(handleUpdate))
@@ -1726,6 +1816,7 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	res["ais_stream_key"] = config.AISStreamKey
 	res["qrz_username"] = config.QRZUsername
 	res["qrz_configured"] = (config.QRZUsername != "" && config.QRZPassword != "")
+	res["metoffice_configured"] = (config.MetOfficeKey != "")
 	res["center_lat"] = config.CenterLat
 	res["center_lon"] = config.CenterLon
 	config.RUnlock()
@@ -1796,6 +1887,9 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if n.QRZPassword != "" {
 		config.QRZPassword = n.QRZPassword
+	}
+	if n.MetOfficeKey != "" {
+		config.MetOfficeKey = strings.TrimSpace(n.MetOfficeKey)
 	}
 	config.Unlock()
 	if err := saveConfig(); err != nil {
@@ -2104,6 +2198,7 @@ func loadSavedConfig() {
 	config.CenterLon      = saved.CenterLon
 	config.RadiusKm       = saved.RadiusKm
 	if saved.AISStreamKey != "" { config.AISStreamKey = saved.AISStreamKey }
+	if saved.MetOfficeKey != "" { config.MetOfficeKey = saved.MetOfficeKey }
 	if saved.QRZUsername != "" { config.QRZUsername = saved.QRZUsername }
 	if saved.QRZPassword != "" { config.QRZPassword = saved.QRZPassword }
 	config.Unlock()

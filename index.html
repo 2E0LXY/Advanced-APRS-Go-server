@@ -297,6 +297,13 @@ body { background: var(--bg-base); color: var(--text-base); }
   <button onclick="dismissBandAlert()" class="ml-3 px-2 py-0.5 bg-black/20 rounded hover:bg-black/40 text-xs">✕</button>
 </div>
 
+<!-- Severe Weather Warning Banner -->
+<div id="wx-warn-banner" class="hidden fixed left-0 right-0 z-[59] text-center py-1.5 px-4 font-bold text-sm"
+     style="top:0;background:linear-gradient(90deg,#b45309,#d97706);color:#fff;box-shadow:0 2px 12px rgba(0,0,0,0.4)">
+  <span id="wx-warn-text"></span>
+  <button onclick="dismissWxWarn()" class="ml-3 px-2 py-0.5 bg-black/20 rounded hover:bg-black/40 text-xs">✕</button>
+</div>
+
 <!-- HEADER -->
 <div id="app-header" class="flex-none border-b p-2 flex justify-between items-center shadow-lg z-50" style="background:#1e3a5f;border-color:#2d4a7a">
   <div class="flex items-center space-x-3">
@@ -439,6 +446,7 @@ body { background: var(--bg-base); color: var(--text-base); }
         <label class="flex items-center space-x-2 cursor-pointer" title="Map auto-zooms to fit all visible stations. Pan or zoom manually to disable."><input type="checkbox" id="autoFit" class="w-4 h-4" onchange="toggleAutoFit(this.checked)"><span>🔍 Auto-Fit Zoom</span></label>
         <label class="flex items-center space-x-2 cursor-pointer" title="Fade stations that haven't been heard recently (30+ minutes)"><input type="checkbox" id="ghostOld" class="w-4 h-4" onchange="toggleGhosting(this.checked)" checked><span>👻 Ghost Stale Stations</span></label>
         <label class="flex items-center space-x-2 cursor-pointer" title="Draw distance-coloured propagation lines from stations toward your location"><input type="checkbox" id="propLines" class="w-4 h-4" onchange="togglePropLines(this.checked)"><span>📡 Propagation Lines</span></label>
+        <label class="flex items-center space-x-2 cursor-pointer" title="Animated rain radar overlay from RainViewer"><input type="checkbox" id="wxRadar" class="w-4 h-4" onchange="toggleWxRadar(this.checked)"><span>🌧 Weather Radar</span></label>
         <div class="flex items-center justify-between cursor-pointer">
           <span class="text-xs text-purple-400" id="path-viz-label">No path shown</span>
           <button onclick="clearPathViz();document.getElementById('path-viz-label').innerText='No path shown'" class="text-[10px] text-gray-500 hover:text-red-400 hidden" id="clear-path-btn">✕ Clear</button>
@@ -2147,6 +2155,13 @@ ws.onmessage = (ev) => {
               <p class="text-xs text-gray-500 mt-1">QRZ XML subscription credentials. When configured, clicking any callsign on the map shows their QRZ photo, address, name, grid, license class etc. Cached 24h per callsign. Server keeps password in <code>server_config.json</code> (plain text - keep that file readable only by root).</p>
               <p id="qrz-status" class="text-xs mt-1 hidden"></p>
             </div>
+            <div class="pt-3 border-t border-gray-700">
+              <p class="text-xs text-cyan-300 font-bold mb-2">Met Office DataHub (optional - site forecast API)</p>
+              <label class="block text-gray-400 text-xs mb-1">Met Office DataHub API key</label>
+              <input type="password" id="admMetKey" placeholder="DataHub API key (optional)" autocomplete="off" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white text-sm outline-none focus:border-cyan-500 font-mono">
+              <p class="text-xs text-gray-500 mt-1">Optional. The UK Severe Weather Warnings overlay works <b>without</b> a key (public Met Office RSS feed). A DataHub key from <a href="https://datahub.metoffice.gov.uk" target="_blank" class="text-cyan-400 underline">datahub.metoffice.gov.uk</a> is only needed for the future site-specific forecast feature. Leave blank if unsure.</p>
+              <p id="met-status" class="text-xs mt-1 hidden"></p>
+            </div>
           </div>
         </div>
 
@@ -3725,6 +3740,17 @@ function populateAdmin(d) {
     document.getElementById('admRad').value=d.radius_km;
     if (document.getElementById('admAISKey')) document.getElementById('admAISKey').value = d.ais_stream_key || '';
     if (document.getElementById('admQRZUser')) document.getElementById('admQRZUser').value = d.qrz_username || '';
+    var metStatus = document.getElementById('met-status');
+    if (metStatus) {
+      if (d.metoffice_configured) {
+        metStatus.innerText = '✓ Met Office DataHub key configured';
+        metStatus.className = 'text-xs mt-1 text-green-400';
+      } else {
+        metStatus.innerText = 'No DataHub key (severe weather warnings still work via free RSS)';
+        metStatus.className = 'text-xs mt-1 text-gray-500';
+      }
+      metStatus.classList.remove('hidden');
+    }
     // QRZ password is write-only - never returned from server
     var qst = document.getElementById('qrz-status');
     if (qst) {
@@ -3762,6 +3788,7 @@ async function saveAdmin() {
     ais_stream_key: (document.getElementById('admAISKey')||{value:''}).value.trim(),
     qrz_username: (document.getElementById('admQRZUser')||{value:''}).value.trim(),
     qrz_password: (document.getElementById('admQRZPass')||{value:''}).value,
+    met_office_key: (document.getElementById('admMetKey')||{value:''}).value.trim(),
   };
   try {
     const r = await fetch(location.origin + '/api/config',{method:'POST',headers:h,body:JSON.stringify(payload)});
@@ -10597,6 +10624,153 @@ function drawPropLines() {
 setInterval(function() { if (_propLinesEnabled) drawPropLines(); }, 30000);
 
 
+
+// ─── Phase 4: Weather Radar Overlay (RainViewer) ──────────────────────────────
+// RainViewer provides free global rain-radar tiles, no API key required.
+// We fetch their tile-index JSON to get the latest frames, then animate
+// through them on the map.
+var _wxRadarEnabled = false;
+var _wxRadarLayer = null;
+var _wxRadarFrames = [];
+var _wxRadarFrameIdx = 0;
+var _wxRadarTimer = null;
+var _wxRadarHost = '';
+
+function toggleWxRadar(on) {
+  _wxRadarEnabled = on;
+  localStorage.setItem('aprs-wxradar', on ? '1' : '0');
+  if (on) {
+    startWxRadar();
+  } else {
+    stopWxRadar();
+  }
+}
+
+async function startWxRadar() {
+  try {
+    var r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+    if (!r.ok) throw new Error('radar index ' + r.status);
+    var d = await r.json();
+    _wxRadarHost = d.host || 'https://tilecache.rainviewer.com';
+    // Combine past + nowcast frames
+    var frames = [];
+    if (d.radar && d.radar.past) frames = frames.concat(d.radar.past);
+    if (d.radar && d.radar.nowcast) frames = frames.concat(d.radar.nowcast);
+    _wxRadarFrames = frames;
+    if (!frames.length) return;
+    _wxRadarFrameIdx = Math.max(0, frames.length - 3); // start near 'now'
+    showWxRadarFrame();
+    // Animate every 600ms
+    if (_wxRadarTimer) clearInterval(_wxRadarTimer);
+    _wxRadarTimer = setInterval(function() {
+      _wxRadarFrameIdx = (_wxRadarFrameIdx + 1) % _wxRadarFrames.length;
+      showWxRadarFrame();
+    }, 600);
+  } catch(e) {
+    console.warn('Weather radar failed:', e);
+    var cb = document.getElementById('wxRadar');
+    if (cb) cb.checked = false;
+    _wxRadarEnabled = false;
+  }
+}
+
+function showWxRadarFrame() {
+  if (!_wxRadarFrames.length) return;
+  var frame = _wxRadarFrames[_wxRadarFrameIdx];
+  if (!frame) return;
+  // RainViewer tile URL: {host}{path}/256/{z}/{x}/{y}/{color}/{options}.png
+  // color 2 = universal blue, options 1_1 = smooth + snow
+  var url = _wxRadarHost + frame.path + '/256/{z}/{x}/{y}/2/1_1.png';
+  var newLayer = L.tileLayer(url, { opacity: 0.55, zIndex: 400 });
+  newLayer.addTo(map);
+  // Remove the previous layer after the new one starts loading (smooth swap)
+  var old = _wxRadarLayer;
+  _wxRadarLayer = newLayer;
+  if (old) {
+    setTimeout(function() { try { map.removeLayer(old); } catch(e) {} }, 250);
+  }
+}
+
+function stopWxRadar() {
+  if (_wxRadarTimer) { clearInterval(_wxRadarTimer); _wxRadarTimer = null; }
+  if (_wxRadarLayer) { try { map.removeLayer(_wxRadarLayer); } catch(e) {} _wxRadarLayer = null; }
+  _wxRadarFrames = [];
+}
+
+// Restore radar state
+(function() {
+  try {
+    if (localStorage.getItem('aprs-wxradar') === '1') {
+      setTimeout(function() {
+        var cb = document.getElementById('wxRadar');
+        if (cb) { cb.checked = true; toggleWxRadar(true); }
+      }, 2000);
+    }
+  } catch(e) {}
+})();
+
+
+// ─── Phase 4: Met Office Severe Weather Warnings ──────────────────────────────
+// Fetches UK National Severe Weather Warnings via our server proxy (which
+// reads the free Met Office RSS feed). Shows the most severe active warning
+// as a banner. Polls every 15 minutes.
+var _wxWarnDismissed = {};   // track dismissed warnings by title
+
+async function loadWxWarnings() {
+  try {
+    var r = await fetch(location.origin + '/api/wx/warnings');
+    if (!r.ok) return;
+    var d = await r.json();
+    var warnings = d.warnings || [];
+    if (!warnings.length) {
+      var banner = document.getElementById('wx-warn-banner');
+      if (banner) banner.classList.add('hidden');
+      return;
+    }
+    // Pick the most severe non-dismissed warning (red > amber > yellow)
+    var rank = { red: 3, amber: 2, yellow: 1 };
+    var top = null;
+    for (var i = 0; i < warnings.length; i++) {
+      var wn = warnings[i];
+      if (_wxWarnDismissed[wn.title]) continue;
+      if (!top || (rank[wn.level]||0) > (rank[top.level]||0)) top = wn;
+    }
+    if (!top) return;
+    showWxWarnBanner(top);
+  } catch(e) {}
+}
+
+function showWxWarnBanner(wn) {
+  var banner = document.getElementById('wx-warn-banner');
+  var txt = document.getElementById('wx-warn-text');
+  if (!banner || !txt) return;
+  // Colour by severity
+  var grad = 'linear-gradient(90deg,#b45309,#d97706)';   // amber default
+  if (wn.level === 'red') grad = 'linear-gradient(90deg,#991b1b,#dc2626)';
+  else if (wn.level === 'yellow') grad = 'linear-gradient(90deg,#a16207,#ca8a04)';
+  banner.style.background = grad;
+  var icon = wn.level === 'red' ? '🔴' : (wn.level === 'amber' ? '🟠' : '🟡');
+  txt.innerText = icon + ' Met Office Weather Warning: ' + wn.title;
+  banner.dataset.title = wn.title;
+  banner.classList.remove('hidden');
+  // Offset the header so banner doesn't overlap
+  var hdr = document.getElementById('app-header');
+  if (hdr) hdr.style.marginTop = '0';
+}
+
+function dismissWxWarn() {
+  var banner = document.getElementById('wx-warn-banner');
+  if (banner) {
+    if (banner.dataset.title) _wxWarnDismissed[banner.dataset.title] = true;
+    banner.classList.add('hidden');
+  }
+}
+
+// Poll Met Office warnings every 15 minutes, first check after 5s
+setTimeout(loadWxWarnings, 5000);
+setInterval(loadWxWarnings, 15 * 60 * 1000);
+
+
 // ─── LoRa-APRS Integration ────────────────────────────────────────────────────
 // Global LoRa-APRS network overlay using lora-aprs.live API
 // Markers and signal-quality lines colour-coded by SNR
@@ -11033,7 +11207,7 @@ function renderLoRaData(results) {
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 // initReplayProgress();  // disabled - user triggers replay via sidebar
-console.log('APRS Net JS loaded - build cache-bust-12 (phase 3 propagation)');
+console.log('APRS Net JS loaded - build cache-bust-13 (phase 4 weather)');
 initTheme();
 initMemberSession();
 loadMOTDBanner();
