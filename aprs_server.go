@@ -455,6 +455,225 @@ func handleQRZLookup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+
+// ─── Propagation Analytics ────────────────────────────────────────────────────
+// Computes four analytics views from the in-memory history buffer:
+//   1. Station Reliability  - A-F grade per station from packet consistency
+//   2. Longest Path         - ranking of stations heard via the most digi hops
+//   3. Best Time of Day     - packet count bucketed by hour (peak detection)
+//   4. Activity Heatmap     - 7-day x 24-hour grid of packet counts
+// All read-only, computed on demand. No persistence needed - history is the source.
+
+func handleAnalytics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	historyMu.RLock()
+	// Take a snapshot so we don't hold the lock during computation
+	snap := make([]HistoryPacket, len(history))
+	copy(snap, history)
+	historyMu.RUnlock()
+
+	now := time.Now()
+	nowUnix := now.Unix()
+
+	// ── 1. Station Reliability ────────────────────────────────────────────────
+	// Per station: total packets, time span, average gap. A station heard
+	// consistently over a long span scores high; bursty/rare ones score low.
+	type staInfo struct {
+		Count     int
+		FirstTs   int64
+		LastTs    int64
+		Gaps      []int64
+		prevTs    int64
+	}
+	stations := make(map[string]*staInfo)
+	for _, p := range snap {
+		si := stations[p.Callsign]
+		if si == nil {
+			si = &staInfo{FirstTs: p.Timestamp, prevTs: p.Timestamp}
+			stations[p.Callsign] = si
+		}
+		si.Count++
+		si.LastTs = p.Timestamp
+		if si.prevTs > 0 && p.Timestamp > si.prevTs {
+			si.Gaps = append(si.Gaps, p.Timestamp-si.prevTs)
+		}
+		si.prevTs = p.Timestamp
+	}
+
+	type reliabilityRow struct {
+		Callsign string  `json:"callsign"`
+		Grade    string  `json:"grade"`
+		Score    int     `json:"score"`
+		Packets  int     `json:"packets"`
+		SpanMin  int64   `json:"span_min"`
+		AvgGapS  int64   `json:"avg_gap_s"`
+	}
+	var reliability []reliabilityRow
+	for call, si := range stations {
+		spanS := si.LastTs - si.FirstTs
+		// Average gap between packets
+		var avgGap int64
+		if len(si.Gaps) > 0 {
+			var sum int64
+			for _, g := range si.Gaps {
+				sum += g
+			}
+			avgGap = sum / int64(len(si.Gaps))
+		}
+		// Scoring 0-100:
+		//  - packet count contributes up to 50 (log-ish: 1 pkt=5, 10=25, 50+=50)
+		//  - consistency contributes up to 50 (low gap variance + decent span)
+		score := 0
+		if si.Count >= 50 {
+			score += 50
+		} else if si.Count >= 10 {
+			score += 25 + (si.Count-10)*25/40
+		} else {
+			score += si.Count * 25 / 10
+		}
+		// Consistency: reward a long span with regular gaps
+		if spanS > 1800 && avgGap > 0 && avgGap < 1200 {
+			score += 50
+		} else if spanS > 600 && avgGap > 0 && avgGap < 3600 {
+			score += 30
+		} else if si.Count > 1 {
+			score += 15
+		}
+		if score > 100 {
+			score = 100
+		}
+		grade := "F"
+		switch {
+		case score >= 90:
+			grade = "A"
+		case score >= 75:
+			grade = "B"
+		case score >= 60:
+			grade = "C"
+		case score >= 45:
+			grade = "D"
+		case score >= 30:
+			grade = "E"
+		}
+		reliability = append(reliability, reliabilityRow{
+			Callsign: call, Grade: grade, Score: score,
+			Packets: si.Count, SpanMin: spanS / 60, AvgGapS: avgGap,
+		})
+	}
+	// Sort by score descending
+	for i := 0; i < len(reliability); i++ {
+		for j := i + 1; j < len(reliability); j++ {
+			if reliability[j].Score > reliability[i].Score {
+				reliability[i], reliability[j] = reliability[j], reliability[i]
+			}
+		}
+	}
+	// Cap to top 50
+	if len(reliability) > 50 {
+		reliability = reliability[:50]
+	}
+
+	// ── 2. Longest Path (most digipeater hops) ───────────────────────────────
+	// Path looks like "APRS,WIDE1-1,WIDE2-1,qAR,M0ABC". Count elements that
+	// are real digipeaters (skip the destination call and q-constructs).
+	type pathRow struct {
+		Callsign string `json:"callsign"`
+		Hops     int    `json:"hops"`
+		Path     string `json:"path"`
+	}
+	bestPath := make(map[string]pathRow)
+	for _, p := range snap {
+		if p.Path == "" {
+			continue
+		}
+		parts := strings.Split(p.Path, ",")
+		hops := 0
+		for i, el := range parts {
+			if i == 0 {
+				continue // destination callsign, not a hop
+			}
+			el = strings.TrimSpace(el)
+			if el == "" {
+				continue
+			}
+			// Skip q-constructs (qAR, qAO, qAS, etc) and TCPIP
+			up := strings.ToUpper(el)
+			if strings.HasPrefix(up, "Q") && len(up) == 3 {
+				continue
+			}
+			if up == "TCPIP" || up == "TCPIP*" {
+				continue
+			}
+			hops++
+		}
+		if hops == 0 {
+			continue
+		}
+		existing, ok := bestPath[p.Callsign]
+		if !ok || hops > existing.Hops {
+			bestPath[p.Callsign] = pathRow{Callsign: p.Callsign, Hops: hops, Path: p.Path}
+		}
+	}
+	var longestPaths []pathRow
+	for _, pr := range bestPath {
+		longestPaths = append(longestPaths, pr)
+	}
+	for i := 0; i < len(longestPaths); i++ {
+		for j := i + 1; j < len(longestPaths); j++ {
+			if longestPaths[j].Hops > longestPaths[i].Hops {
+				longestPaths[i], longestPaths[j] = longestPaths[j], longestPaths[i]
+			}
+		}
+	}
+	if len(longestPaths) > 20 {
+		longestPaths = longestPaths[:20]
+	}
+
+	// ── 3. Best Time of Day ───────────────────────────────────────────────────
+	// Bucket packet timestamps by hour-of-day (server local time).
+	hourCounts := make([]int, 24)
+	for _, p := range snap {
+		t := time.Unix(p.Timestamp, 0)
+		hourCounts[t.Hour()]++
+	}
+	bestHour, bestHourCount := 0, 0
+	for h, c := range hourCounts {
+		if c > bestHourCount {
+			bestHourCount = c
+			bestHour = h
+		}
+	}
+
+	// ── 4. Activity Heatmap (7 days x 24 hours) ──────────────────────────────
+	// Grid[day][hour] = packet count. day 0 = 6 days ago, day 6 = today.
+	heatmap := make([][]int, 7)
+	for i := range heatmap {
+		heatmap[i] = make([]int, 24)
+	}
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	for _, p := range snap {
+		t := time.Unix(p.Timestamp, 0)
+		daysAgo := int(todayStart.Sub(time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())).Hours() / 24)
+		dayIdx := 6 - daysAgo
+		if dayIdx >= 0 && dayIdx < 7 {
+			heatmap[dayIdx][t.Hour()]++
+		}
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"generated_at":    nowUnix,
+		"total_packets":   len(snap),
+		"total_stations":  len(stations),
+		"reliability":     reliability,
+		"longest_paths":   longestPaths,
+		"hour_counts":     hourCounts,
+		"best_hour":       bestHour,
+		"best_hour_count": bestHourCount,
+		"heatmap":         heatmap,
+	})
+}
+
 func main() {
 	loadOrInitCreds()
 	loadSavedConfig()
@@ -515,6 +734,7 @@ func main() {
 	http.HandleFunc("/api/version", handleVersion)
 	http.HandleFunc("/api/tocalls", handleTocalls)
 	http.HandleFunc("/api/qrz/lookup", handleQRZLookup)
+	http.HandleFunc("/api/analytics", handleAnalytics)
 	http.HandleFunc("/api/messages", handleMessages)
 	http.HandleFunc("/api/iss", handleISSPosition)
 	http.HandleFunc("/api/update", basicAuth(handleUpdate))

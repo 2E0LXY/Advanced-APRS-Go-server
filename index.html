@@ -1148,6 +1148,48 @@ body { background: var(--bg-base); color: var(--text-base); }
           <div id="lb-devices" class="space-y-1 text-xs"></div>
         </div>
 
+        <!-- ════ PROPAGATION ANALYTICS (PropView-inspired) ════ -->
+        <div class="bg-gray-800 rounded-lg border border-indigo-700 p-4 mb-3">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-indigo-300 font-bold flex items-center"><span class="mr-2">📊</span>Propagation Analytics</h3>
+            <button onclick="loadAnalytics()" class="text-xs bg-indigo-700 hover:bg-indigo-600 px-3 py-1 rounded">🔄 Refresh</button>
+          </div>
+          <p class="text-xs text-gray-500 mb-3">Computed from the server's packet history buffer. <span id="an-summary"></span></p>
+
+          <!-- Best Time of Day -->
+          <div class="bg-gray-900 rounded p-3 mb-3">
+            <h4 class="text-xs uppercase font-bold text-amber-300 mb-2">🕐 Best Time of Day</h4>
+            <p id="an-besttime" class="text-sm text-gray-300 mb-2">Loading…</p>
+            <div id="an-hourbars" class="flex items-end gap-0.5 h-20"></div>
+            <div class="flex justify-between text-[9px] text-gray-600 mt-1"><span>00h</span><span>06h</span><span>12h</span><span>18h</span><span>23h</span></div>
+          </div>
+
+          <!-- Activity Heatmap -->
+          <div class="bg-gray-900 rounded p-3 mb-3">
+            <h4 class="text-xs uppercase font-bold text-emerald-300 mb-2">🗓 7-Day Activity Heatmap</h4>
+            <div id="an-heatmap" class="text-xs"></div>
+          </div>
+
+          <!-- Longest Paths -->
+          <div class="bg-gray-900 rounded p-3 mb-3">
+            <h4 class="text-xs uppercase font-bold text-cyan-300 mb-2">🛰 Longest RF Paths (most digi hops)</h4>
+            <table class="w-full text-xs">
+              <thead><tr class="text-gray-500 text-left border-b border-gray-700"><th class="py-1">#</th><th>Callsign</th><th>Hops</th><th>Path</th></tr></thead>
+              <tbody id="an-longest" class="divide-y divide-gray-800 font-mono"></tbody>
+            </table>
+          </div>
+
+          <!-- Station Reliability -->
+          <div class="bg-gray-900 rounded p-3">
+            <h4 class="text-xs uppercase font-bold text-rose-300 mb-2">⭐ Station Reliability Grades</h4>
+            <p class="text-[10px] text-gray-600 mb-2">Grade A–F based on packet count + consistency over time</p>
+            <table class="w-full text-xs">
+              <thead><tr class="text-gray-500 text-left border-b border-gray-700"><th class="py-1">Grade</th><th>Callsign</th><th>Packets</th><th>Span</th><th>Avg Gap</th></tr></thead>
+              <tbody id="an-reliability" class="divide-y divide-gray-800 font-mono"></tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- Active Nets Detection -->
         <div class="bg-gray-800 rounded border border-gray-700">
           <div class="p-3 border-b border-gray-700 font-bold text-xs uppercase tracking-widest text-purple-300">
@@ -10132,6 +10174,156 @@ function updateQuietHoursStatus() {
 })();
 
 
+
+// ─── Propagation Analytics (Phase 2) ──────────────────────────────────────────
+async function loadAnalytics() {
+  var summary = document.getElementById('an-summary');
+  try {
+    var r = await fetch(location.origin + '/api/analytics');
+    if (!r.ok) { if (summary) summary.innerText = '(failed to load)'; return; }
+    var d = await r.json();
+    renderAnalytics(d);
+  } catch(e) {
+    if (summary) summary.innerText = '(error: ' + e.message + ')';
+  }
+}
+
+function renderAnalytics(d) {
+  // Summary line
+  var summary = document.getElementById('an-summary');
+  if (summary) {
+    summary.innerText = d.total_packets + ' packets from ' + d.total_stations + ' stations analysed.';
+  }
+
+  // ── Best Time of Day ──
+  var bt = document.getElementById('an-besttime');
+  var hours = d.hour_counts || [];
+  if (bt) {
+    if (d.best_hour_count > 0) {
+      var h = d.best_hour;
+      var label = (h < 10 ? '0' : '') + h + ':00–' + (h < 9 ? '0' : '') + (h+1) + ':00';
+      bt.innerHTML = 'Peak activity around <b class="text-amber-300">' + label + '</b> '
+        + '(' + d.best_hour_count + ' packets). Server local time.';
+    } else {
+      bt.innerText = 'Not enough data yet.';
+    }
+  }
+  // Hour bars
+  var hb = document.getElementById('an-hourbars');
+  if (hb && hours.length === 24) {
+    var maxH = Math.max.apply(null, hours) || 1;
+    hb.innerHTML = '';
+    for (var i = 0; i < 24; i++) {
+      var pct = Math.round((hours[i] / maxH) * 100);
+      var bar = document.createElement('div');
+      bar.style.cssText = 'flex:1;background:' + (i===d.best_hour ? '#f59e0b' : '#6366f1')
+        + ';height:' + Math.max(2, pct) + '%;border-radius:2px 2px 0 0;min-height:2px';
+      bar.title = i + ':00 — ' + hours[i] + ' packets';
+      hb.appendChild(bar);
+    }
+  }
+
+  // ── Activity Heatmap ──
+  var hm = document.getElementById('an-heatmap');
+  var grid = d.heatmap || [];
+  if (hm && grid.length === 7) {
+    // Find max for colour scaling
+    var maxV = 1;
+    for (var dd = 0; dd < 7; dd++)
+      for (var hh = 0; hh < 24; hh++)
+        if (grid[dd][hh] > maxV) maxV = grid[dd][hh];
+    var dayNames = [];
+    var today = new Date();
+    for (var k = 6; k >= 0; k--) {
+      var dt = new Date(today.getTime() - k*86400000);
+      dayNames.push(['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getDay()]);
+    }
+    var htmlGrid = '<table style="border-collapse:collapse;width:100%"><tr>'
+      + '<td style="width:30px"></td>';
+    for (var hh = 0; hh < 24; hh += 3) {
+      htmlGrid += '<td colspan="3" style="font-size:8px;color:#6b7280;text-align:left">' + hh + 'h</td>';
+    }
+    htmlGrid += '</tr>';
+    for (var dd = 0; dd < 7; dd++) {
+      htmlGrid += '<tr><td style="font-size:9px;color:#9ca3af;padding-right:4px">' + dayNames[dd] + '</td>';
+      for (var hh = 0; hh < 24; hh++) {
+        var v = grid[dd][hh];
+        var intensity = v / maxV;
+        var color = v === 0 ? '#1f2937'
+          : 'rgba(99,102,241,' + (0.2 + intensity*0.8).toFixed(2) + ')';
+        htmlGrid += '<td style="width:4%;height:14px;background:' + color
+          + ';border:1px solid #111827" title="' + dayNames[dd] + ' ' + hh + ':00 — ' + v + ' packets"></td>';
+      }
+      htmlGrid += '</tr>';
+    }
+    htmlGrid += '</table>';
+    hm.innerHTML = htmlGrid;
+  }
+
+  // ── Longest Paths ──
+  var lp = document.getElementById('an-longest');
+  var paths = d.longest_paths || [];
+  if (lp) {
+    if (!paths.length) {
+      lp.innerHTML = '<tr><td colspan="4" class="text-gray-600 py-2">No multi-hop paths heard yet.</td></tr>';
+    } else {
+      lp.innerHTML = paths.map(function(p, i) {
+        return '<tr class="text-gray-300">'
+          + '<td class="py-1 text-gray-500">' + (i+1) + '</td>'
+          + '<td class="text-cyan-300">' + escapeHtml(p.callsign) + '</td>'
+          + '<td class="text-amber-300 font-bold">' + p.hops + '</td>'
+          + '<td class="text-gray-500 text-[10px] break-all">' + escapeHtml(p.path) + '</td>'
+          + '</tr>';
+      }).join('');
+    }
+  }
+
+  // ── Station Reliability ──
+  var rl = document.getElementById('an-reliability');
+  var rel = d.reliability || [];
+  if (rl) {
+    if (!rel.length) {
+      rl.innerHTML = '<tr><td colspan="5" class="text-gray-600 py-2">No station data yet.</td></tr>';
+    } else {
+      var gradeColors = { A:'#22c55e', B:'#84cc16', C:'#eab308', D:'#f97316', E:'#ef4444', F:'#991b1b' };
+      rl.innerHTML = rel.map(function(s) {
+        var gc = gradeColors[s.grade] || '#6b7280';
+        var span = s.span_min >= 60
+          ? (Math.floor(s.span_min/60) + 'h' + (s.span_min%60) + 'm')
+          : (s.span_min + 'm');
+        var gap = s.avg_gap_s > 0
+          ? (s.avg_gap_s >= 60 ? Math.round(s.avg_gap_s/60) + 'm' : s.avg_gap_s + 's')
+          : '—';
+        return '<tr class="text-gray-300">'
+          + '<td class="py-1"><span style="display:inline-block;width:20px;height:20px;'
+          + 'line-height:20px;text-align:center;border-radius:4px;font-weight:bold;'
+          + 'background:' + gc + ';color:#fff">' + s.grade + '</span></td>'
+          + '<td class="text-cyan-300">' + escapeHtml(s.callsign) + '</td>'
+          + '<td>' + s.packets + '</td>'
+          + '<td class="text-gray-400">' + span + '</td>'
+          + '<td class="text-gray-400">' + gap + '</td>'
+          + '</tr>';
+      }).join('');
+    }
+  }
+}
+
+// Auto-load analytics when the leaderboard panel opens
+(function() {
+  var origToggle = (typeof togglePanel === 'function') ? togglePanel : null;
+  if (origToggle) {
+    var wrapped = function(panel) {
+      origToggle(panel);
+      if (panel === 'leaderboard') {
+        setTimeout(loadAnalytics, 300);
+      }
+    };
+    window.togglePanel = wrapped;
+    togglePanel = wrapped;
+  }
+})();
+
+
 // ─── LoRa-APRS Integration ────────────────────────────────────────────────────
 // Global LoRa-APRS network overlay using lora-aprs.live API
 // Markers and signal-quality lines colour-coded by SNR
@@ -10568,7 +10760,7 @@ function renderLoRaData(results) {
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 // initReplayProgress();  // disabled - user triggers replay via sidebar
-console.log('APRS Net JS loaded - build cache-bust-10 (dedupe panels)');
+console.log('APRS Net JS loaded - build cache-bust-11 (phase 2 analytics)');
 initTheme();
 initMemberSession();
 loadMOTDBanner();
