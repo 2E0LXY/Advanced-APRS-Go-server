@@ -1726,6 +1726,8 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	res["ais_stream_key"] = config.AISStreamKey
 	res["qrz_username"] = config.QRZUsername
 	res["qrz_configured"] = (config.QRZUsername != "" && config.QRZPassword != "")
+	res["center_lat"] = config.CenterLat
+	res["center_lon"] = config.CenterLon
 	config.RUnlock()
 	res["upstream_connected"] = atomic.LoadInt32(&upstreamConnected) == 1
 	rawRingMu.RLock()

@@ -208,6 +208,13 @@ body { background: var(--bg-base); color: var(--text-base); }
   animation: ghostPulse 2s ease-in-out infinite;
   pointer-events: none;
 }
+/* Phase 3: animated flowing propagation lines */
+.prop-flow-line {
+  animation: propFlow 1s linear infinite;
+}
+@keyframes propFlow {
+  to { stroke-dashoffset: -14; }
+}
 @keyframes ghostPulse {
   0%, 100% { opacity: 0.4; transform: scale(1); }
   50%      { opacity: 0.9; transform: scale(1.08); }
@@ -283,6 +290,13 @@ body { background: var(--bg-base); color: var(--text-base); }
 </head>
 <body class="bg-gray-900 h-screen flex flex-col text-white font-sans overflow-hidden">
 
+<!-- Band Opening Alert Banner -->
+<div id="band-alert" class="hidden fixed top-0 left-0 right-0 z-[60] text-center py-2 px-4 font-bold text-sm"
+     style="background:linear-gradient(90deg,#059669,#10b981);color:#fff;box-shadow:0 2px 12px rgba(0,0,0,0.4)">
+  <span id="band-alert-text"></span>
+  <button onclick="dismissBandAlert()" class="ml-3 px-2 py-0.5 bg-black/20 rounded hover:bg-black/40 text-xs">✕</button>
+</div>
+
 <!-- HEADER -->
 <div id="app-header" class="flex-none border-b p-2 flex justify-between items-center shadow-lg z-50" style="background:#1e3a5f;border-color:#2d4a7a">
   <div class="flex items-center space-x-3">
@@ -292,6 +306,23 @@ body { background: var(--bg-base); color: var(--text-base); }
       onclick="stopTracking()" title="Click to stop tracking">📡 <span id="tracking-call"></span> ✕</span>
     <span id="rx-count" class="text-xs text-gray-400 font-mono">RX: 0</span>
     <span id="station-count" class="text-xs text-gray-500 font-mono">STN: 0</span>
+    <!-- Propagation Meters -->
+    <div id="prop-meters" class="hidden md:flex items-center gap-3 ml-2 pl-3 border-l border-blue-800">
+      <div class="flex items-center gap-1.5" title="VHF propagation based on stations heard near your location in the last 30 min">
+        <span class="text-[10px] text-gray-400 uppercase font-bold">Local</span>
+        <div class="w-16 h-2.5 bg-gray-800 rounded-full overflow-hidden">
+          <div id="prop-local-bar" class="h-full rounded-full transition-all duration-700" style="width:0%;background:#6b7280"></div>
+        </div>
+        <span id="prop-local-val" class="text-[10px] font-mono text-gray-400 w-6">–</span>
+      </div>
+      <div class="flex items-center gap-1.5" title="VHF propagation across the wider region (all stations in range)">
+        <span class="text-[10px] text-gray-400 uppercase font-bold">Region</span>
+        <div class="w-16 h-2.5 bg-gray-800 rounded-full overflow-hidden">
+          <div id="prop-region-bar" class="h-full rounded-full transition-all duration-700" style="width:0%;background:#6b7280"></div>
+        </div>
+        <span id="prop-region-val" class="text-[10px] font-mono text-gray-400 w-6">–</span>
+      </div>
+    </div>
   </div>
   <div class="flex space-x-1 text-xs font-medium">
     <button onclick="togglePanel('map')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Map</button>
@@ -407,6 +438,7 @@ body { background: var(--bg-base); color: var(--text-base); }
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-phg" onchange="redrawMap()"><span>PHG Circles</span></label>
         <label class="flex items-center space-x-2 cursor-pointer" title="Map auto-zooms to fit all visible stations. Pan or zoom manually to disable."><input type="checkbox" id="autoFit" class="w-4 h-4" onchange="toggleAutoFit(this.checked)"><span>🔍 Auto-Fit Zoom</span></label>
         <label class="flex items-center space-x-2 cursor-pointer" title="Fade stations that haven't been heard recently (30+ minutes)"><input type="checkbox" id="ghostOld" class="w-4 h-4" onchange="toggleGhosting(this.checked)" checked><span>👻 Ghost Stale Stations</span></label>
+        <label class="flex items-center space-x-2 cursor-pointer" title="Draw distance-coloured propagation lines from stations toward your location"><input type="checkbox" id="propLines" class="w-4 h-4" onchange="togglePropLines(this.checked)"><span>📡 Propagation Lines</span></label>
         <div class="flex items-center justify-between cursor-pointer">
           <span class="text-xs text-purple-400" id="path-viz-label">No path shown</span>
           <button onclick="clearPathViz();document.getElementById('path-viz-label').innerText='No path shown'" class="text-[10px] text-gray-500 hover:text-red-400 hidden" id="clear-path-btn">✕ Clear</button>
@@ -3346,6 +3378,9 @@ function updateStation(call,path,lat,lon,phg,ts,raw,sym) {
   document.getElementById('station-count').innerText='STN: '+Object.keys(stations).length;
   // Trigger auto-fit if enabled
   try { if (typeof scheduleAutoFit === 'function') scheduleAutoFit(); } catch(e) {}
+  // Update propagation meters + lines
+  try { if (typeof schedulePropUpdate === 'function') schedulePropUpdate(); } catch(e) {}
+  try { if (_propLinesEnabled && typeof drawPropLines === 'function') drawPropLines(); } catch(e) {}
   // Refresh ghosting on this station (in case it was ghosted)
   try {
     if (_ghostingEnabled && stations[call] && stations[call].marker && stations[call].marker._icon) {
@@ -10324,6 +10359,244 @@ function renderAnalytics(d) {
 })();
 
 
+
+// ─── Phase 3: Propagation Meters + Band Opening Detection ─────────────────────
+// Two meters scored 0-100:
+//   LOCAL  - stations heard within 75km of our station in the last 30 min
+//   REGION - all stations heard in the last 30 min, distance-weighted
+// Band-opening alert fires when either meter crosses a rising threshold.
+
+var _ourLat = null, _ourLon = null;       // our station position (from /api/status)
+var _propLocalScore = 0, _propRegionScore = 0;
+var _propLastBandAlert = 0;               // timestamp of last alert (cooldown)
+var _propBandAlertActive = false;
+
+// Fetch our station coords once
+(function() {
+  fetch(location.origin + '/api/status').then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(d) {
+      if (d && typeof d.center_lat === 'number') {
+        _ourLat = d.center_lat;
+        _ourLon = d.center_lon;
+        var pm = document.getElementById('prop-meters');
+        if (pm) pm.classList.remove('hidden');
+        computePropagation();
+      }
+    }).catch(function(){});
+})();
+
+function computePropagation() {
+  if (_ourLat === null) return;
+  var now = Date.now() / 1000;
+  var windowSec = 30 * 60;  // 30 minute window
+
+  var localCount = 0, localDistSum = 0;
+  var regionCount = 0, regionDistSum = 0, regionMaxDist = 0;
+
+  for (var call in stations) {
+    var s = stations[call];
+    if (!s || !s.positions || !s.positions.length) continue;
+    if ((now - (s.lastHeard || 0)) > windowSec) continue;  // too old
+    var p = s.positions[s.positions.length - 1];
+    var dist = haversineKm(_ourLat, _ourLon, p.lat, p.lon);
+    if (isNaN(dist)) continue;
+
+    // Region = everything in window
+    regionCount++;
+    regionDistSum += dist;
+    if (dist > regionMaxDist) regionMaxDist = dist;
+
+    // Local = within 75km
+    if (dist <= 75) {
+      localCount++;
+      localDistSum += dist;
+    }
+  }
+
+  // ── LOCAL score 0-100 ──
+  // Based on count of nearby stations. 0=dead, 15+=excellent.
+  var localScore = 0;
+  if (localCount > 0) {
+    localScore = Math.min(100, Math.round(localCount * 7));
+  }
+
+  // ── REGION score 0-100 ──
+  // Distance-weighted: many stations + far reach = band open.
+  // count contributes 60, max-distance contributes 40.
+  var regionScore = 0;
+  if (regionCount > 0) {
+    var countPart = Math.min(60, regionCount * 1.5);
+    var distPart = Math.min(40, regionMaxDist / 10);  // 400km = full 40
+    regionScore = Math.round(countPart + distPart);
+  }
+
+  _propLocalScore = localScore;
+  _propRegionScore = regionScore;
+  updatePropMeters(localScore, regionScore, localCount, regionCount, regionMaxDist);
+  checkBandOpening(localScore, regionScore, regionMaxDist);
+}
+
+function _propColor(score) {
+  if (score >= 75) return '#22c55e';   // green - excellent
+  if (score >= 50) return '#84cc16';   // lime - good
+  if (score >= 30) return '#eab308';   // yellow - fair
+  if (score >= 15) return '#f97316';   // orange - poor
+  return '#ef4444';                     // red - very poor
+}
+
+function updatePropMeters(local, region, localCount, regionCount, maxDist) {
+  var lBar = document.getElementById('prop-local-bar');
+  var lVal = document.getElementById('prop-local-val');
+  var rBar = document.getElementById('prop-region-bar');
+  var rVal = document.getElementById('prop-region-val');
+  if (lBar) {
+    lBar.style.width = local + '%';
+    lBar.style.background = _propColor(local);
+  }
+  if (lVal) {
+    lVal.innerText = local;
+    lVal.style.color = _propColor(local);
+    lVal.parentElement.title = 'Local VHF: ' + localCount
+      + ' stations within 75km in last 30 min (score ' + local + '/100)';
+  }
+  if (rBar) {
+    rBar.style.width = region + '%';
+    rBar.style.background = _propColor(region);
+  }
+  if (rVal) {
+    rVal.innerText = region;
+    rVal.style.color = _propColor(region);
+    rVal.parentElement.title = 'Regional VHF: ' + regionCount
+      + ' stations in last 30 min, furthest ' + Math.round(maxDist)
+      + 'km (score ' + region + '/100)';
+  }
+}
+
+// ── Band Opening Detection ──
+// Fires an alert when the regional score crosses 70 (rising edge), with a
+// 30-minute cooldown so it doesn't spam. Respects Quiet Hours.
+function checkBandOpening(local, region, maxDist) {
+  var now = Date.now() / 1000;
+  var THRESHOLD = 70;
+  var COOLDOWN = 30 * 60;
+
+  if (region >= THRESHOLD && !_propBandAlertActive) {
+    if (now - _propLastBandAlert > COOLDOWN) {
+      _propBandAlertActive = true;
+      _propLastBandAlert = now;
+      showBandAlert(region, maxDist);
+    }
+  } else if (region < THRESHOLD - 15) {
+    // Hysteresis - only clear the 'active' flag once well below threshold
+    _propBandAlertActive = false;
+  }
+}
+
+function showBandAlert(score, maxDist) {
+  // Respect quiet hours for the audio/visual prominence
+  var quiet = (typeof isInQuietHours === 'function' && isInQuietHours());
+  var banner = document.getElementById('band-alert');
+  var txt = document.getElementById('band-alert-text');
+  if (banner && txt) {
+    txt.innerText = '📡 VHF Band Opening Detected! Regional propagation score '
+      + score + '/100 — stations heard out to ' + Math.round(maxDist) + ' km';
+    banner.classList.remove('hidden');
+    // Auto-hide after 30 seconds
+    setTimeout(function() {
+      if (banner) banner.classList.add('hidden');
+    }, 30000);
+  }
+  if (!quiet && typeof playMessageBeep === 'function') {
+    playMessageBeep();
+  }
+  // Browser notification if permitted and not quiet
+  if (!quiet && 'Notification' in window && Notification.permission === 'granted') {
+    try {
+      new Notification('📡 VHF Band Opening', {
+        body: 'Regional propagation score ' + score + '/100. Stations heard to '
+          + Math.round(maxDist) + ' km.',
+        tag: 'aprs-band-opening'
+      });
+    } catch(e) {}
+  }
+}
+
+function dismissBandAlert() {
+  var banner = document.getElementById('band-alert');
+  if (banner) banner.classList.add('hidden');
+}
+
+// Recompute propagation every 60s and on each station update (debounced)
+var _propTimer = null;
+function schedulePropUpdate() {
+  if (_propTimer) clearTimeout(_propTimer);
+  _propTimer = setTimeout(computePropagation, 2000);
+}
+setInterval(computePropagation, 60000);
+
+
+// ─── Phase 3: Distance-Coloured Animated Path Lines ───────────────────────────
+// Draws a dashed line from each station toward our station, coloured by
+// distance band. Toggle via the sidebar checkbox.
+var _propLinesEnabled = false;
+var _propLineLayer = null;
+
+function togglePropLines(on) {
+  _propLinesEnabled = on;
+  localStorage.setItem('aprs-proplines', on ? '1' : '0');
+  if (on) {
+    if (!_propLineLayer) _propLineLayer = L.layerGroup().addTo(map);
+    drawPropLines();
+  } else if (_propLineLayer) {
+    _propLineLayer.clearLayers();
+  }
+}
+
+function _distColor(km) {
+  if (km <= 50)  return '#22c55e';   // green  - close
+  if (km <= 150) return '#84cc16';   // lime
+  if (km <= 300) return '#f97316';   // orange - far
+  return '#a855f7';                   // purple - very far (band opening territory)
+}
+
+function drawPropLines() {
+  if (!_propLinesEnabled || _ourLat === null || !_propLineLayer) return;
+  _propLineLayer.clearLayers();
+  var now = Date.now() / 1000;
+  var windowSec = 30 * 60;
+  for (var call in stations) {
+    var s = stations[call];
+    if (!s || !s.positions || !s.positions.length) continue;
+    if ((now - (s.lastHeard || 0)) > windowSec) continue;
+    var p = s.positions[s.positions.length - 1];
+    var dist = haversineKm(_ourLat, _ourLon, p.lat, p.lon);
+    if (isNaN(dist) || dist < 1) continue;
+    var color = _distColor(dist);
+    var line = L.polyline([[p.lat, p.lon], [_ourLat, _ourLon]], {
+      color: color, weight: 1.5, opacity: 0.55,
+      dashArray: '6,8', className: 'prop-flow-line'
+    });
+    line.bindTooltip(call + ' — ' + Math.round(dist) + ' km', { sticky: true });
+    _propLineLayer.addLayer(line);
+  }
+}
+
+// Restore prop-lines state
+(function() {
+  try {
+    if (localStorage.getItem('aprs-proplines') === '1') {
+      setTimeout(function() {
+        var cb = document.getElementById('propLines');
+        if (cb) { cb.checked = true; togglePropLines(true); }
+      }, 1800);
+    }
+  } catch(e) {}
+})();
+
+// Redraw prop lines periodically
+setInterval(function() { if (_propLinesEnabled) drawPropLines(); }, 30000);
+
+
 // ─── LoRa-APRS Integration ────────────────────────────────────────────────────
 // Global LoRa-APRS network overlay using lora-aprs.live API
 // Markers and signal-quality lines colour-coded by SNR
@@ -10760,7 +11033,7 @@ function renderLoRaData(results) {
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 // initReplayProgress();  // disabled - user triggers replay via sidebar
-console.log('APRS Net JS loaded - build cache-bust-11 (phase 2 analytics)');
+console.log('APRS Net JS loaded - build cache-bust-12 (phase 3 propagation)');
 initTheme();
 initMemberSession();
 loadMOTDBanner();
