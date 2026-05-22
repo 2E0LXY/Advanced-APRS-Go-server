@@ -136,12 +136,24 @@ var (
 
 var (
 	posRegex = regexp.MustCompile(`[!\/=@\*](\d{2})(\d{2}\.\d{2})([NS])(.)(\d{3})(\d{2}\.\d{2})([EW])(.)`)
+	// Compressed position: DTI + sym_table(1) + lat_b91(4) + lon_b91(4) + sym(1) + cs(2) + T(1)
+	// Used by all OE5BPA / LoRa_APRS_Tracker / ESP32 LoRa nodes
+	compPosRegex = regexp.MustCompile(`[!\/=@\*]([\/\\])([\x21-\x7b]{4})([\x21-\x7b]{4})([\x21-\x7b])([\x20-\x7b]{2})([\x21-\x7b])`)
 	// Object format: ;NAME_____*DDHHMMzDDMM.MMN/DDDMM.MMW symbol comment
 	objRegex = regexp.MustCompile(`;([^\*]{9})[\*_](\d{6}[z\/])(\d{2})(\d{2}\.\d{2})([NS])(.)(\d{3})(\d{2}\.\d{2})([EW])(.)`)
 	// Item format: )NAME!DDMM.MMN/DDDMM.MMW symbol comment
 	itemRegex = regexp.MustCompile(`\)([^!]{3,9})[!_](\d{2})(\d{2}\.\d{2})([NS])(.)(\d{3})(\d{2}\.\d{2})([EW])(.)`)
 	phgRegex = regexp.MustCompile(`PHG(\d)(\d)(\d)(\d)`)
 )
+
+// decodeBase91Pos decodes a 4-char Base91 string to an integer value.
+func decodeBase91Pos(s string) int {
+	v := 0
+	for _, c := range s {
+		v = v*91 + int(c-33)
+	}
+	return v
+}
 
 
 type HistoryPacket struct {
@@ -1108,27 +1120,59 @@ func parsePacket(packet string) (HistoryPacket, bool) {
 	hp.Raw = packet
 	hp.Timestamp = time.Now().Unix()
 	payload := packet[colIdx+1:]
+
+	// ── Uncompressed position ─────────────────────────────────────────────────
 	match := posRegex.FindStringSubmatch(payload)
-	if match == nil {
-		return hp, false
+	if match != nil {
+		lDeg, _ := strconv.ParseFloat(match[1], 64)
+		lMin, _ := strconv.ParseFloat(match[2], 64)
+		hp.Lat = lDeg + lMin/60
+		if match[3] == "S" {
+			hp.Lat = -hp.Lat
+		}
+		lnDeg, _ := strconv.ParseFloat(match[5], 64)
+		lnMin, _ := strconv.ParseFloat(match[6], 64)
+		hp.Lon = lnDeg + lnMin/60
+		if match[7] == "W" {
+			hp.Lon = -hp.Lon
+		}
+		hp.Symbol = match[4] + match[8]
+		if pMatch := phgRegex.FindStringSubmatch(payload); pMatch != nil {
+			hp.PHG = pMatch[0]
+		}
+		return hp, true
 	}
-	lDeg, _ := strconv.ParseFloat(match[1], 64)
-	lMin, _ := strconv.ParseFloat(match[2], 64)
-	hp.Lat = lDeg + lMin/60
-	if match[3] == "S" {
-		hp.Lat = -hp.Lat
+
+	// ── Compressed position (Base91) ──────────────────────────────────────────
+	// Used by OE5BPA firmware, LoRa_APRS_Tracker, and most ESP32 LoRa nodes.
+	// Format: DTI sym_table(1) latB91(4) lonB91(4) symbol(1) cs(2) T(1)
+	if cm := compPosRegex.FindStringSubmatch(payload); cm != nil {
+		symTable := cm[1] // "/" or "\"
+		latB91   := cm[2]
+		lonB91   := cm[3]
+		symCode  := cm[4]
+		// Validate: all chars must be in printable ASCII 33–123
+		valid := true
+		for _, s := range []string{latB91, lonB91} {
+			for _, c := range s {
+				if c < 33 || c > 123 {
+					valid = false
+					break
+				}
+			}
+		}
+		if valid {
+			hp.Lat = 90.0 - float64(decodeBase91Pos(latB91))/380926.0
+			hp.Lon = -180.0 + float64(decodeBase91Pos(lonB91))/190463.0
+			// Sanity-check decoded coordinates
+			if hp.Lat >= -90 && hp.Lat <= 90 && hp.Lon >= -180 && hp.Lon <= 180 {
+				hp.Symbol = symTable + symCode
+				return hp, true
+			}
+		}
 	}
-	lnDeg, _ := strconv.ParseFloat(match[5], 64)
-	lnMin, _ := strconv.ParseFloat(match[6], 64)
-	hp.Lon = lnDeg + lnMin/60
-	if match[7] == "W" {
-		hp.Lon = -hp.Lon
-	}
-	hp.Symbol = match[4] + match[8]
-	if pMatch := phgRegex.FindStringSubmatch(payload); pMatch != nil {
-		hp.PHG = pMatch[0]
-	}
-	return hp, true
+
+	return hp, false
 }
 
 // parseAPRSMessage extracts an APRS message packet into a MsgEntry.
