@@ -44,6 +44,44 @@ A high-performance, bidirectional APRS-IS Gateway written in Go. Provides a real
 - Station-to-station messaging via WebSocket authenticated clients
 - Automatic ACK generation per APRS spec
 - Message counter with sequential IDs
+- **Click-to-Reply** — click a received message's sender to auto-fill the reply
+- **Offline message delivery** — messages to a member's callsign are stored and
+  delivered automatically when any client (web, APRSDroid, radio) next logs in
+- **Notifications** — login toast for unread messages, live toasts, desktop
+  browser notifications, unread count badge
+- **Quiet Hours** — per-member configurable window that silences notification
+  toasts and beeps (badge still updates)
+
+### 📊 Propagation & Network Analytics
+- **Activity meter** — packets-per-minute over the last 10 minutes (header gauge)
+- **Coverage meter** — geographic spread of active stations (header gauge)
+- **High Activity alert** — banner when network traffic spikes
+- **Propagation lines** — animated map lines from stations toward the gateway,
+  colour-coded by distance (green/lime/orange/purple)
+- **Analytics panel** (in Leaderboard) computed from packet history:
+  - Station Reliability — A–F grade per station from packet consistency
+  - Longest RF Paths — ranking by digipeater hop count
+  - Best Time of Day — 24-hour traffic histogram
+  - 7-Day Activity Heatmap — day × hour packet-count grid
+- **Auto-Fit Zoom** — map auto-frames all visible stations
+- **Station Ghosting** — stale stations fade with a pulsing ring
+
+### 🌦 Weather Overlays
+- **Weather radar** — animated RainViewer rain-radar overlay (no key needed)
+- **UK severe weather warnings** — Met Office National Severe Weather Warning
+  banner, colour-coded yellow/amber/red (no key needed)
+
+### 🔑 Third-Party Integrations (configured in Admin panel)
+- **QRZ.com XML** — operator profiles (photo, address, grid, licence class)
+  shown in the station detail modal. Needs a QRZ XML subscription.
+- **aisstream.io** — Live Ships (AIS marine vessels) overlay
+- **Met Office DataHub** — optional API key field, reserved for future
+  detailed-forecast features (severe weather warnings work without it)
+
+### 📱 Mobile Companion Site
+- Touch-optimised page at `/mobile` with a bottom tab bar
+- Map / Stations / Messages / Status views
+- Shares the same live WebSocket feed as the desktop site
 
 ### ⚙️ Admin Panel
 - **First-run setup wizard** at `/setup` — creates admin credentials on first boot
@@ -156,9 +194,12 @@ echo "M0XYZ>APRS,TCPIP*:=5342.10N/00130.50W-Test" | nc -u -w1 YOUR-IP 14580
 
 | Endpoint | Auth | Description |
 |----------|------|-------------|
-| `GET /api/status` | No | Uptime, packet counts, upstream status, connected clients |
-| `GET /api/history` | No | Last 10,000 decoded position packets |
+| `GET /api/status` | No | Uptime, packet counts, upstream status, connected clients, integration flags |
+| `GET /api/history` | API key | Last 10,000 decoded position packets |
 | `GET /api/version` | No | Running server version |
+| `GET /api/analytics` | No | Propagation analytics: reliability grades, longest paths, best time of day, 7-day heatmap |
+| `GET /api/qrz/lookup?call=X` | No | QRZ.com operator profile lookup (server-side proxy, cached 24h) |
+| `GET /api/wx/warnings` | No | UK Met Office severe weather warnings (cached 5 min) |
 | `GET /api/config` | Yes | Full server configuration JSON |
 | `POST /api/config` | Yes | Update and hot-reload configuration |
 | `POST /api/password` | Yes | Change admin password |

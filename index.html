@@ -1344,6 +1344,7 @@ body { background: var(--bg-base); color: var(--text-base); }
         <a href="#h-messaging"       class="bg-gray-700 hover:bg-gray-600 rounded p-2 text-center">📨 Messaging</a>
         <a href="#h-tracking"        class="bg-gray-700 hover:bg-gray-600 rounded p-2 text-center">📡 Station Tracking</a>
         <a href="#h-features"        class="bg-gray-700 hover:bg-gray-600 rounded p-2 text-center">✨ Features Tour</a>
+        <a href="#h-enhanced"        class="bg-indigo-800 hover:bg-indigo-700 rounded p-2 text-center">🚀 Enhanced Features</a>
         <a href="#h-connect"         class="bg-gray-700 hover:bg-gray-600 rounded p-2 text-center">🔌 Connect Clients</a>
         <a href="#h-api"             class="bg-gray-700 hover:bg-gray-600 rounded p-2 text-center">⚙ REST API</a>
         <a href="#h-webhooks"        class="bg-gray-700 hover:bg-gray-600 rounded p-2 text-center">🪝 Webhooks</a>
@@ -1527,6 +1528,109 @@ body { background: var(--bg-base); color: var(--text-base); }
           <h4 class="font-bold text-white mb-1">📢 MOTD Banner</h4>
           <p class="text-xs text-gray-400">Server announcements appear at the top of the page. Dismissable banners stay dismissed across reloads. Also shows unread APRS message count for logged-in members.</p>
         </div>
+      </div>
+    </div>
+
+    <!-- ─── ENHANCED FEATURES (PropView-inspired) ─── -->
+    <div id="h-enhanced" class="bg-gray-800 rounded-lg border border-indigo-700 p-4">
+      <h3 class="text-lg font-bold text-indigo-400 mb-3">🚀 Enhanced Features Guide</h3>
+      <p class="text-sm text-gray-400 mb-4">A detailed guide to the advanced monitoring, analytics and notification features. Each explains <b>what it does</b>, <b>where to find it</b>, and <b>how to read it</b>.</p>
+
+      <!-- Activity & Coverage Meters -->
+      <div class="bg-gray-900 rounded p-3 mb-3 border-l-4 border-blue-600">
+        <h4 class="font-bold text-blue-300 mb-2">📊 Activity &amp; Coverage Meters</h4>
+        <p class="text-xs text-gray-300 mb-2"><b>Where:</b> Top header bar, next to the station count (hidden on narrow mobile screens — use the Mobile site there).</p>
+        <p class="text-xs text-gray-400 mb-2">Two live 0–100 bar gauges. <b class="text-amber-300">Important:</b> this server is internet-connected (APRS-IS), not radio-connected, so it cannot measure true radio propagation. Instead these meters measure <b>network situational awareness</b>:</p>
+        <ul class="text-xs text-gray-400 space-y-1 list-disc list-inside ml-1">
+          <li><b class="text-white">ACTIVITY</b> — how busy the APRS network is right now. Calculated from packets-per-minute over the last 10 minutes, on a logarithmic scale. Near 0 = very quiet, 100 = extremely busy. A high value means lots of stations are transmitting (a contest, a net, an event, or simply good band conditions feeding more stations into APRS-IS).</li>
+          <li><b class="text-white">COVERAGE</b> — how geographically widespread the active stations are. Calculated from the diagonal distance across the bounding box of every station heard in the last 30 minutes. 0 = all stations clustered tightly, 100 = stations spread across 800 km or more.</li>
+        </ul>
+        <p class="text-xs text-gray-400 mt-2"><b>How to read it:</b> hover (or long-press) either meter for the exact figures — packets/min, station counts and the area span. Colours: <span class="text-green-400">green</span> high, <span class="text-lime-400">lime</span> good, <span class="text-yellow-400">yellow</span> fair, <span class="text-orange-400">orange</span> low, <span class="text-red-400">red</span> very low.</p>
+      </div>
+
+      <!-- High Activity Alert -->
+      <div class="bg-gray-900 rounded p-3 mb-3 border-l-4 border-emerald-600">
+        <h4 class="font-bold text-emerald-300 mb-2">📡 High Activity Alert</h4>
+        <p class="text-xs text-gray-300 mb-2"><b>Where:</b> A green banner that slides down from the very top of the page.</p>
+        <p class="text-xs text-gray-400">Fires automatically when the ACTIVITY meter climbs above 80 — meaning an unusually busy traffic period. Useful as a heads-up that something is happening on the network worth looking at. It auto-hides after 30 seconds, can be dismissed with the ✕, has a 30-minute cooldown so it never spams, and is silenced (banner still shows, but no beep) during your Quiet Hours.</p>
+      </div>
+
+      <!-- Propagation Lines -->
+      <div class="bg-gray-900 rounded p-3 mb-3 border-l-4 border-purple-600">
+        <h4 class="font-bold text-purple-300 mb-2">📡 Propagation Lines</h4>
+        <p class="text-xs text-gray-300 mb-2"><b>Where:</b> Sidebar checkbox (left panel, under the station filters).</p>
+        <p class="text-xs text-gray-400 mb-2">When enabled, draws an animated dashed line from every recently-heard station toward the server's own location. The flowing animation shows the direction of travel toward the gateway. Lines are colour-coded by distance:</p>
+        <ul class="text-xs text-gray-400 space-y-0.5 list-disc list-inside ml-1">
+          <li><span class="text-green-400 font-bold">Green</span> — within 50 km (close)</li>
+          <li><span class="text-lime-400 font-bold">Lime</span> — 50–150 km</li>
+          <li><span class="text-orange-400 font-bold">Orange</span> — 150–300 km (far)</li>
+          <li><span class="text-purple-400 font-bold">Purple</span> — over 300 km (DX / long distance)</li>
+        </ul>
+        <p class="text-xs text-gray-400 mt-2">Hover any line to see the callsign and exact distance. Lines refresh automatically as stations update.</p>
+      </div>
+
+      <!-- Propagation Analytics -->
+      <div class="bg-gray-900 rounded p-3 mb-3 border-l-4 border-indigo-500">
+        <h4 class="font-bold text-indigo-300 mb-2">📈 Propagation Analytics</h4>
+        <p class="text-xs text-gray-300 mb-2"><b>Where:</b> The 🏆 Board panel (header button) — scroll to the "Propagation Analytics" card. It auto-loads when you open the panel; press 🔄 Refresh to recompute.</p>
+        <p class="text-xs text-gray-400 mb-2">Four analytics views computed from the server's stored packet history:</p>
+        <ul class="text-xs text-gray-400 space-y-1 list-disc list-inside ml-1">
+          <li><b class="text-amber-300">Best Time of Day</b> — a 24-bar histogram showing which hours of the day have the most packet traffic. The peak hour is highlighted. Helps identify when the network is most active.</li>
+          <li><b class="text-emerald-300">7-Day Activity Heatmap</b> — a day × hour colour grid. Darker/brighter indigo cells mean more packets in that hour. Hover any cell for the exact count. Spot daily and weekly patterns at a glance.</li>
+          <li><b class="text-cyan-300">Longest RF Paths</b> — a ranking of the stations heard via the most digipeater hops. A high hop count means the packet travelled through many relays to reach the gateway.</li>
+          <li><b class="text-rose-300">Station Reliability Grades</b> — every station graded <b>A–F</b> based on how consistently it transmits. An A-grade station beacons regularly over a long period; an F-grade one was heard only briefly or erratically. The table shows packet count, time span, and average gap between packets.</li>
+        </ul>
+      </div>
+
+      <!-- Weather Radar -->
+      <div class="bg-gray-900 rounded p-3 mb-3 border-l-4 border-sky-600">
+        <h4 class="font-bold text-sky-300 mb-2">🌧 Weather Radar Overlay</h4>
+        <p class="text-xs text-gray-300 mb-2"><b>Where:</b> Sidebar checkbox (left panel, under the station filters).</p>
+        <p class="text-xs text-gray-400">Overlays animated rain-radar imagery on the map, sourced from RainViewer (global coverage, no setup needed). The radar loops through the last couple of hours plus a short forecast, updating every 0.6 seconds. Semi-transparent so station markers stay visible on top. Toggle off when you don't need it to keep the map clean.</p>
+      </div>
+
+      <!-- Severe Weather Warnings -->
+      <div class="bg-gray-900 rounded p-3 mb-3 border-l-4 border-amber-600">
+        <h4 class="font-bold text-amber-300 mb-2">⚠ UK Severe Weather Warnings</h4>
+        <p class="text-xs text-gray-300 mb-2"><b>Where:</b> A coloured banner at the very top of the page (appears only when a warning is active).</p>
+        <p class="text-xs text-gray-400">Shows live UK National Severe Weather Warnings from the Met Office. The banner colour matches the warning severity: <span class="text-yellow-400 font-bold">🟡 Yellow</span>, <span class="text-orange-400 font-bold">🟠 Amber</span>, <span class="text-red-400 font-bold">🔴 Red</span>. The most severe active warning is shown. Dismiss with the ✕ — it won't reappear unless a genuinely new warning is issued. Checked every 15 minutes. This works with no setup; an optional Met Office DataHub API key (Admin panel) is only needed for future detailed-forecast features.</p>
+      </div>
+
+      <!-- Click to Reply -->
+      <div class="bg-gray-900 rounded p-3 mb-3 border-l-4 border-green-600">
+        <h4 class="font-bold text-green-300 mb-2">↩ Click-to-Reply</h4>
+        <p class="text-xs text-gray-300 mb-2"><b>Where:</b> The Messages panel.</p>
+        <p class="text-xs text-gray-400">Any APRS message you receive shows the sender's callsign as a clickable button. Tap it and the "To" field is instantly filled with that callsign, the Messages panel opens, and the cursor jumps to the message box — so you can reply in seconds without retyping the callsign.</p>
+      </div>
+
+      <!-- Auto-Fit + Ghosting -->
+      <div class="bg-gray-900 rounded p-3 mb-3 border-l-4 border-cyan-600">
+        <h4 class="font-bold text-cyan-300 mb-2">🔍 Auto-Fit Zoom &amp; 👻 Station Ghosting</h4>
+        <p class="text-xs text-gray-300 mb-2"><b>Where:</b> Sidebar checkboxes (left panel, under the station filters).</p>
+        <p class="text-xs text-gray-400 mb-1"><b class="text-white">Auto-Fit Zoom</b> — when on, the map automatically zooms and pans so every visible station fits on screen. As soon as you manually pan or zoom, it switches itself off so you stay in control.</p>
+        <p class="text-xs text-gray-400"><b class="text-white">Station Ghosting</b> (on by default) — stations not heard for 30+ minutes gradually fade out and gain a pulsing dashed ring, so you can instantly tell fresh stations from stale ones. The older a station, the more transparent it becomes. A new packet snaps it back to full brightness.</p>
+      </div>
+
+      <!-- Message Notifications + Quiet Hours -->
+      <div class="bg-gray-900 rounded p-3 mb-3 border-l-4 border-rose-600">
+        <h4 class="font-bold text-rose-300 mb-2">📬 Message Notifications &amp; 🌙 Quiet Hours</h4>
+        <p class="text-xs text-gray-300 mb-2"><b>Where:</b> Notifications appear automatically; Quiet Hours is set in your Member account → Settings tab.</p>
+        <p class="text-xs text-gray-400 mb-1">Logged-in members get notified about APRS messages: a prominent toast on login if messages arrived while you were away, a live toast when a new message comes in, a desktop browser notification if the tab is in the background, plus a red count badge on the member button.</p>
+        <p class="text-xs text-gray-400"><b class="text-white">Quiet Hours</b> — set a start and end time (e.g. 22:00–07:00) to silence notification toasts and beeps overnight. The count badge still updates quietly, so nothing is missed — it just won't make noise. Handles windows that cross midnight.</p>
+      </div>
+
+      <!-- Offline Message Delivery -->
+      <div class="bg-gray-900 rounded p-3 mb-3 border-l-4 border-teal-600">
+        <h4 class="font-bold text-teal-300 mb-2">📨 Offline Message Delivery</h4>
+        <p class="text-xs text-gray-300 mb-2"><b>Where:</b> Automatic — no setup beyond having a member account.</p>
+        <p class="text-xs text-gray-400">If someone sends an APRS message to your callsign while you're offline, the server stores it. The moment any client logs in with your callsign — the web messenger, APRSDroid, a radio, anything — the queued messages are delivered to it as normal APRS packets. Messages survive until you collect them.</p>
+      </div>
+
+      <!-- Mobile Companion -->
+      <div class="bg-gray-900 rounded p-3 border-l-4 border-violet-600">
+        <h4 class="font-bold text-violet-300 mb-2">📱 Mobile Companion Site</h4>
+        <p class="text-xs text-gray-300 mb-2"><b>Where:</b> Visit <a href="/mobile" class="text-violet-300 underline">/mobile</a> on your phone, or use the "📱 Mobile" link in the footer.</p>
+        <p class="text-xs text-gray-400">A touch-optimised version of the site with a native-app-style bottom tab bar: <b>Map</b> (full-screen live map), <b>Stations</b> (searchable list — tap to locate), <b>Messages</b> (recent APRS messages), and <b>Status</b> (network activity and server stats). It uses the same live data feed as the desktop site but with a stripped-down, thumb-friendly layout.</p>
       </div>
     </div>
 
@@ -11230,7 +11334,7 @@ function renderLoRaData(results) {
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 // initReplayProgress();  // disabled - user triggers replay via sidebar
-console.log('APRS Net JS loaded - build cache-bust-15 (phase 5 mobile)');
+console.log('APRS Net JS loaded - build cache-bust-16 (documentation)');
 initTheme();
 initMemberSession();
 loadMOTDBanner();
