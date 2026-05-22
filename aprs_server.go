@@ -783,6 +783,7 @@ func main() {
 
 	http.HandleFunc("/symbols/", http.StripPrefix("/symbols/", http.FileServer(http.Dir("symbols"))).ServeHTTP)
 	http.HandleFunc("/demo", serveDemo)
+	http.HandleFunc("/mobile", serveMobile)
 	http.HandleFunc("/", serveIndex)
 	http.HandleFunc("/setup", handleSetup)
 	http.HandleFunc("/ws", handleWS)
@@ -831,6 +832,11 @@ func main() {
 
 	log.Printf("Advanced APRS Gateway active on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
+}
+
+// serveMobile serves the touch-optimised mobile companion page.
+func serveMobile(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "mobile.html")
 }
 
 // serveIndex redirects to /setup if no credentials have been configured yet.
