@@ -315,15 +315,15 @@ body { background: var(--bg-base); color: var(--text-base); }
     <span id="station-count" class="text-xs text-gray-500 font-mono">STN: 0</span>
     <!-- Propagation Meters -->
     <div id="prop-meters" class="hidden md:flex items-center gap-3 ml-2 pl-3 border-l border-blue-800">
-      <div class="flex items-center gap-1.5" title="VHF propagation based on stations heard near your location in the last 30 min">
-        <span class="text-[10px] text-gray-400 uppercase font-bold">Local</span>
+      <div class="flex items-center gap-1.5" title="Network activity - packets per minute arriving in the last 10 minutes">
+        <span class="text-[10px] text-gray-400 uppercase font-bold">Activity</span>
         <div class="w-16 h-2.5 bg-gray-800 rounded-full overflow-hidden">
           <div id="prop-local-bar" class="h-full rounded-full transition-all duration-700" style="width:0%;background:#6b7280"></div>
         </div>
         <span id="prop-local-val" class="text-[10px] font-mono text-gray-400 w-6">–</span>
       </div>
-      <div class="flex items-center gap-1.5" title="VHF propagation across the wider region (all stations in range)">
-        <span class="text-[10px] text-gray-400 uppercase font-bold">Region</span>
+      <div class="flex items-center gap-1.5" title="Geographic coverage - how wide an area active stations span">
+        <span class="text-[10px] text-gray-400 uppercase font-bold">Coverage</span>
         <div class="w-16 h-2.5 bg-gray-800 rounded-full overflow-hidden">
           <div id="prop-region-bar" class="h-full rounded-full transition-all duration-700" style="width:0%;background:#6b7280"></div>
         </div>
@@ -10405,62 +10405,81 @@ var _propBandAlertActive = false;
       if (d && typeof d.center_lat === 'number') {
         _ourLat = d.center_lat;
         _ourLon = d.center_lon;
-        var pm = document.getElementById('prop-meters');
-        if (pm) pm.classList.remove('hidden');
-        computePropagation();
       }
+      // Show meters + compute regardless (meters don't need our position)
+      var pm = document.getElementById('prop-meters');
+      if (pm) pm.classList.remove('hidden');
+      computePropagation();
     }).catch(function(){});
 })();
 
+// NOTE ON WHAT THESE METERS MEAN:
+// This server is internet-only (APRS-IS), so it cannot measure true RF
+// propagation the way a radio-connected client can - it receives every
+// station inside the APRS-IS filter radius regardless of RF conditions.
+// Therefore the two meters measure NETWORK ACTIVITY, not radio propagation:
+//   ACTIVITY  = how many packets per minute are arriving right now
+//   COVERAGE  = how geographically spread-out the active stations are
+// Both are 0-100 scores. They are honest, useful situational-awareness
+// indicators - just not "band opening" detectors in the RF sense.
 function computePropagation() {
-  if (_ourLat === null) return;
   var now = Date.now() / 1000;
-  var windowSec = 30 * 60;  // 30 minute window
+  var activityWindow = 10 * 60;   // 10 minutes for "recent activity"
+  var coverageWindow = 30 * 60;   // 30 minutes for geographic spread
 
-  var localCount = 0, localDistSum = 0;
-  var regionCount = 0, regionDistSum = 0, regionMaxDist = 0;
+  // ── ACTIVITY: count position updates in the last 10 minutes ──
+  var recentUpdates = 0;
+  var activeStations = 0;
+
+  // ── COVERAGE: bounding box of stations active in last 30 min ──
+  var minLat = 999, maxLat = -999, minLon = 999, maxLon = -999;
+  var coverageStations = 0;
 
   for (var call in stations) {
     var s = stations[call];
     if (!s || !s.positions || !s.positions.length) continue;
-    if ((now - (s.lastHeard || 0)) > windowSec) continue;  // too old
-    var p = s.positions[s.positions.length - 1];
-    var dist = haversineKm(_ourLat, _ourLon, p.lat, p.lon);
-    if (isNaN(dist)) continue;
+    var age = now - (s.lastHeard || 0);
 
-    // Region = everything in window
-    regionCount++;
-    regionDistSum += dist;
-    if (dist > regionMaxDist) regionMaxDist = dist;
-
-    // Local = within 75km
-    if (dist <= 75) {
-      localCount++;
-      localDistSum += dist;
+    if (age <= activityWindow) {
+      activeStations++;
+      // Count position points logged in the window as "updates"
+      for (var i = 0; i < s.positions.length; i++) {
+        if ((now - (s.positions[i].ts || 0)) <= activityWindow) recentUpdates++;
+      }
+    }
+    if (age <= coverageWindow) {
+      var p = s.positions[s.positions.length - 1];
+      if (p.lat < minLat) minLat = p.lat;
+      if (p.lat > maxLat) maxLat = p.lat;
+      if (p.lon < minLon) minLon = p.lon;
+      if (p.lon > maxLon) maxLon = p.lon;
+      coverageStations++;
     }
   }
 
-  // ── LOCAL score 0-100 ──
-  // Based on count of nearby stations. 0=dead, 15+=excellent.
-  var localScore = 0;
-  if (localCount > 0) {
-    localScore = Math.min(100, Math.round(localCount * 7));
+  // ACTIVITY score: packets-per-minute over 10 min, scaled.
+  // ~0 ppm = dead, ~20+ ppm = very busy. Log-ish curve so it doesn't pin.
+  var ppm = recentUpdates / 10;
+  var activityScore = 0;
+  if (ppm > 0) {
+    activityScore = Math.min(100, Math.round(33 * Math.log10(ppm + 1) * 1.4));
   }
 
-  // ── REGION score 0-100 ──
-  // Distance-weighted: many stations + far reach = band open.
-  // count contributes 60, max-distance contributes 40.
-  var regionScore = 0;
-  if (regionCount > 0) {
-    var countPart = Math.min(60, regionCount * 1.5);
-    var distPart = Math.min(40, regionMaxDist / 10);  // 400km = full 40
-    regionScore = Math.round(countPart + distPart);
+  // COVERAGE score: diagonal of the bounding box in km, scaled.
+  // 0km = single point, 800km+ diagonal = full coverage.
+  var coverageScore = 0;
+  var diagKm = 0;
+  if (coverageStations >= 2 && minLat < 900) {
+    diagKm = haversineKm(minLat, minLon, maxLat, maxLon);
+    if (!isNaN(diagKm)) {
+      coverageScore = Math.min(100, Math.round(diagKm / 8));  // 800km = 100
+    }
   }
 
-  _propLocalScore = localScore;
-  _propRegionScore = regionScore;
-  updatePropMeters(localScore, regionScore, localCount, regionCount, regionMaxDist);
-  checkBandOpening(localScore, regionScore, regionMaxDist);
+  _propLocalScore = activityScore;
+  _propRegionScore = coverageScore;
+  updatePropMeters(activityScore, coverageScore, Math.round(ppm), activeStations, coverageStations, diagKm);
+  checkBandOpening(activityScore, coverageScore, diagKm);
 }
 
 function _propColor(score) {
@@ -10471,50 +10490,53 @@ function _propColor(score) {
   return '#ef4444';                     // red - very poor
 }
 
-function updatePropMeters(local, region, localCount, regionCount, maxDist) {
+function updatePropMeters(activity, coverage, ppm, activeStations, coverageStations, diagKm) {
   var lBar = document.getElementById('prop-local-bar');
   var lVal = document.getElementById('prop-local-val');
   var rBar = document.getElementById('prop-region-bar');
   var rVal = document.getElementById('prop-region-val');
   if (lBar) {
-    lBar.style.width = local + '%';
-    lBar.style.background = _propColor(local);
+    lBar.style.width = activity + '%';
+    lBar.style.background = _propColor(activity);
   }
   if (lVal) {
-    lVal.innerText = local;
-    lVal.style.color = _propColor(local);
-    lVal.parentElement.title = 'Local VHF: ' + localCount
-      + ' stations within 75km in last 30 min (score ' + local + '/100)';
+    lVal.innerText = activity;
+    lVal.style.color = _propColor(activity);
+    lVal.parentElement.title = 'ACTIVITY ' + activity + '/100 — '
+      + ppm + ' packets/min from ' + activeStations
+      + ' stations active in the last 10 minutes. Higher = busier network.';
   }
   if (rBar) {
-    rBar.style.width = region + '%';
-    rBar.style.background = _propColor(region);
+    rBar.style.width = coverage + '%';
+    rBar.style.background = _propColor(coverage);
   }
   if (rVal) {
-    rVal.innerText = region;
-    rVal.style.color = _propColor(region);
-    rVal.parentElement.title = 'Regional VHF: ' + regionCount
-      + ' stations in last 30 min, furthest ' + Math.round(maxDist)
-      + 'km (score ' + region + '/100)';
+    rVal.innerText = coverage;
+    rVal.style.color = _propColor(coverage);
+    rVal.parentElement.title = 'COVERAGE ' + coverage + '/100 — '
+      + coverageStations + ' stations spread across roughly '
+      + Math.round(diagKm) + ' km in the last 30 minutes. Higher = wider area.';
   }
 }
 
 // ── Band Opening Detection ──
 // Fires an alert when the regional score crosses 70 (rising edge), with a
 // 30-minute cooldown so it doesn't spam. Respects Quiet Hours.
-function checkBandOpening(local, region, maxDist) {
+// Fires when network ACTIVITY spikes above threshold - indicates a busy
+// period (event, contest, net, or unusually good band conditions feeding
+// lots of stations into APRS-IS).
+function checkBandOpening(activity, coverage, diagKm) {
   var now = Date.now() / 1000;
-  var THRESHOLD = 70;
+  var THRESHOLD = 80;
   var COOLDOWN = 30 * 60;
 
-  if (region >= THRESHOLD && !_propBandAlertActive) {
+  if (activity >= THRESHOLD && !_propBandAlertActive) {
     if (now - _propLastBandAlert > COOLDOWN) {
       _propBandAlertActive = true;
       _propLastBandAlert = now;
-      showBandAlert(region, maxDist);
+      showBandAlert(activity, diagKm);
     }
-  } else if (region < THRESHOLD - 15) {
-    // Hysteresis - only clear the 'active' flag once well below threshold
+  } else if (activity < THRESHOLD - 20) {
     _propBandAlertActive = false;
   }
 }
@@ -10525,8 +10547,8 @@ function showBandAlert(score, maxDist) {
   var banner = document.getElementById('band-alert');
   var txt = document.getElementById('band-alert-text');
   if (banner && txt) {
-    txt.innerText = '📡 VHF Band Opening Detected! Regional propagation score '
-      + score + '/100 — stations heard out to ' + Math.round(maxDist) + ' km';
+    txt.innerText = '📡 High Network Activity! Activity score ' + score
+      + '/100 — unusually busy APRS traffic right now';
     banner.classList.remove('hidden');
     // Auto-hide after 30 seconds
     setTimeout(function() {
@@ -10539,10 +10561,9 @@ function showBandAlert(score, maxDist) {
   // Browser notification if permitted and not quiet
   if (!quiet && 'Notification' in window && Notification.permission === 'granted') {
     try {
-      new Notification('📡 VHF Band Opening', {
-        body: 'Regional propagation score ' + score + '/100. Stations heard to '
-          + Math.round(maxDist) + ' km.',
-        tag: 'aprs-band-opening'
+      new Notification('📡 High APRS Activity', {
+        body: 'Network activity score ' + score + '/100 — busy traffic period.',
+        tag: 'aprs-activity-spike'
       });
     } catch(e) {}
   }
@@ -11207,7 +11228,7 @@ function renderLoRaData(results) {
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 // initReplayProgress();  // disabled - user triggers replay via sidebar
-console.log('APRS Net JS loaded - build cache-bust-13 (phase 4 weather)');
+console.log('APRS Net JS loaded - build cache-bust-14 (meter fix)');
 initTheme();
 initMemberSession();
 loadMOTDBanner();
