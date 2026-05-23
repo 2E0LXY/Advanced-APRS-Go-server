@@ -3295,11 +3295,38 @@ function replyToCallsign(call) {
   setTimeout(function() { text.focus(); }, 300);
 }
 
+// When the server is dropping Pi-Star/MMDVM packets, those stations never reach
+// the browser, so the sidebar "Pi-Star / MMDVM" filter has nothing to act on.
+// This keeps the sidebar checkbox honest and in sync with the server setting:
+//  - server dropping ON  -> sidebar checkbox forced off + disabled, with a note
+//  - server dropping OFF -> sidebar checkbox enabled and works as a display filter
+function syncPiStarControl(serverDropping) {
+  var cb = document.getElementById('show-pistar');
+  if (!cb) return;
+  var label = cb.closest('label');
+  if (serverDropping) {
+    if (cb.checked) { cb.checked = false; if (typeof redrawMap === 'function') redrawMap(); }
+    cb.disabled = true;
+    if (label) {
+      label.style.opacity = '0.5';
+      label.title = 'Disabled - the server is currently dropping Pi-Star / MMDVM packets. '
+                  + 'An admin can allow them via Admin > Drop Filters.';
+    }
+  } else {
+    cb.disabled = false;
+    if (label) {
+      label.style.opacity = '';
+      label.title = 'Show Pi-Star / MMDVM digital-voice gateways on the map';
+    }
+  }
+}
+
 function pollUpstreamStatus() {
   fetch(location.origin + '/api/status', {redirect:'follow'}).then(r=>{
     if (!r.ok) throw new Error(r.status);
     return r.json();
   }).then(d=>{
+    syncPiStarControl(d.drop_pistar);
     const dot = document.getElementById('conn-status');
     dot.classList.remove('bg-red-500','bg-yellow-500','bg-green-500');
     if (d.upstream_connected) {
@@ -3902,6 +3929,8 @@ async function saveAdmin() {
     if (r.ok) {
       const ind=document.getElementById('save-indicator');
       ind.classList.remove('hidden'); setTimeout(()=>ind.classList.add('hidden'),3000);
+      // Immediately reflect the new Drop Pi-Star setting in the sidebar filter
+      syncPiStarControl(payload.drop_pistar);
     }
   } catch(e) { alert('Save failed'); }
 }

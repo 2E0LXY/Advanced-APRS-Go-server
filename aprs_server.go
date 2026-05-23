@@ -67,7 +67,7 @@ var (
 		Passcode:       "-1",
 		UpstreamAddr:   "rotate.aprs2.net:14580",
 		ServerFilter:   "auto",
-		DropPiStar:     true,
+		DropPiStar:     false,
 		DropDStar:      true,
 		DropAPDesk:     true,
 		EnableGeofence: false,
@@ -1869,6 +1869,9 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	res["metoffice_configured"] = (config.MetOfficeKey != "")
 	res["center_lat"] = config.CenterLat
 	res["center_lon"] = config.CenterLon
+	res["drop_pistar"] = config.DropPiStar
+	res["drop_dstar"] = config.DropDStar
+	res["drop_apdesk"] = config.DropAPDesk
 	config.RUnlock()
 	res["upstream_connected"] = atomic.LoadInt32(&upstreamConnected) == 1
 	rawRingMu.RLock()
