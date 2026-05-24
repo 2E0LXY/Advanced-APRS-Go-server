@@ -14,7 +14,6 @@ A high-performance, bidirectional APRS-IS Gateway written in Go. Provides a real
 - 40+ APRS symbol types rendered with correct glyphs per packet symbol table
 - Position trails with configurable length (5 min to 6 hours)
 - PHG transmitter range circles
-- Maidenhead locator grid overlay
 - Real-time solar day/night terminator overlay
 - Station type filters: Ham APRS, CWOP Weather, OGN Gliders
 - Click any callsign or map marker to open QRZ.com profile
@@ -123,6 +122,30 @@ Prefix any filter with `-` to exclude matching packets from a broader subscripti
 - Pulsing yellow update button in header when new release available
 - One-click install from Admin panel: git pull + go build + service restart
 - Live progress log streamed to browser; page reloads automatically after restart
+
+---
+
+## Desktop & Mobile Clients
+
+As well as this web dashboard, APRS Net is available as native applications.
+Both wrap the same dashboard and add native GPS, system notifications, saved
+settings, single sign-on and auto-connect. All three projects are open source
+under GPL v3.
+
+| Client | Repository | Download |
+|--------|-----------|----------|
+| Windows desktop | [2E0LXY/APRS-Client](https://github.com/2E0LXY/APRS-Client) | [Releases (.exe)](https://github.com/2E0LXY/APRS-Client/releases) |
+| Android | [2E0LXY/APRS-Android](https://github.com/2E0LXY/APRS-Android) | [Releases (.apk)](https://github.com/2E0LXY/APRS-Android/releases) |
+
+The **Windows client** is an Electron app with a system-tray icon, native
+desktop notifications, launch-on-startup, GPS map plotting and an in-app
+message composer.
+
+The **Android client** is a Capacitor app delivering the full dashboard with a
+touch layout, native GPS via Android location services, push notifications and
+persistent settings.
+
+Both are dedicated to www.aprsnet.uk - nothing to configure beyond a callsign.
 
 ---
 
