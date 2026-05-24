@@ -796,6 +796,7 @@ func main() {
 	http.HandleFunc("/symbols/", http.StripPrefix("/symbols/", http.FileServer(http.Dir("symbols"))).ServeHTTP)
 	http.HandleFunc("/demo", serveDemo)
 	http.HandleFunc("/mobile", serveMobile)
+	http.HandleFunc("/mobile-app.js", serveMobileJS)
 	http.HandleFunc("/", serveIndex)
 	http.HandleFunc("/setup", handleSetup)
 	http.HandleFunc("/ws", handleWS)
@@ -849,6 +850,12 @@ func main() {
 // serveMobile serves the touch-optimised mobile companion page.
 func serveMobile(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "mobile.html")
+}
+
+// serveMobileJS serves the mobile companion page's JavaScript.
+func serveMobileJS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/javascript")
+	http.ServeFile(w, r, "mobile-app.js")
 }
 
 // serveIndex redirects to /setup if no credentials have been configured yet.

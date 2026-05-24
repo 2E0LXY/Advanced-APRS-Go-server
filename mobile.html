@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#1e3a5f">
 <title>APRS Net Mobile</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -12,33 +12,29 @@
   html,body { height:100%; font-family:system-ui,-apple-system,sans-serif; background:#0f172a; color:#e2e8f0; overflow:hidden; }
   #app { display:flex; flex-direction:column; height:100vh; height:100dvh; }
 
-  /* Header */
   #m-header { flex:none; background:#1e3a5f; padding:10px 14px; display:flex; align-items:center; justify-content:space-between; box-shadow:0 2px 8px rgba(0,0,0,0.4); }
   #m-header h1 { font-size:16px; font-weight:bold; color:#60a5fa; }
   #m-status { display:flex; align-items:center; gap:8px; font-size:11px; }
+  #m-call-badge { color:#fbbf24; font-weight:bold; }
   #m-dot { width:10px; height:10px; border-radius:50%; background:#ef4444; }
   #m-dot.live { background:#22c55e; }
 
-  /* Content area */
   #m-content { flex:1; position:relative; overflow:hidden; }
   .m-view { position:absolute; inset:0; overflow-y:auto; -webkit-overflow-scrolling:touch; display:none; }
   .m-view.active { display:block; }
   #m-map { width:100%; height:100%; }
 
-  /* Bottom tab bar */
-  #m-tabs { flex:none; display:flex; background:#1e293b; border-top:1px solid #334155; }
-  .m-tab { flex:1; padding:10px 4px 8px; text-align:center; cursor:pointer; border:none; background:none; color:#64748b; font-size:10px; transition:color 0.15s; }
+  #m-tabs { flex:none; display:flex; background:#1e293b; border-top:1px solid #334155; padding-bottom:env(safe-area-inset-bottom); }
+  .m-tab { flex:1; padding:10px 2px 8px; text-align:center; cursor:pointer; border:none; background:none; color:#64748b; font-size:10px; transition:color 0.15s; }
   .m-tab.active { color:#60a5fa; }
-  .m-tab .ico { display:block; font-size:20px; margin-bottom:2px; }
+  .m-tab .ico { display:block; font-size:19px; margin-bottom:2px; }
 
-  /* Lists */
   .m-list-item { padding:12px 14px; border-bottom:1px solid #1e293b; display:flex; align-items:center; gap:10px; }
   .m-list-item:active { background:#1e293b; }
   .m-call { font-weight:bold; color:#67e8f9; font-size:15px; }
   .m-meta { font-size:11px; color:#64748b; }
   .m-section-title { padding:12px 14px 6px; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:#475569; font-weight:bold; }
 
-  /* Cards */
   .m-card { margin:10px; background:#1e293b; border-radius:12px; padding:14px; }
   .m-card h3 { font-size:13px; color:#94a3b8; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.03em; }
   .m-big { font-size:32px; font-weight:bold; color:#60a5fa; }
@@ -47,32 +43,60 @@
   .m-stat-row .lbl { color:#64748b; }
   .m-stat-row .val { color:#e2e8f0; font-weight:bold; font-family:monospace; }
 
-  /* Messages */
   #m-msg-log { padding:8px; }
   .m-msg { padding:8px 10px; margin-bottom:6px; background:#1e293b; border-radius:8px; font-size:13px; }
+  .m-msg.mine { background:#1e3a5f; }
   .m-msg .from { color:#67e8f9; font-weight:bold; }
   .m-msg .time { color:#475569; font-size:10px; float:right; }
+  .m-msg .txt { display:block; margin-top:3px; color:#e2e8f0; word-break:break-word; }
 
-  /* Loading */
   .m-loading { text-align:center; padding:40px 20px; color:#475569; }
   .spin { display:inline-block; width:24px; height:24px; border:3px solid #334155; border-top-color:#60a5fa; border-radius:50%; animation:spin 0.8s linear infinite; }
   @keyframes spin { to { transform:rotate(360deg); } }
 
   .m-search { padding:10px; }
-  .m-search input { width:100%; padding:10px 12px; background:#1e293b; border:1px solid #334155; border-radius:8px; color:#e2e8f0; font-size:14px; outline:none; }
-  .m-search input:focus { border-color:#60a5fa; }
+  .m-field { padding:0 14px 10px; }
+  .m-field label { display:block; font-size:11px; color:#64748b; margin:10px 0 4px; text-transform:uppercase; letter-spacing:0.05em; }
+  input, textarea, select {
+    width:100%; padding:11px 12px; background:#1e293b; border:1px solid #334155;
+    border-radius:9px; color:#e2e8f0; font-size:15px; outline:none; font-family:inherit;
+  }
+  input:focus, textarea:focus { border-color:#60a5fa; }
+  input::placeholder, textarea::placeholder { color:#475569; }
+  textarea { resize:none; }
+  .m-btn {
+    width:100%; padding:13px; margin-top:14px; border:none; border-radius:10px;
+    background:linear-gradient(135deg,#2563eb,#0284c7); color:#fff;
+    font-size:15px; font-weight:700; cursor:pointer;
+  }
+  .m-btn:active { opacity:0.85; }
+  .m-btn.secondary { background:#334155; }
+  .m-btn.locate { background:#0e7490; margin-top:0; }
+  .m-note { font-size:11px; color:#64748b; padding:4px 14px 0; }
+  .m-status-line { font-size:12px; text-align:center; padding:10px 14px; min-height:18px; }
+  .m-status-line.ok { color:#4ade80; }
+  .m-status-line.err { color:#f87171; }
 
   a.m-link { color:#60a5fa; text-decoration:none; }
   .m-foot { text-align:center; padding:14px; font-size:10px; color:#475569; }
+
+  /* My-location button floating on the map */
+  #m-locate-btn {
+    position:absolute; right:12px; bottom:12px; z-index:1000;
+    width:48px; height:48px; border-radius:50%; border:none;
+    background:#0e7490; color:#fff; font-size:20px; cursor:pointer;
+    box-shadow:0 3px 10px rgba(0,0,0,0.5);
+  }
 </style>
 </head>
 <body>
 <div id="app">
 
   <div id="m-header">
-    <h1>📡 APRS Net</h1>
+    <h1>APRS Net</h1>
     <div id="m-status">
-      <span id="m-stn-count">0 stations</span>
+      <span id="m-call-badge"></span>
+      <span id="m-stn-count">0 stn</span>
       <span id="m-dot"></span>
     </div>
   </div>
@@ -81,6 +105,7 @@
     <!-- MAP -->
     <div class="m-view active" id="view-map">
       <div id="m-map"></div>
+      <button id="m-locate-btn" onclick="locateMe()" title="Show my location">&#9678;</button>
     </div>
 
     <!-- STATIONS -->
@@ -91,214 +116,76 @@
       <div id="m-station-list"><div class="m-loading"><div class="spin"></div></div></div>
     </div>
 
+    <!-- MESSAGES -->
+    <div class="m-view" id="view-messages">
+      <div class="m-section-title">APRS Messages</div>
+      <div id="m-msg-log"><div class="m-loading">Waiting for messages...</div></div>
+    </div>
+
+    <!-- SEND -->
+    <div class="m-view" id="view-send">
+      <div class="m-field">
+        <label>To callsign</label>
+        <input type="text" id="m-send-to" placeholder="M0ABC" autocapitalize="characters">
+        <label>Message (max 67 chars)</label>
+        <textarea id="m-send-text" rows="3" maxlength="67" placeholder="Your message..."></textarea>
+        <div class="m-note" id="m-send-count">0 / 67</div>
+        <button class="m-btn" onclick="sendAprsMessage()">Send Message</button>
+      </div>
+      <div class="m-status-line" id="m-send-status"></div>
+      <div class="m-note">Sending requires your callsign and APRS-IS passcode - set them in the Setup tab.</div>
+    </div>
+
+    <!-- SETUP -->
+    <div class="m-view" id="view-setup">
+      <div class="m-field">
+        <label>Your callsign</label>
+        <input type="text" id="m-cfg-call" placeholder="M0ABC" autocapitalize="characters">
+        <label>APRS-IS passcode</label>
+        <input type="password" id="m-cfg-pass" placeholder="12345" inputmode="numeric">
+        <label>Member account username (optional)</label>
+        <input type="text" id="m-cfg-muser" placeholder="for single sign-on">
+        <label>Member account password (optional)</label>
+        <input type="password" id="m-cfg-mpass" placeholder="">
+        <button class="m-btn" onclick="saveSetup()">Save</button>
+      </div>
+      <div class="m-status-line" id="m-cfg-status"></div>
+      <div class="m-note">Your callsign and passcode let you send APRS messages and beacon your
+        position. They are stored on this device only. A member account enables saved
+        watchlists and offline message delivery.</div>
+      <div class="m-foot">
+        APRS Net Mobile &middot; <a class="m-link" href="/">Full desktop site</a>
+      </div>
+    </div>
+
     <!-- STATUS -->
     <div class="m-view" id="view-status">
       <div class="m-card">
         <h3>Network Activity</h3>
-        <div class="m-big" id="m-activity">–</div>
-        <div class="m-meta" id="m-activity-desc">packets per minute (last 10 min)</div>
+        <div class="m-big" id="m-activity">-</div>
+        <div class="m-meta">packets per minute (rough)</div>
       </div>
       <div class="m-card">
         <h3>Server Status</h3>
-        <div class="m-stat-row"><span class="lbl">Stations</span><span class="val" id="m-st-stations">–</span></div>
-        <div class="m-stat-row"><span class="lbl">Packets RX</span><span class="val" id="m-st-rx">–</span></div>
-        <div class="m-stat-row"><span class="lbl">Upstream</span><span class="val" id="m-st-up">–</span></div>
-        <div class="m-stat-row"><span class="lbl">Uptime</span><span class="val" id="m-st-uptime">–</span></div>
+        <div class="m-stat-row"><span class="lbl">Stations</span><span class="val" id="m-st-stations">-</span></div>
+        <div class="m-stat-row"><span class="lbl">Packets RX</span><span class="val" id="m-st-rx">-</span></div>
+        <div class="m-stat-row"><span class="lbl">Upstream</span><span class="val" id="m-st-up">-</span></div>
+        <div class="m-stat-row"><span class="lbl">Uptime</span><span class="val" id="m-st-uptime">-</span></div>
       </div>
-      <div class="m-foot">
-        Advanced APRS Go Server · <a class="m-link" href="/">Full desktop site →</a>
-      </div>
-    </div>
-
-    <!-- MESSAGES -->
-    <div class="m-view" id="view-messages">
-      <div class="m-section-title">Recent APRS Messages</div>
-      <div id="m-msg-log"><div class="m-loading">Waiting for messages…</div></div>
+      <div class="m-foot">Advanced APRS Go Server</div>
     </div>
   </div>
 
   <div id="m-tabs">
-    <button class="m-tab active" data-view="map" onclick="switchView('map')"><span class="ico">🗺️</span>Map</button>
-    <button class="m-tab" data-view="stations" onclick="switchView('stations')"><span class="ico">📋</span>Stations</button>
-    <button class="m-tab" data-view="messages" onclick="switchView('messages')"><span class="ico">💬</span>Messages</button>
-    <button class="m-tab" data-view="status" onclick="switchView('status')"><span class="ico">📊</span>Status</button>
+    <button class="m-tab active" data-view="map"      onclick="switchView('map')"><span class="ico">&#128506;</span>Map</button>
+    <button class="m-tab" data-view="stations" onclick="switchView('stations')"><span class="ico">&#128203;</span>Stations</button>
+    <button class="m-tab" data-view="messages" onclick="switchView('messages')"><span class="ico">&#128172;</span>Messages</button>
+    <button class="m-tab" data-view="send"     onclick="switchView('send')"><span class="ico">&#9993;</span>Send</button>
+    <button class="m-tab" data-view="status"   onclick="switchView('status')"><span class="ico">&#128202;</span>Status</button>
+    <button class="m-tab" data-view="setup"    onclick="switchView('setup')"><span class="ico">&#9881;</span>Setup</button>
   </div>
 
 </div>
-
-<script>
-// ─── APRS Net Mobile Companion ────────────────────────────────────────────────
-// Lightweight touch-first SPA. Shares the same WebSocket + REST API as the
-// full desktop site but with a stripped-down, thumb-friendly interface.
-
-var mStations = {};
-var mMessages = [];
-var mMap, mMarkers = {};
-var mWs = null;
-var mWsRetry = 0;
-
-// ── Map setup ──
-mMap = L.map('m-map', { zoomControl:true, attributionControl:false }).setView([53.7,-1.5], 8);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:18 }).addTo(mMap);
-
-// ── Tab switching ──
-function switchView(view) {
-  document.querySelectorAll('.m-view').forEach(function(v){ v.classList.remove('active'); });
-  document.querySelectorAll('.m-tab').forEach(function(t){ t.classList.remove('active'); });
-  document.getElementById('view-' + view).classList.add('active');
-  document.querySelector('.m-tab[data-view="'+view+'"]').classList.add('active');
-  if (view === 'map') setTimeout(function(){ mMap.invalidateSize(); }, 100);
-  if (view === 'status') loadMobileStatus();
-  if (view === 'stations') renderStationList();
-}
-
-// ── WebSocket ──
-function mobileConnect() {
-  var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  mWs = new WebSocket(proto + '//' + location.host + '/ws');
-
-  mWs.onopen = function() {
-    mWsRetry = 0;
-    document.getElementById('m-dot').classList.add('live');
-  };
-  mWs.onclose = function() {
-    document.getElementById('m-dot').classList.remove('live');
-    mWsRetry++;
-    var delay = Math.min(30000, 1000 * Math.pow(1.5, Math.min(mWsRetry,10)));
-    setTimeout(mobileConnect, delay);
-  };
-  mWs.onerror = function() {};
-  mWs.onmessage = function(ev) {
-    try {
-      var d = JSON.parse(ev.data);
-      handleMobilePacket(d);
-    } catch(e) {}
-  };
-}
-
-function handleMobilePacket(d) {
-  if (d.type === 'rx' && d.data) {
-    var p = d.data;
-    if (p.call && typeof p.lat === 'number' && typeof p.lon === 'number') {
-      mStations[p.call] = {
-        call: p.call, lat: p.lat, lon: p.lon,
-        ts: p.ts || (Date.now()/1000), raw: p.raw || '',
-        sym: p.sym || ''
-      };
-      updateMobileMarker(p.call);
-    }
-    document.getElementById('m-stn-count').innerText =
-      Object.keys(mStations).length + ' stations';
-  }
-  // APRS message extraction
-  if (d.type === 'rx' && d.packet) {
-    var parts = d.packet.split('::');
-    var mm = d.packet.match(/^([A-Z0-9\-]+)>.*::([A-Z0-9\- ]{9}):(.+?)(\{\w+)?$/);
-    if (mm) {
-      mMessages.unshift({ from: mm[1], to: mm[2].trim(), text: mm[3], ts: Date.now() });
-      if (mMessages.length > 50) mMessages.pop();
-      renderMobileMessages();
-    }
-  }
-}
-
-function updateMobileMarker(call) {
-  var s = mStations[call];
-  if (!s) return;
-  if (mMarkers[call]) {
-    mMarkers[call].setLatLng([s.lat, s.lon]);
-  } else {
-    mMarkers[call] = L.circleMarker([s.lat, s.lon], {
-      radius:6, color:'#60a5fa', fillColor:'#3b82f6', fillOpacity:0.8, weight:2
-    }).addTo(mMap);
-    mMarkers[call].bindPopup('<b>' + call + '</b>');
-  }
-}
-
-// ── Station list ──
-function renderStationList() {
-  var list = document.getElementById('m-station-list');
-  var calls = Object.keys(mStations).sort();
-  if (!calls.length) {
-    list.innerHTML = '<div class="m-loading">No stations heard yet</div>';
-    return;
-  }
-  var filter = (document.getElementById('m-search-box').value || '').toUpperCase();
-  var now = Date.now() / 1000;
-  var html = '';
-  calls.forEach(function(call) {
-    if (filter && call.indexOf(filter) === -1) return;
-    var s = mStations[call];
-    var age = Math.round((now - s.ts) / 60);
-    var ageStr = age < 1 ? 'just now' : age + ' min ago';
-    html += '<div class="m-list-item" onclick="focusStation(\'' + call + '\')">'
-      + '<div style="flex:1">'
-      + '<div class="m-call">' + call + '</div>'
-      + '<div class="m-meta">' + ageStr + ' · ' + s.lat.toFixed(3) + ', ' + s.lon.toFixed(3) + '</div>'
-      + '</div><div style="color:#475569">›</div></div>';
-  });
-  list.innerHTML = html || '<div class="m-loading">No matches</div>';
-}
-
-function filterStations() { renderStationList(); }
-
-function focusStation(call) {
-  var s = mStations[call];
-  if (!s) return;
-  switchView('map');
-  setTimeout(function() {
-    mMap.setView([s.lat, s.lon], 12);
-    if (mMarkers[call]) mMarkers[call].openPopup();
-  }, 200);
-}
-
-// ── Messages ──
-function renderMobileMessages() {
-  var log = document.getElementById('m-msg-log');
-  if (!mMessages.length) {
-    log.innerHTML = '<div class="m-loading">No messages yet</div>';
-    return;
-  }
-  log.innerHTML = mMessages.map(function(m) {
-    var t = new Date(m.ts).toLocaleTimeString();
-    return '<div class="m-msg"><span class="time">' + t + '</span>'
-      + '<span class="from">' + esc(m.from) + '</span> → ' + esc(m.to) + '<br>'
-      + esc(m.text) + '</div>';
-  }).join('');
-}
-
-// ── Status ──
-function loadMobileStatus() {
-  fetch('/api/status').then(function(r){ return r.json(); }).then(function(d) {
-    document.getElementById('m-st-stations').innerText = Object.keys(mStations).length;
-    document.getElementById('m-st-rx').innerText = (d.pkts_rx || 0).toLocaleString();
-    document.getElementById('m-st-up').innerText = d.upstream_connected ? '✓ Connected' : '✗ Down';
-    document.getElementById('m-st-uptime').innerText = d.uptime || '–';
-    // Activity = recent packet rate (rough)
-    var ppm = Math.round((d.pkts_rx || 0) / Math.max(1, parseUptimeMin(d.uptime)));
-    document.getElementById('m-activity').innerText = ppm;
-  }).catch(function(){});
-}
-
-function parseUptimeMin(up) {
-  if (!up) return 1;
-  var min = 0;
-  var h = up.match(/(\d+)h/); if (h) min += parseInt(h[1]) * 60;
-  var m = up.match(/(\d+)m/); if (m) min += parseInt(m[1]);
-  return Math.max(1, min);
-}
-
-function esc(s) {
-  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-// ── Boot ──
-mobileConnect();
-setInterval(function() {
-  if (document.getElementById('view-status').classList.contains('active')) {
-    loadMobileStatus();
-  }
-}, 30000);
-</script>
+<script src="/mobile-app.js"></script>
 </body>
 </html>
