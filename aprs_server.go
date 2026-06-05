@@ -792,6 +792,7 @@ func main() {
 	go listenUDP()
 	go listenTCPClients()
 	go keepaliveLoop()
+	go runAISStream()
 
 	http.HandleFunc("/symbols/", http.StripPrefix("/symbols/", http.FileServer(http.Dir("symbols"))).ServeHTTP)
 	http.HandleFunc("/demo", serveDemo)
@@ -3978,6 +3979,148 @@ func handleAdminRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	auditLog("admin", "backup.restore", "", strings.Join(restored,","), getClientIP(r))
 	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "restored": restored})
+}
+
+
+// =============================================================================
+// AIS live ship feed via aisstream.io WebSocket
+// Subscribes to NW European / UK waters, converts position reports to
+// HistoryPacket, and broadcasts them to all WS clients as "rx" messages so
+// every connected client (web and mobile) receives live ship positions.
+// =============================================================================
+
+type aisMessage struct {
+	MessageType string          `json:"MessageType"`
+	MetaData    struct {
+		MMSI       int64   `json:"MMSI"`
+		MMSIString string  `json:"MMSI_String"`
+		ShipName   string  `json:"ShipName"`
+		Latitude   float64 `json:"latitude"`
+		Longitude  float64 `json:"longitude"`
+	} `json:"MetaData"`
+	Message struct {
+		PositionReport *struct {
+			Latitude          float64 `json:"Latitude"`
+			Longitude         float64 `json:"Longitude"`
+			SpeedOverGround   float32 `json:"SpeedOverGround"`
+			CourseOverGround  float32 `json:"CourseOverGround"`
+			TrueHeading       int     `json:"TrueHeading"`
+		} `json:"PositionReport"`
+	} `json:"Message"`
+}
+
+func runAISStream() {
+	const reconnectBase = 5 * time.Second
+	const reconnectMax  = 120 * time.Second
+	delay := reconnectBase
+
+	for {
+		config.RLock()
+		key := config.AISStreamKey
+		config.RUnlock()
+
+		if key == "" {
+			time.Sleep(30 * time.Second)
+			continue
+		}
+
+		err := connectAIS(key)
+		if err != nil {
+			log.Printf("[AIS] disconnected: %v – retrying in %v", err, delay)
+		}
+		time.Sleep(delay)
+		if delay < reconnectMax {
+			delay = delay * 2
+			if delay > reconnectMax {
+				delay = reconnectMax
+			}
+		}
+	}
+}
+
+func connectAIS(apiKey string) error {
+	dialer := websocket.Dialer{HandshakeTimeout: 15 * time.Second}
+	conn, _, err := dialer.Dial("wss://stream.aisstream.io/v0/stream", nil)
+	if err != nil {
+		return fmt.Errorf("dial: %w", err)
+	}
+	defer conn.Close()
+
+	// Subscribe to UK + NW European coastal waters
+	sub := map[string]interface{}{
+		"APIKey": apiKey,
+		"BoundingBoxes": []interface{}{
+			[]interface{}{
+				[]float64{48.0, -12.0},
+				[]float64{62.0,   5.0},
+			},
+		},
+		"FilterMessageTypes": []string{"PositionReport"},
+	}
+	if err := conn.WriteJSON(sub); err != nil {
+		return fmt.Errorf("subscribe: %w", err)
+	}
+	log.Printf("[AIS] connected to aisstream.io")
+
+	for {
+		_, raw, err := conn.ReadMessage()
+		if err != nil {
+			return fmt.Errorf("read: %w", err)
+		}
+
+		var msg aisMessage
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			continue
+		}
+		if msg.MessageType != "PositionReport" || msg.Message.PositionReport == nil {
+			continue
+		}
+
+		pr  := msg.Message.PositionReport
+		lat := pr.Latitude
+		lon := pr.Longitude
+
+		// Sanity-check: valid coords and not the "not available" sentinel 91/181
+		if lat < -90 || lat > 90 || lon < -180 || lon > 180 || lat == 0 || lon == 0 {
+			continue
+		}
+		if lat >= 91 || lon >= 181 {
+			continue
+		}
+
+		call := msg.MetaData.MMSIString
+		if call == "" {
+			call = fmt.Sprintf("%d", msg.MetaData.MMSI)
+		}
+		name := strings.TrimSpace(msg.MetaData.ShipName)
+		comment := name
+
+		hp := HistoryPacket{
+			Timestamp: time.Now().Unix(),
+			Callsign:  call,
+			Lat:       lat,
+			Lon:       lon,
+			Symbol:    "/s",
+			Raw:       fmt.Sprintf("%s>AIS,TCPIP*:!AIS", call),
+		}
+		if comment != "" && comment != "UNKNOWN" {
+			hp.Raw = fmt.Sprintf("%s>AIS,TCPIP*:!AIS %s", call, comment)
+		}
+
+		wsMsg := wsMessage{Type: "rx", Data: hp}
+		data, err := json.Marshal(wsMsg)
+		if err != nil {
+			continue
+		}
+		clientsMu.Lock()
+		for c := range clients {
+			select {
+			case c.send <- data:
+			default:
+			}
+		}
+		clientsMu.Unlock()
+	}
 }
 
 // Helpers
