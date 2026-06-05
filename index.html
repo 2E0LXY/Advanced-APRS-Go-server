@@ -3433,6 +3433,9 @@ function determineType(call, raw) {
   if (u.includes('OGNFLR')||call.startsWith('FLR')) return 'ogn';
   if (u.includes('PISTAR')||u.includes('MMDVM')||u.includes('APDPRS')) return 'pistar';
   if (isLoraStation(call, raw)) return 'lora';
+  // AIS vessels: MMSI callsigns are 6-9 digit numbers; also detect ship symbol
+  if (/^[0-9]{6,9}$/.test(call)) return 'ship';
+  if (raw) { var _si=raw.indexOf(':'); if (_si>0) { var _pl=raw.slice(_si+1); if (_pl.match(/.\/s|.\\s/)) return 'ship'; } }
   return 'aprs';
 }
 
@@ -3581,7 +3584,9 @@ function redrawMap() {
   // Pi-Star/MMDVM display is controlled solely server-side via Admin > Drop Filters.
   // If a Pi-Star packet reaches the browser at all, it is shown.
   const showPiStar = true;
-  const showLoraIS = (document.getElementById('show-lora-aprsis')||{checked:true}).checked;
+  const showLoraIS  = (document.getElementById('show-lora-aprsis')||{checked:true}).checked;
+  const showObjects = (document.getElementById('show-objects')||{checked:true}).checked;
+  const showShips   = (document.getElementById('show-ships')||{checked:true}).checked;
 
   // Viewport culling - only render markers for stations within visible bounds
   // (padded 50% to allow smooth pan without re-creating markers immediately)
@@ -3616,6 +3621,7 @@ function redrawMap() {
       ||(st.type==='ogn'&&!showOgn)
       ||(st.type==='pistar'&&!showPiStar)
       ||(st.type==='lora'&&!showLoraIS)
+      ||(st.type==='ship'&&!showShips)
       ||st.positions.length===0;
     if (hide) {
       if (st.marker) { clusterGroup.removeLayer(st.marker); map.removeLayer(st.marker); st.marker=null; }
@@ -3693,6 +3699,23 @@ function redrawMap() {
       }
     } else if (st.phgCircle) { map.removeLayer(st.phgCircle); st.phgCircle=null; }
   });
+
+  // Respect the show-objects checkbox for APRS object/item markers
+  if (typeof aprsObjects !== 'undefined') {
+    if (!showObjects) {
+      Object.keys(aprsObjects).forEach(function(name) {
+        var obj = aprsObjects[name];
+        if (obj && obj.marker) {
+          try { clusterGroup.removeLayer(obj.marker); map.removeLayer(obj.marker); } catch(e) {}
+          obj.marker = null;
+        }
+      });
+    } else {
+      Object.keys(aprsObjects).forEach(function(name) {
+        if (aprsObjects[name] && !aprsObjects[name].marker) updateObjectMarker(name);
+      });
+    }
+  }
 }
 
 // ─── Station List ─────────────────────────────────────────────────────────────
@@ -5668,6 +5691,11 @@ function handleObjectPacket(data) {
 
 function updateObjectMarker(name) {
   var obj = aprsObjects[name]; if (!obj) return;
+  var _showObj = (document.getElementById('show-objects')||{checked:true}).checked;
+  if (!_showObj) {
+    if (obj.marker) { try { clusterGroup.removeLayer(obj.marker); map.removeLayer(obj.marker); } catch(e){} obj.marker = null; }
+    return;
+  }
 
   var t  = obj.sym && obj.sym.length>=2 ? obj.sym[0] : '/';
   var c  = obj.sym && obj.sym.length>=2 ? obj.sym[1] : 'a';
