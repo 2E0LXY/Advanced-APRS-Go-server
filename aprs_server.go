@@ -1329,6 +1329,7 @@ func handleBroadcasts() {
 		rawRingMu.Unlock()
 
 		// Parse and store APRS objects/items
+		var objHP *HistoryPacket
 		if obj, ok := parseObject(packet); ok {
 			objectStoreMu.Lock()
 			if obj.Killed {
@@ -1337,9 +1338,9 @@ func handleBroadcasts() {
 				objectStore[obj.Name] = obj
 			}
 			objectStoreMu.Unlock()
-			// Include parsed coordinates so mobile clients can plot the object
+			// Stash parsed coords so we can include them in the WS message below
 			if !obj.Killed && !hasCoords {
-				msg.Data = HistoryPacket{
+				hp := HistoryPacket{
 					Callsign:  obj.Name,
 					Timestamp: obj.Timestamp,
 					Lat:       obj.Lat,
@@ -1347,6 +1348,7 @@ func handleBroadcasts() {
 					Symbol:    obj.Symbol,
 					Raw:       packet,
 				}
+				objHP = &hp
 			}
 		}
 
@@ -1371,6 +1373,8 @@ func handleBroadcasts() {
 		msg := wsMessage{Type: "rx", Packet: packet}
 		if hasCoords {
 			msg.Data = parsed
+		} else if objHP != nil {
+			msg.Data = *objHP
 		}
 		// Check if this is an object/item and tag it
 		payload := ""
