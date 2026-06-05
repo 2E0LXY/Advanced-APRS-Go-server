@@ -73,7 +73,7 @@ A high-performance, bidirectional APRS-IS Gateway written in Go. Provides a real
 ### 🔑 Third-Party Integrations (configured in Admin panel)
 - **QRZ.com XML** — operator profiles (photo, address, grid, licence class)
   shown in the station detail modal. Needs a QRZ XML subscription.
-- **aisstream.io** — Live Ships (AIS marine vessels) overlay
+- **aisstream.io** - Live Ships (AIS marine vessels). Server-side goroutine (`runAISStream`) subscribes to UK + NW European coastal waters (48-62N, 12W-5E). AIS position reports broadcast as `rx` WebSocket messages to all clients. Android and web receive live ships automatically. API key set in Admin panel (`ais_stream_key`).
 - **Met Office DataHub** — optional API key field, reserved for future
   detailed-forecast features (severe weather warnings work without it)
 
