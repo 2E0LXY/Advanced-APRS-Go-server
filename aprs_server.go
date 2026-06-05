@@ -1336,6 +1336,17 @@ func handleBroadcasts() {
 				objectStore[obj.Name] = obj
 			}
 			objectStoreMu.Unlock()
+			// Include parsed coordinates so mobile clients can plot the object
+			if !obj.Killed && !hasCoords {
+				msg.Data = HistoryPacket{
+					Callsign:  obj.Name,
+					Timestamp: obj.Timestamp,
+					Lat:       obj.Lat,
+					Lon:       obj.Lon,
+					Symbol:    obj.Symbol,
+					Raw:       packet,
+				}
+			}
 		}
 
 		// Parse and store APRS messages
