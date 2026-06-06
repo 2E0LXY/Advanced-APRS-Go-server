@@ -2244,7 +2244,7 @@ ws.onmessage = (ev) => {
         <div class="bg-gray-800 p-4 rounded border border-gray-700">
           <h3 class="text-sm font-bold text-gray-300 uppercase mb-3">Drop Filters</h3>
           <div class="space-y-2 text-sm">
-            <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="admDropPi" class="w-4 h-4"><span>Drop Pi-Star / MMDVM / APDPRS</span></label>
+            <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="admDropPi" class="w-4 h-4"><span>Drop digital-voice gateway beacons (Pi-Star &middot; MMDVM &middot; APDPRS &middot; DMRGateway &middot; ircDDB)</span></label>
             <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="admDropD" class="w-4 h-4"><span>Drop D-STAR routes</span></label>
             <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="admDropDesk" class="w-4 h-4"><span>Drop APDESK status</span></label>
           </div>
@@ -3607,6 +3607,15 @@ function redrawMap() {
     // Re-classify if type might be wrong (e.g. existing stations before LoRa detection added)
     if (st.type === 'aprs' && st.raw && isLoraStation(call, st.raw)) {
       st.type = 'lora';
+    }
+    // Per-member drop filters: hide categories the user opted out of.
+    // Anonymous users (no _memberSession) never drop client-side.
+    if (_memberDropsStation(st.raw)) {
+      if (st.marker)    { try { clusterGroup.removeLayer(st.marker); map.removeLayer(st.marker); } catch(e){} st.marker = null; }
+      if (st.polyline)  { try { map.removeLayer(st.polyline); } catch(e){}  st.polyline = null; }
+      if (st.arrow)     { try { map.removeLayer(st.arrow); } catch(e){}     st.arrow = null; }
+      if (st.phgCircle) { try { map.removeLayer(st.phgCircle); } catch(e){} st.phgCircle = null; }
+      return;
     }
     st.positions = st.positions.filter(p=>now-p.ts<=tail);
     // Cull off-screen stations - remove their markers but keep data
@@ -7258,6 +7267,9 @@ function initMemberSession() {
       if (d.watchlist && d.watchlist.length) {
         mergeWatchlists(d.watchlist);
       }
+      // Load map filter preferences so the restored session immediately
+      // filters the map without waiting for the user to open the dashboard.
+      loadMemberPreferences();
     }).catch(function() {
       _memberSession = null;
       localStorage.removeItem('aprs-member-session');
@@ -7454,7 +7466,90 @@ async function loadMemberDashboard() {
     // Auto-load messages tab if unread
     if (d.unread_messages > 0) mmTab('messages');
     else mmTab('watchlist');
+
+    // Load member's map filter preferences
+    loadMemberPreferences();
   } catch(e) { console.warn('loadMemberDashboard:', e); }
+}
+
+// Fetch the member's map filter preferences from the server and apply them
+// both to the dashboard checkboxes and to _memberSession.prefs so that
+// redrawMap() can act on them. Called whenever the dashboard refreshes,
+// and once on successful member login. Failure is silent: the dashboard
+// just shows unchecked boxes, which match the default "show everything".
+async function loadMemberPreferences() {
+  if (!_memberSession) return;
+  try {
+    var r = await fetch(location.origin + '/api/member/preferences', {
+      headers: { 'X-Member-Token': _memberSession.token }
+    });
+    if (!r.ok) return;
+    var p = await r.json();
+    _memberSession.prefs = p || {};
+    var box = function(id, key) {
+      var el = document.getElementById(id);
+      if (el) el.checked = !!_memberSession.prefs[key];
+    };
+    box('mp-drop-pistar',  'drop_pistar');
+    box('mp-drop-dstar',   'drop_dstar');
+    box('mp-drop-apdesk',  'drop_apdesk');
+    // Re-draw to apply the loaded filters
+    if (typeof redrawMap === 'function') redrawMap();
+  } catch(e) { console.warn('loadMemberPreferences:', e); }
+}
+
+// PUT the current dashboard preference checkboxes back to the server.
+// Triggered onchange of each individual checkbox.
+async function saveMemberPreferences() {
+  if (!_memberSession) return;
+  var status = document.getElementById('mp-status');
+  var prefs = {
+    drop_pistar:  document.getElementById('mp-drop-pistar').checked,
+    drop_dstar:   document.getElementById('mp-drop-dstar').checked,
+    drop_apdesk:  document.getElementById('mp-drop-apdesk').checked
+  };
+  // Preserve any keys we don't manage in this UI (e.g. sidebar prefs added
+  // later) by merging with the existing prefs.
+  if (_memberSession.prefs) {
+    for (var k in _memberSession.prefs) {
+      if (!(k in prefs)) prefs[k] = _memberSession.prefs[k];
+    }
+  }
+  _memberSession.prefs = prefs;
+  if (status) { status.innerText = 'Saving...'; status.className = 'text-[11px] text-gray-400'; }
+  try {
+    var r = await fetch(location.origin + '/api/member/preferences', {
+      method: 'PUT',
+      headers: {
+        'X-Member-Token': _memberSession.token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(prefs)
+    });
+    if (r.ok) {
+      if (status) { status.innerText = 'Saved. Will sync to Android app on next login.'; status.className = 'text-[11px] text-green-500'; }
+    } else {
+      if (status) { status.innerText = 'Save failed - try again.'; status.className = 'text-[11px] text-red-400'; }
+    }
+  } catch(e) {
+    if (status) { status.innerText = 'Network error.'; status.className = 'text-[11px] text-red-400'; }
+  }
+  // Apply immediately to the live map
+  if (typeof redrawMap === 'function') redrawMap();
+}
+
+// Returns true if the given raw packet text matches a category that the
+// signed-in member has chosen to hide. Anonymous users (no _memberSession)
+// never drop anything client-side. The same pattern set is mirrored in
+// aprs_server.go shouldRouteOutbound() and in the Android client.
+function _memberDropsStation(raw) {
+  if (!_memberSession || !_memberSession.prefs || !raw) return false;
+  var p = _memberSession.prefs;
+  var u = raw.toUpperCase();
+  if (p.drop_pistar && (u.indexOf('PISTAR')>=0 || u.indexOf('MMDVM')>=0 || u.indexOf('APDPRS')>=0 || u.indexOf('APDG')>=0 || u.indexOf('APIRCD')>=0 || u.indexOf('IRCDDB')>=0)) return true;
+  if (p.drop_dstar  && (u.indexOf('D-STAR')>=0 || u.indexOf('APDSTR')>=0)) return true;
+  if (p.drop_apdesk &&  u.indexOf('APDESK')>=0) return true;
+  return false;
 }
 
 // ── Watchlist ─────────────────────────────────────────────────────────────────
@@ -11705,6 +11800,36 @@ setInterval(checkForUpdates, 3600000); // re-check every hour
             </label>
             <button onclick="saveQuietHours()" class="mt-2 bg-cyan-700 hover:bg-cyan-600 px-3 py-1.5 rounded text-xs text-white font-bold">Save Quiet Hours</button>
             <p id="qh-status" class="text-xs mt-2 hidden"></p>
+          </div>
+
+          <!-- Map Filter Preferences (synced to Android app on login) -->
+          <div class="bg-gray-800 border border-gray-700 rounded p-3">
+            <p class="text-xs text-cyan-400 font-bold uppercase mb-2">Map Filter Preferences</p>
+            <p class="text-xs text-gray-400 mb-3">Hide categories of traffic on the map. These preferences sync to the Android app whenever you sign in there with the same account.</p>
+            <div class="space-y-2 mb-2">
+              <label class="flex items-start gap-2 cursor-pointer text-xs">
+                <input type="checkbox" id="mp-drop-pistar" class="w-4 h-4 mt-0.5" onchange="saveMemberPreferences()">
+                <span class="text-gray-300">
+                  <span class="font-bold text-gray-200">Hide digital-voice gateway beacons</span><br>
+                  <span class="text-gray-500 text-[11px]">Pi-Star &middot; MMDVM &middot; APDPRS &middot; DMRGateway &middot; ircDDB</span>
+                </span>
+              </label>
+              <label class="flex items-start gap-2 cursor-pointer text-xs">
+                <input type="checkbox" id="mp-drop-dstar" class="w-4 h-4 mt-0.5" onchange="saveMemberPreferences()">
+                <span class="text-gray-300">
+                  <span class="font-bold text-gray-200">Hide D-STAR routes</span><br>
+                  <span class="text-gray-500 text-[11px]">D-STAR repeater forwarding traffic</span>
+                </span>
+              </label>
+              <label class="flex items-start gap-2 cursor-pointer text-xs">
+                <input type="checkbox" id="mp-drop-apdesk" class="w-4 h-4 mt-0.5" onchange="saveMemberPreferences()">
+                <span class="text-gray-300">
+                  <span class="font-bold text-gray-200">Hide APDESK status</span><br>
+                  <span class="text-gray-500 text-[11px]">UI-View desktop client beacons</span>
+                </span>
+              </label>
+            </div>
+            <p id="mp-status" class="text-[11px] text-gray-500"></p>
           </div>
 
           <button onclick="saveMemberSettings()" class="bg-cyan-700 hover:bg-cyan-600 px-4 py-2 rounded text-sm text-white font-bold">Save Changes</button>

@@ -816,6 +816,7 @@ func main() {
 	http.HandleFunc("/api/member/messages", handleMemberMessages)
 	http.HandleFunc("/api/member/password", handleMemberPassword)
 	http.HandleFunc("/api/member/object", handleMemberObject)
+	http.HandleFunc("/api/member/preferences", handleMemberPreferences)
 	// Public MOTD
 	http.HandleFunc("/api/motd", handlePublicMOTD)
 	// Admin features
@@ -1116,7 +1117,7 @@ func isAllowed(packet string) bool {
 	config.RLock()
 	dPi, dD, dDesk, geo, cLat, cLon, rad := config.DropPiStar, config.DropDStar, config.DropAPDesk, config.EnableGeofence, config.CenterLat, config.CenterLon, config.RadiusKm
 	config.RUnlock()
-	if dPi && (strings.Contains(upper, "PISTAR") || strings.Contains(upper, "MMDVM") || strings.Contains(upper, "APDPRS")) {
+	if dPi && (strings.Contains(upper, "PISTAR") || strings.Contains(upper, "MMDVM") || strings.Contains(upper, "APDPRS") || strings.Contains(upper, "APDG") || strings.Contains(upper, "APIRCD") || strings.Contains(upper, "IRCDDB")) {
 		return false
 	}
 	if dD && (strings.Contains(upper, "D-STAR") || strings.Contains(upper, "APDSTR")) {
@@ -2957,6 +2958,17 @@ type Member struct {
 	Created      int64     `json:"created"`
 	LastLogin    int64     `json:"last_login,omitempty"`
 	Verified     bool      `json:"verified"`
+	// Per-member map filter preferences. Free-form JSON blob; the web map
+	// and Android client decide which keys they understand. Common keys:
+	//   drop_pistar  - hide DV gateway beacons (Pi-Star, MMDVM, APDPRS,
+	//                  DMRGateway, ircDDB)
+	//   drop_dstar   - hide D-STAR repeater forwarding traffic
+	//   drop_apdesk  - hide UI-View desktop client beacons
+	//   show_aprs / show_cwop / show_ogn / show_objects / show_lora_aprsis /
+	//   show_ships / show_lora / hide_static / cluster_enable / ghost_old
+	// Defaults to nil for unmigrated members; clients then fall back to
+	// their own defaults until the member saves once.
+	Preferences  map[string]interface{} `json:"preferences,omitempty"`
 }
 
 type StoredMessage struct {
@@ -3403,6 +3415,52 @@ func handleMemberObject(w http.ResponseWriter, r *http.Request) {
 }
 
 // formatAPRSPosition converts decimal lat/lon to APRS uncompressed text format.
+
+// GET /api/member/preferences   PUT /api/member/preferences
+// Reads or replaces the per-member map filter preferences blob.
+// Auth: X-Member-Token header (existing pattern used by other member endpoints).
+// On PUT the request body is a JSON object that completely REPLACES the
+// previous preferences map. Keys are open-ended; clients decide which keys
+// they recognise. See the Member struct doc for the recommended schema.
+func handleMemberPreferences(w http.ResponseWriter, r *http.Request) {
+	m := getMemberFromRequest(r)
+	if m == nil {
+		w.WriteHeader(401)
+		json.NewEncoder(w).Encode(map[string]string{"error": "not logged in"})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodGet {
+		memberStoreMu.RLock()
+		prefs := memberStore.Members[m.ID].Preferences
+		memberStoreMu.RUnlock()
+		if prefs == nil {
+			prefs = map[string]interface{}{}
+		}
+		json.NewEncoder(w).Encode(prefs)
+		return
+	}
+	if r.Method == http.MethodPut {
+		var prefs map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&prefs); err != nil {
+			w.WriteHeader(400)
+			json.NewEncoder(w).Encode(map[string]string{"error": "invalid json"})
+			return
+		}
+		if prefs == nil {
+			prefs = map[string]interface{}{}
+		}
+		memberStoreMu.Lock()
+		if mem, ok := memberStore.Members[m.ID]; ok {
+			mem.Preferences = prefs
+		}
+		saveMemberStore()
+		memberStoreMu.Unlock()
+		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+		return
+	}
+	http.Error(w, "method not allowed", 405)
+}
 
 func formatAPRSPosition(lat, lon float64) (string, string) {
 	latNS := "N"
