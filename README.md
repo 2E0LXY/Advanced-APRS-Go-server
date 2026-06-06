@@ -228,6 +228,39 @@ echo "M0XYZ>APRS,TCPIP*:=5342.10N/00130.50W-Test" | nc -u -w1 YOUR-IP 14580
 | `POST /api/password` | Yes | Change admin password |
 | `GET /api/whoami` | Yes | Verify credentials |
 | `POST /api/update` | Yes | Run update (SSE progress stream) |
+| `GET /api/member/preferences` | X-Member-Token | Per-member map filter preferences (JSON blob) |
+| `PUT /api/member/preferences` | X-Member-Token | Replace per-member map filter preferences |
+
+---
+
+## Member map filter preferences
+
+Each registered member account stores a free-form JSON `preferences`
+blob that controls which categories of traffic appear on their map.
+These preferences sync automatically between the web map at
+`aprsnet.uk` and the Android client v2.5.0+. Toggle them in either
+place and the change appears on the other on next login.
+
+**Recognised keys (more can be added without schema migration):**
+
+| Key | Hides packets matching |
+|---|---|
+| `drop_pistar` | `PISTAR`, `MMDVM`, `APDPRS`, `APDG` (DMRGateway), `APIRCD`, `IRCDDB` |
+| `drop_dstar` | `D-STAR`, `APDSTR` (D-STAR repeater forwarding) |
+| `drop_apdesk` | `APDESK` (UI-View desktop client status) |
+
+**Three filter layers, in order:**
+
+1. **Upstream subscription filter** (admin) - controls what packets
+   the gateway pulls from APRS-IS. Default `auto` builds a wide
+   range filter from the geofence centre.
+2. **Admin Drop Filters** (server-wide moderation) - apply to all
+   clients. Useful for bandwidth or to mute persistent spammers.
+3. **Member map filter preferences** (per account) - each member's
+   own choice of what to see, synced web<->Android.
+
+Anonymous web users see all stations by default; the per-member
+filters never apply to them.
 
 ---
 
