@@ -990,6 +990,27 @@ func connectUpstream() {
 		filter = fmt.Sprintf("r/%.4f/%.4f/%.0f", cLat, cLon, rad)
 	}
 
+	// Defensive: drop any 't/' or '-t/' clauses with zero type letters.
+	// APRS-IS spec: an empty t/ means "pass nothing" - which is almost never
+	// what the admin intended. The admin UI now also strips these on the
+	// client side, but we re-check here in case an older config or a manual
+	// edit slipped one through.
+	if strings.Contains(filter, "t/") {
+		parts := strings.Fields(filter)
+		cleaned := make([]string, 0, len(parts))
+		for _, p := range parts {
+			lp := strings.TrimPrefix(p, "-")
+			if strings.ToLower(lp) == "t/" {
+				continue
+			}
+			cleaned = append(cleaned, p)
+		}
+		filter = strings.Join(cleaned, " ")
+		if filter == "" {
+			filter = fmt.Sprintf("r/%.4f/%.4f/%.0f", cLat, cLon, rad)
+		}
+	}
+
 	conn, err := net.DialTimeout("tcp", addr, 15*time.Second)
 	if err != nil {
 		log.Printf("Upstream connect failed (%s): %v", addr, err)

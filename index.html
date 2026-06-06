@@ -434,7 +434,13 @@ body { background: var(--bg-base); color: var(--text-base); }
       <p class="text-[10px] text-gray-500 mt-1">Map loads live packets only by default. Click Load to fetch history.</p>
       <button onclick="openTimelapse()" class="w-full mt-2 bg-purple-800 hover:bg-purple-700 px-2 py-1.5 rounded text-xs font-bold">⏯ Time-Lapse Replay</button>
     </div>
-    <div>
+    <!-- Station filters: visible only to logged-in members. Anonymous users
+         see all stations by default (the checkboxes themselves retain their
+         default-checked state regardless of visibility). -->
+    <div id="station-filters-anon" class="text-[11px] text-gray-500 italic border border-dashed border-gray-700 rounded p-2 mb-2">
+      Sign in to customise which station types appear on the map. Anonymous users see all stations by default.
+    </div>
+    <div id="station-filters-block" class="hidden">
       <h3 class="text-xs uppercase text-gray-400 font-bold mb-2">Station Filters</h3>
       <div class="space-y-1">
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-aprs" checked onchange="redrawMap()"><span class="text-blue-400">●</span><span>Ham APRS</span></label>
@@ -2076,7 +2082,9 @@ ws.onmessage = (ev) => {
           <p class="text-xs text-gray-500 mb-1">These filters control what data the upstream APRS-IS server sends <strong class="text-gray-400">to your gateway</strong>. They do not affect packets your gateway transmits. Multiple filters can be combined — if any filter matches, the packet is passed. Prefix a filter with <code class="text-yellow-500">-</code> to exclude matching packets.</p>
           <p class="text-xs text-blue-400 mb-3">ℹ️ Leave blank or use <code>auto</code> to automatically use a range filter based on your geofence centre below.</p>
 
-          <!-- Filter rows -->
+          <!-- Filter rows (collapsed by default - most installs do not need these) -->
+          <details class="mb-2">
+          <summary class="cursor-pointer text-xs text-gray-400 hover:text-gray-200 py-1 mb-2 select-none">Advanced &mdash; filter builder helpers (rarely needed)</summary>
           <div class="space-y-2 mb-3 text-xs">
 
             <!-- Range -->
@@ -2222,6 +2230,7 @@ ws.onmessage = (ev) => {
             </div>
 
           </div>
+          </details>
 
           <!-- Result string -->
           <div class="flex space-x-2 mb-1">
@@ -3914,10 +3923,14 @@ function populateAdmin(d) {
     let matched=false;
     for (let o of sel.options) { if (o.value===d.upstream_addr){sel.value=d.upstream_addr;matched=true;break;} }
     if (!matched&&d.upstream_addr) sel.value='custom';
-    document.getElementById('fLat').value=d.center_lat;
-    document.getElementById('fLon').value=d.center_lon;
-    document.getElementById('fRad').value=d.radius_km;
-    document.getElementById('fMyRange').value=d.radius_km;
+    // Do NOT auto-populate fLat/fLon/fRad/fMyRange from geofence centre.
+    // These inputs are for ADDING a new filter clause via '+ Add', not for
+    // editing the active filter. Auto-filling them made it look as if the
+    // values were part of the saved filter, so clearing them and pressing
+    // Save appeared to do nothing (the master admFilter is unchanged and
+    // these fields refill on the next load). Leave them blank as inputs.
+    // The geofence centre still drives the default 'auto' filter resolution
+    // on the server side - see aprs_server.go (L988-990).
 }
 
 async function saveAdmin() {
@@ -7279,9 +7292,19 @@ function updateMemberBtn() {
       btn.appendChild(badge);
     }
     if (btn) btn.style.background = unread > 0 ? '#7f1d1d' : '#164e63';
+    // Show member-only station filter sidebar; hide anon placeholder.
+    var sfb = document.getElementById('station-filters-block');
+    var sfa = document.getElementById('station-filters-anon');
+    if (sfb) sfb.classList.remove('hidden');
+    if (sfa) sfa.classList.add('hidden');
   } else {
     lbl.innerText = 'Login';
     if (btn) btn.style.background = '';
+    // Hide station filter sidebar; show anon placeholder.
+    var sfb2 = document.getElementById('station-filters-block');
+    var sfa2 = document.getElementById('station-filters-anon');
+    if (sfb2) sfb2.classList.add('hidden');
+    if (sfa2) sfa2.classList.remove('hidden');
   }
 }
 
