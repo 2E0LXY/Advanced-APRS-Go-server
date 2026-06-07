@@ -1557,10 +1557,27 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			if !client.authenticated {
 				continue
 			}
-			if !strings.HasPrefix(strings.ToUpper(in.Packet), client.callsign+">") {
+			// The app authenticates with the BARE callsign (e.g. 2E0LXY) but
+			// transmits FROM a callsign-with-SSID (e.g. 2E0LXY-9>APRS,...).
+			// Previously this check was `HasPrefix(packet, callsign+">")`
+			// which rejected every SSIDed source - silently dropping all
+			// app messages and ACKs. Parse the source field properly and
+			// compare against the bare callsign only.
+			gt := strings.Index(in.Packet, ">")
+			if gt == -1 {
+				log.Printf("WS TX rejected (no '>' in packet) from %s: %q", client.callsign, in.Packet)
+				continue
+			}
+			src := strings.ToUpper(in.Packet[:gt])
+			if dash := strings.Index(src, "-"); dash != -1 {
+				src = src[:dash]
+			}
+			if src != client.callsign {
+				log.Printf("WS TX rejected (source %q != auth callsign %q): %q", src, client.callsign, in.Packet)
 				continue
 			}
 			if time.Since(client.lastTx) < time.Second {
+				log.Printf("WS TX rate-limited from %s", client.callsign)
 				continue
 			}
 			client.lastTx = time.Now()
@@ -1570,9 +1587,11 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			metrics.Unlock()
 			routed := injectQConstruct(in.Packet, "qAC")
 			if isAllowed(routed) && !isDuplicate(routed) {
+				log.Printf("WS TX %s: %s", client.callsign, routed)
 				broadcast <- routed
 				upstreamOut <- routed
 			} else {
+				log.Printf("WS TX dropped by isAllowed/duplicate filter (%s): %s", client.callsign, routed)
 				metrics.Lock()
 				metrics.PktsDropped++
 				metrics.Unlock()
