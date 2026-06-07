@@ -3439,6 +3439,20 @@ async function loadHistory() {
 function determineType(call, raw) {
   const u = (call+raw).toUpperCase();
   if (call.startsWith('CW')||u.includes('CWOP')) return 'cwop';
+  // Weather-station detection by payload, not callsign. Catches modern
+  // CWOP / amateur weather stations that don't have the CW prefix and
+  // aren't bridged through a CWOP-tagged gateway. Two markers:
+  //   * APRS weather station symbol '_' (primary or alternate table)
+  //     in the position packet, e.g. =NNNN.NNN/NNNNN.NNNW_ or .../_
+  //   * Weather telemetry: 'tNNN' temperature triplet followed by
+  //     humidity 'hNN' or pressure 'bNNNNN', common to all WX formats.
+  if (raw) {
+    var ci = raw.indexOf(':');
+    if (ci > 0) {
+      var pl = raw.slice(ci + 1);
+      if (/[\/\\]_/.test(pl) || /t-?\d{2,3}.*(h\d{2}|b\d{4,5})/.test(pl)) return 'cwop';
+    }
+  }
   if (u.includes('OGNFLR')||call.startsWith('FLR')) return 'ogn';
   if (u.includes('PISTAR')||u.includes('MMDVM')||u.includes('APDPRS')) return 'pistar';
   if (isLoraStation(call, raw)) return 'lora';
@@ -3607,6 +3621,21 @@ function redrawMap() {
     // Re-classify if type might be wrong (e.g. existing stations before LoRa detection added)
     if (st.type === 'aprs' && st.raw && isLoraStation(call, st.raw)) {
       st.type = 'lora';
+    }
+    // Same retroactive promotion for CWOP weather stations. The first
+    // packet for a station often does not carry weather telemetry (it
+    // might be a bare position) so the initial determineType returns
+    // 'aprs'. As subsequent packets bring telemetry, re-evaluate so the
+    // station moves under the CWOP filter where it belongs.
+    if (st.type === 'aprs' && st.raw) {
+      var _u = st.raw.toUpperCase();
+      var _ci = st.raw.indexOf(':');
+      if (_ci > 0) {
+        var _pl = st.raw.slice(_ci + 1);
+        if (/[\/\\]_/.test(_pl) || /t-?\d{2,3}.*(h\d{2}|b\d{4,5})/.test(_pl) || _u.includes('CWOP')) {
+          st.type = 'cwop';
+        }
+      }
     }
     // Per-member drop filters: hide categories the user opted out of.
     // Anonymous users (no _memberSession) never drop client-side.
