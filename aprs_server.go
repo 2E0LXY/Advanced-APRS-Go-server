@@ -1113,18 +1113,32 @@ func isAllowed(packet string) bool {
 	if gtIdx == -1 || colIdx == -1 || gtIdx > colIdx {
 		return false
 	}
+	// APRS message packets have format `SRC>...:`+`:DEST_____:body` (a second
+	// colon followed by 9 chars then another colon). These are one-to-one
+	// human messaging traffic (including ACKs) and must NEVER be silenced by
+	// the drop filters - those exist to hide noisy beacons, not to break
+	// messaging. Without this exemption, an ACK from a recipient whose
+	// network path happens to include a DV-gateway tocall (APDG??, APIRCD,
+	// IRCDDB) was being dropped, leaving outbound messages stuck in SENT
+	// state until the app gave up and marked them FAILED.
+	isMessage := false
+	if len(packet) > colIdx+11 && packet[colIdx+1] == ':' && packet[colIdx+11] == ':' {
+		isMessage = true
+	}
 	upper := strings.ToUpper(packet)
 	config.RLock()
 	dPi, dD, dDesk, geo, cLat, cLon, rad := config.DropPiStar, config.DropDStar, config.DropAPDesk, config.EnableGeofence, config.CenterLat, config.CenterLon, config.RadiusKm
 	config.RUnlock()
-	if dPi && (strings.Contains(upper, "PISTAR") || strings.Contains(upper, "MMDVM") || strings.Contains(upper, "APDPRS") || strings.Contains(upper, "APDG") || strings.Contains(upper, "APIRCD") || strings.Contains(upper, "IRCDDB")) {
-		return false
-	}
-	if dD && (strings.Contains(upper, "D-STAR") || strings.Contains(upper, "APDSTR")) {
-		return false
-	}
-	if dDesk && strings.Contains(upper, "APDESK") {
-		return false
+	if !isMessage {
+		if dPi && (strings.Contains(upper, "PISTAR") || strings.Contains(upper, "MMDVM") || strings.Contains(upper, "APDPRS") || strings.Contains(upper, "APDG") || strings.Contains(upper, "APIRCD") || strings.Contains(upper, "IRCDDB")) {
+			return false
+		}
+		if dD && (strings.Contains(upper, "D-STAR") || strings.Contains(upper, "APDSTR")) {
+			return false
+		}
+		if dDesk && strings.Contains(upper, "APDESK") {
+			return false
+		}
 	}
 	if geo {
 		if parsed, ok := parsePacket(packet); ok {
