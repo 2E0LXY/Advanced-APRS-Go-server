@@ -3455,6 +3455,16 @@ function determineType(call, raw) {
   }
   if (u.includes('OGNFLR')||call.startsWith('FLR')) return 'ogn';
   if (u.includes('PISTAR')||u.includes('MMDVM')||u.includes('APDPRS')) return 'pistar';
+  // TOCALL-based classification: catches DMR gateways (APZDMR*), D-STAR gateways (APDG*),
+  // and OGN receivers (APOG*) whose callsigns carry no identifying string.
+  if (raw) {
+    const _gt = raw.indexOf('>'), _col = raw.indexOf(':');
+    if (_gt > 0 && _col > _gt) {
+      const _toc = raw.slice(_gt+1, _col).split(',')[0].toUpperCase();
+      if (/^APZDMR/.test(_toc) || /^APDG/.test(_toc)) return 'pistar';
+      if (/^APOG/.test(_toc)) return 'ogn';
+    }
+  }
   if (isLoraStation(call, raw)) return 'lora';
   // AIS vessels: MMSI callsigns are 6-9 digit numbers; also detect ship symbol
   if (/^[0-9]{6,9}$/.test(call)) return 'ship';
