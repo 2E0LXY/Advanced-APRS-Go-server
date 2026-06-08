@@ -817,6 +817,8 @@ func main() {
 	http.HandleFunc("/api/member/password", handleMemberPassword)
 	http.HandleFunc("/api/member/object", handleMemberObject)
 	http.HandleFunc("/api/member/preferences", handleMemberPreferences)
+	http.HandleFunc("/api/members/callsigns",  handleMembersCallsigns)
+	http.HandleFunc("/api/member/message/send", handleMemberMessageSend)
 	// Public MOTD
 	http.HandleFunc("/api/motd", handlePublicMOTD)
 	// Admin features
@@ -3493,6 +3495,93 @@ func handleMemberPreferences(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Error(w, "method not allowed", 405)
+}
+
+// GET /api/members/callsigns - public list of registered member callsigns.
+// Only exposes callsigns, no personal data. Used by clients to badge members.
+func handleMembersCallsigns(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet { http.Error(w, "method not allowed", 405); return }
+	memberStoreMu.RLock()
+	calls := make([]string, 0, len(memberStore.Members))
+	for _, m := range memberStore.Members {
+		if m.Callsign != "" {
+			calls = append(calls, strings.ToUpper(m.Callsign))
+		}
+	}
+	memberStoreMu.RUnlock()
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=300") // 5-min client cache
+	json.NewEncoder(w).Encode(calls)
+}
+
+// POST /api/member/message/send - deliver a message to another member directly
+// via the server WebSocket, bypassing APRS-IS entirely.
+// Use when APRS delivery fails and the recipient is a known APRS Net member.
+// Auth: X-Member-Token header. Body: {"to":"CALLSIGN","text":"message"}.
+func handleMemberMessageSend(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost { http.Error(w, "method not allowed", 405); return }
+	m := getMemberFromRequest(r)
+	if m == nil {
+		w.WriteHeader(401)
+		json.NewEncoder(w).Encode(map[string]string{"error": "not logged in"})
+		return
+	}
+	var req struct {
+		To   string `json:"to"`
+		Text string `json:"text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid json"}`, 400); return
+	}
+	req.To = strings.ToUpper(strings.TrimSpace(req.To))
+	if req.To == "" || len(strings.TrimSpace(req.Text)) == 0 {
+		http.Error(w, `{"error":"to and text required"}`, 400); return
+	}
+	if len(req.Text) > 67 { req.Text = req.Text[:67] }
+
+	// Verify recipient is a registered member
+	memberStoreMu.RLock()
+	recipientExists := false
+	for _, mem := range memberStore.Members {
+		if strings.ToUpper(mem.Callsign) == req.To {
+			recipientExists = true; break
+		}
+	}
+	memberStoreMu.RUnlock()
+	if !recipientExists {
+		w.WriteHeader(404)
+		json.NewEncoder(w).Encode(map[string]string{"error": "recipient is not an APRS Net member"})
+		return
+	}
+
+	// Build a synthetic APRS message packet the client parses normally.
+	// Destination padded to 9 chars per APRS spec.
+	msgId := fmt.Sprintf("%02d", time.Now().Unix()%100)
+	dest  := fmt.Sprintf("%-9s", req.To)
+	rawPacket := fmt.Sprintf("%s>APNUK,TCPIP*::%-9s:%s{%s",
+		m.Callsign, req.To, req.Text, msgId)
+	_ = dest // suppress lint
+
+	// Broadcast to all WS sessions authenticated as the recipient
+	data, _ := json.Marshal(wsMessage{Type: "rx", Packet: rawPacket})
+	delivered := 0
+	clientsMu.Lock()
+	for c := range clients {
+		if c.authenticated && strings.ToUpper(c.callsign) == req.To {
+			select {
+			case c.send <- data:
+				delivered++
+			default:
+			}
+		}
+	}
+	clientsMu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":        true,
+		"delivered": delivered,
+	})
 }
 
 func formatAPRSPosition(lat, lon float64) (string, string) {
