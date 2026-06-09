@@ -828,7 +828,8 @@ func main() {
 	http.HandleFunc("/api/admin/motd", basicAuth(handleAdminMOTD))
 	http.HandleFunc("/api/admin/audit", basicAuth(handleAdminAudit))
 	http.HandleFunc("/api/admin/backup", basicAuth(handleAdminBackup))
-	http.HandleFunc("/api/admin/restore", basicAuth(handleAdminRestore))
+	http.HandleFunc("/api/admin/restore",    basicAuth(handleAdminRestore))
+	http.HandleFunc("/api/admin/update",     basicAuth(handleAdminUpdate))
 	http.HandleFunc("/metrics", basicAuth(handleMetrics))
 	http.HandleFunc("/api/webhooks", basicAuth(handleWebhooks))
 	http.HandleFunc("/api/webhooks/", basicAuth(handleWebhookDelete))
@@ -4125,6 +4126,52 @@ func handleAdminAudit(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /api/admin/backup : returns zip of all state
+
+// handleAdminUpdate — POST /api/admin/update
+// Pulls latest code from GitHub, rebuilds the binary, and restarts the service.
+// Requires HTTP Basic Auth (admin credentials). Safe to call from a browser or curl.
+// Returns a JSON stream of progress lines as the build runs.
+func handleAdminUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+
+	flusher, canFlush := w.(http.Flusher)
+	write := func(msg string) {
+		fmt.Fprintf(w, "%s\n", msg)
+		if canFlush { flusher.Flush() }
+	}
+
+	write("=== APRS Net self-update ===")
+
+	dir := "/opt/aprs-gateway"
+	steps := []struct {
+		label string
+		args  []string
+	}{
+		{"git pull",   []string{"git", "-C", dir, "pull", "origin", "main"}},
+		{"go build",   []string{"/usr/local/go/bin/go", "build", "-o", dir + "/aprs_server", dir + "/..."}},
+		{"restart",    []string{"systemctl", "restart", "aprs"}},
+	}
+
+	for _, step := range steps {
+		write(fmt.Sprintf("--- %s ---", step.label))
+		cmd := exec.Command(step.args[0], step.args[1:]...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if len(out) > 0 { write(string(out)) }
+		if err != nil {
+			write(fmt.Sprintf("ERROR: %v", err))
+			return
+		}
+	}
+	write("=== update complete ===")
+}
+
 func handleAdminBackup(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="aprs-backup-%s.json"`, time.Now().Format("2006-01-02-150405")))
