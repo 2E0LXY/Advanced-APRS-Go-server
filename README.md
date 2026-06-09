@@ -150,6 +150,7 @@ echo "M0XYZ>APRS,TCPIP*:=5342.10N/00130.50W-Test" | nc -u -w1 YOUR-IP 14580
 | `GET /api/analytics` | No | Reliability grades, longest paths, heatmap |
 | `GET /api/qrz/lookup?call=X` | No | QRZ.com operator profile (cached 24 h) |
 | `GET /api/wx/warnings` | No | UK Met Office warnings (cached 5 min) |
+| `POST /api/admin/update` | Yes | Pull latest code from GitHub, rebuild binary, restart service (streams progress) |
 | `GET /api/config` | Yes | Full server configuration JSON |
 | `POST /api/config` | Yes | Update and hot-reload configuration |
 | `GET /api/member/preferences` | X-Member-Token | Per-member map filter preferences |
@@ -166,7 +167,26 @@ Preferences sync automatically between the web map and Android/iOS clients (v2.5
 
 ---
 
+## Deployment
+
+### Auto-deploy via GitHub Actions
+Every push to `main` triggers the deploy workflow (`.github/workflows/deploy.yml`):
+1. SSHs into `aprsnet.uk` using the `SERVER_SSH_KEY` repository secret
+2. Runs `git pull origin main`
+3. Rebuilds the binary: `go build -o aprs_server aprs_server.go`
+4. Restarts the service: `systemctl restart aprs`
+
+### Manual trigger
+From the GitHub Actions tab → **Deploy to theloxleys** → **Run workflow**.
+
+### Over HTTP (no SSH needed)
+```bash
+curl -X POST https://your-domain/api/admin/update -u admin:PASSWORD
+```
+Streams build progress as Server-Sent Events. The service restarts automatically at the end.
+
 ## Stack
+
 
 | Component | Purpose |
 |-----------|---------|
