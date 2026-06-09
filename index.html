@@ -1389,7 +1389,9 @@ body { background: var(--bg-base); color: var(--text-base); }
               <li><b>Trail Length</b>: how far back to show station movement trails</li>
               <li><b>Station Filters</b>: toggle Ham APRS, CWOP Weather, OGN Gliders, Objects/Items, Pi-Star/MMDVM</li>
               <li><b>Hide Static</b>: hide stations that haven't moved for &gt; 5 min</li>
-              <li><b>PHG Circles</b>: show coverage circles for stations broadcasting PHG data</li>
+              <li><b>PHG Circles</b>: show coverage prediction circles for stations broadcasting PHG (Power-Height-Gain) data. Works for Ham, LoRa, MMDVM, and all other station types.</li>
+            <li><b>Geo-fence Alerts</b>: set custom rules under the Alerts panel to notify you when a station enters or leaves a geographic area. Web rules are stored in your browser. Signed-in members can also create server-synced rules (pushed to Android/iOS) via Settings &rarr; Geo-fence Alerts in the mobile apps.</li>
+            <li><b>Smart Search (Ctrl+K / &#8984;K)</b>: search callsigns, comments, messages, and device types. Selecting a result flies the map to that station automatically.</li>
               <li><b>Cluster Markers</b>: groups dense areas into numbered clusters</li>
             </ul>
           </div>
@@ -9568,6 +9570,10 @@ function loadAlertRules() {
 }
 function saveAlertRulesStorage() {
   localStorage.setItem('aprs-alert-rules', JSON.stringify(_alertRules));
+  // Note: the above saves web alert rules to localStorage for this browser.
+  // Signed-in members can also manage server-side geo-fence rules (synced to
+  // Android/iOS) via Settings → Geo-fence Alerts in the mobile apps, or via
+  // the REST API at /api/member/alert-rules.
 }
 function renderAlertRules() {
   var el = document.getElementById('alert-rules-list');
