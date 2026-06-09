@@ -819,8 +819,8 @@ func main() {
 	http.HandleFunc("/api/member/preferences", handleMemberPreferences)
 	http.HandleFunc("/api/members/callsigns",  handleMembersCallsigns)
 	http.HandleFunc("/api/member/message/send",   handleMemberMessageSend)
-	http.HandleFunc("/api/member/alert-rules",    memberAuth(handleAlertRules))
-	http.HandleFunc("/api/member/alert-rules/",   memberAuth(handleAlertRuleDelete))
+	http.HandleFunc("/api/member/alert-rules",    handleAlertRules)
+	http.HandleFunc("/api/member/alert-rules/",   handleAlertRuleDelete)
 	// Public MOTD
 	http.HandleFunc("/api/motd", handlePublicMOTD)
 	// Admin features
@@ -4208,14 +4208,12 @@ func gfKey(ruleID int64, call string) string {
 // handleAlertRules — GET lists all rules, POST creates a new one.
 // Path: /api/member/alert-rules  (protected by memberAuth)
 func handleAlertRules(w http.ResponseWriter, r *http.Request) {
-	memberCall := memberCallFromToken(r)
-	if memberCall == "" { http.Error(w, "unauthorized", 401); return }
+	mem := getMemberFromRequest(r)
+	if mem == nil { http.Error(w, "unauthorized", 401); return }
 
 	if r.Method == http.MethodGet {
 		memberStoreMu.RLock()
-		mem := memberByCallsign(memberCall)
-		var rules []MemberAlertRule
-		if mem != nil && mem.AlertRules != nil { rules = mem.AlertRules }
+		rules := mem.AlertRules
 		if rules == nil { rules = []MemberAlertRule{} }
 		memberStoreMu.RUnlock()
 		w.Header().Set("Content-Type", "application/json")
@@ -4236,9 +4234,6 @@ func handleAlertRules(w http.ResponseWriter, r *http.Request) {
 		rule.WatchCallsign = strings.ToUpper(rule.WatchCallsign)
 
 		memberStoreMu.Lock()
-		mem := memberByCallsign(memberCall)
-		if mem == nil { memberStoreMu.Unlock(); http.Error(w, "member not found", 404); return }
-		// Assign a simple incrementing ID
 		var maxID int64
 		for _, existing := range mem.AlertRules { if existing.ID > maxID { maxID = existing.ID } }
 		rule.ID = maxID + 1
@@ -4257,8 +4252,8 @@ func handleAlertRules(w http.ResponseWriter, r *http.Request) {
 // handleAlertRuleDelete — DELETE /api/member/alert-rules/{id}
 func handleAlertRuleDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete { http.Error(w, "DELETE required", 405); return }
-	memberCall := memberCallFromToken(r)
-	if memberCall == "" { http.Error(w, "unauthorized", 401); return }
+	mem := getMemberFromRequest(r)
+	if mem == nil { http.Error(w, "unauthorized", 401); return }
 
 	idStr := strings.TrimPrefix(r.URL.Path, "/api/member/alert-rules/")
 	var id int64
@@ -4267,17 +4262,26 @@ func handleAlertRuleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	memberStoreMu.Lock()
-	mem := memberByCallsign(memberCall)
-	if mem != nil {
-		newRules := mem.AlertRules[:0]
-		for _, rule := range mem.AlertRules {
-			if rule.ID != id { newRules = append(newRules, rule) }
-		}
-		mem.AlertRules = newRules
-		saveMemberStore()
+	newRules := mem.AlertRules[:0]
+	for _, rule := range mem.AlertRules {
+		if rule.ID != id { newRules = append(newRules, rule) }
 	}
+	mem.AlertRules = newRules
+	saveMemberStore()
 	memberStoreMu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// haversineKm returns the great-circle distance in kilometres between two
+// lat/lon coordinates using the Haversine formula.
+func haversineKm(lat1, lon1, lat2, lon2 float64) float64 {
+	const R = 6371.0
+	dLat := (lat2 - lat1) * math.Pi / 180
+	dLon := (lon2 - lon1) * math.Pi / 180
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(lat1*math.Pi/180)*math.Cos(lat2*math.Pi/180)*
+			math.Sin(dLon/2)*math.Sin(dLon/2)
+	return R * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
 }
 
 // checkGeofenceAlerts is called for every position packet with valid coordinates.
