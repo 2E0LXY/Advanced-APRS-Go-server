@@ -3748,7 +3748,7 @@ function redrawMap() {
       if (!st.arrow) st.arrow = L.polyline([[latest.lat,latest.lon],arrowEnd],{color:'#facc15',weight:2,opacity:0.8}).addTo(map);
       else st.arrow.setLatLngs([[latest.lat,latest.lon],arrowEnd]);
     } else if (st.arrow) { map.removeLayer(st.arrow); st.arrow=null; }
-    if (showPhg&&st.phg&&st.type==='aprs') {
+    if (showPhg&&st.phg) {  // show for all types that broadcast PHG
       const r = calcPHG(st.phg);
       if (r>0) {
         if (!st.phgCircle) st.phgCircle=L.circle([latest.lat,latest.lon],{radius:r,color:'#10b981',weight:1,fillOpacity:0.05}).addTo(map);
@@ -8512,6 +8512,12 @@ function searchPick(i) {
   if (!r) return;
   closeSearchModal();
   if (r.type === 'station' || r.type === 'comment') {
+    // Fly the map to the station before opening the detail panel
+    var _st = stations[r.call];
+    if (_st && _st.positions && _st.positions.length) {
+      var _p = _st.positions[_st.positions.length-1];
+      map.setView([_p.lat, _p.lon], Math.max(map.getZoom(), 12), {animate:true, duration:0.5});
+    }
     openDetail(r.call);
   } else if (r.type === 'message') {
     if (r.msg.from) openDetail(r.msg.from);
