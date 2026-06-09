@@ -3008,6 +3008,7 @@ type Member struct {
 	// Defaults to nil for unmigrated members; clients then fall back to
 	// their own defaults until the member saves once.
 	Preferences  map[string]interface{} `json:"preferences,omitempty"`
+	AlertRules   []MemberAlertRule       `json:"alert_rules,omitempty"`
 }
 
 type StoredMessage struct {
@@ -4176,8 +4177,13 @@ func handleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 // ─── Member geo-fence alert rules ────────────────────────────────────────────
+//
+// Rules are stored inside each Member's AlertRules slice and persisted through
+// the existing members.json store.  Geofence state (inside/outside) is kept in
+// a global in-memory map that resets on server restart — first packet after
+// restart silently initialises state without firing an alert.
 
-// MemberAlertRule is a server-side geo-fence rule stored per member.
+// MemberAlertRule is a single geo-fence rule owned by a member.
 type MemberAlertRule struct {
 	ID            int64   `json:"id"`
 	Type          string  `json:"type"`           // "geofence_enter" | "geofence_exit"
@@ -4185,27 +4191,33 @@ type MemberAlertRule struct {
 	Lat           float64 `json:"lat"`
 	Lon           float64 `json:"lon"`
 	RadiusMi      float64 `json:"radius_mi"`
-	Name          string  `json:"name"`           // user-friendly label
+	Name          string  `json:"name"`
 }
 
-// handleAlertRules — GET lists rules, POST creates a new rule.
+// geofenceState tracks the last known inside/outside status for each
+// (rule_id, watched_callsign) pair.  Key: "<ruleID>:<watchedCall>"
+var (
+	geofenceStateMu sync.Mutex
+	geofenceState   = map[string]int{} // -1=unseen, 0=outside, 1=inside
+)
+
+func gfKey(ruleID int64, call string) string {
+	return fmt.Sprintf("%d:%s", ruleID, strings.ToUpper(call))
+}
+
+// handleAlertRules — GET lists all rules, POST creates a new one.
+// Path: /api/member/alert-rules  (protected by memberAuth)
 func handleAlertRules(w http.ResponseWriter, r *http.Request) {
 	memberCall := memberCallFromToken(r)
 	if memberCall == "" { http.Error(w, "unauthorized", 401); return }
 
 	if r.Method == http.MethodGet {
-		rows, err := db.Query(
-			`SELECT id,type,watch_callsign,lat,lon,radius_mi,name FROM member_alert_rules WHERE member_callsign=? ORDER BY id`,
-			strings.ToUpper(memberCall))
-		if err != nil { http.Error(w, "db error", 500); return }
-		defer rows.Close()
+		memberStoreMu.RLock()
+		mem := memberByCallsign(memberCall)
 		var rules []MemberAlertRule
-		for rows.Next() {
-			var rule MemberAlertRule
-			rows.Scan(&rule.ID, &rule.Type, &rule.WatchCallsign, &rule.Lat, &rule.Lon, &rule.RadiusMi, &rule.Name)
-			rules = append(rules, rule)
-		}
+		if mem != nil && mem.AlertRules != nil { rules = mem.AlertRules }
 		if rules == nil { rules = []MemberAlertRule{} }
+		memberStoreMu.RUnlock()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(rules)
 		return
@@ -4221,13 +4233,21 @@ func handleAlertRules(w http.ResponseWriter, r *http.Request) {
 		}
 		if rule.RadiusMi <= 0 { rule.RadiusMi = 10 }
 		if rule.WatchCallsign == "" { rule.WatchCallsign = "*" }
-		res, err := db.Exec(
-			`INSERT INTO member_alert_rules (member_callsign,type,watch_callsign,lat,lon,radius_mi,name) VALUES (?,?,?,?,?,?,?)`,
-			strings.ToUpper(memberCall), rule.Type, strings.ToUpper(rule.WatchCallsign),
-			rule.Lat, rule.Lon, rule.RadiusMi, rule.Name)
-		if err != nil { http.Error(w, "db error", 500); return }
-		rule.ID, _ = res.LastInsertId()
+		rule.WatchCallsign = strings.ToUpper(rule.WatchCallsign)
+
+		memberStoreMu.Lock()
+		mem := memberByCallsign(memberCall)
+		if mem == nil { memberStoreMu.Unlock(); http.Error(w, "member not found", 404); return }
+		// Assign a simple incrementing ID
+		var maxID int64
+		for _, existing := range mem.AlertRules { if existing.ID > maxID { maxID = existing.ID } }
+		rule.ID = maxID + 1
+		mem.AlertRules = append(mem.AlertRules, rule)
+		saveMemberStore()
+		memberStoreMu.Unlock()
+
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(rule)
 		return
 	}
@@ -4239,77 +4259,81 @@ func handleAlertRuleDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete { http.Error(w, "DELETE required", 405); return }
 	memberCall := memberCallFromToken(r)
 	if memberCall == "" { http.Error(w, "unauthorized", 401); return }
+
 	idStr := strings.TrimPrefix(r.URL.Path, "/api/member/alert-rules/")
 	var id int64
 	if _, err := fmt.Sscanf(idStr, "%d", &id); err != nil {
 		http.Error(w, "invalid id", 400); return
 	}
-	db.Exec(`DELETE FROM geofence_state WHERE rule_id=?`, id)
-	db.Exec(`DELETE FROM member_alert_rules WHERE id=? AND member_callsign=?`,
-		id, strings.ToUpper(memberCall))
+
+	memberStoreMu.Lock()
+	mem := memberByCallsign(memberCall)
+	if mem != nil {
+		newRules := mem.AlertRules[:0]
+		for _, rule := range mem.AlertRules {
+			if rule.ID != id { newRules = append(newRules, rule) }
+		}
+		mem.AlertRules = newRules
+		saveMemberStore()
+	}
+	memberStoreMu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// checkGeofenceAlerts evaluates all stored geofence rules for a station that
-// just broadcast a position packet. Pushes a WS "alert" message directly to
-// the rule owner's connected WebSocket session (if they are currently online).
+// checkGeofenceAlerts is called for every position packet with valid coordinates.
+// It evaluates all member geofence rules that match watchCall and fires alerts
+// via pushAlertToMember when an enter/exit transition is detected.
 func checkGeofenceAlerts(watchCall string, lat, lon float64) {
-	type candidate struct {
-		ruleID     int64
+	typeAlerts := map[string]struct {
 		memberCall string
-		alertType  string
-		name       string
-		insidePrev int  // -1 = first time
+		rule       MemberAlertRule
 		distMi     float64
 		inside     bool
-	}
+	}{}
 
-	rows, err := db.Query(`
-		SELECT r.id, r.member_callsign, r.type, r.lat, r.lon, r.radius_mi, r.name,
-		       COALESCE(s.inside, -1)
-		FROM   member_alert_rules r
-		LEFT JOIN geofence_state s ON s.rule_id=r.id AND s.watch_callsign=?
-		WHERE  r.watch_callsign='*' OR UPPER(r.watch_callsign)=UPPER(?)`,
-		watchCall, watchCall)
-	if err != nil { return }
-	defer rows.Close()
-
-	var cands []candidate
-	for rows.Next() {
-		var c candidate
-		var rLat, rLon, radiusMi float64
-		rows.Scan(&c.ruleID, &c.memberCall, &c.alertType, &rLat, &rLon, &radiusMi, &c.name, &c.insidePrev)
-		distKm := haversineKm(lat, lon, rLat, rLon)
-		c.distMi = distKm * 0.621371
-		c.inside = c.distMi <= radiusMi
-		cands = append(cands, c)
-	}
-
-	for _, c := range cands {
-		// Persist current state
-		db.Exec(`INSERT OR REPLACE INTO geofence_state (rule_id,watch_callsign,inside) VALUES (?,?,?)`,
-			c.ruleID, watchCall, btoi(c.inside))
-
-		if c.insidePrev == -1 { continue } // first observation — no transition yet
-		prevInside := c.insidePrev == 1
-
-		var alertMsg string
-		zoneName := c.name
-		if zoneName == "" { zoneName = "zone" }
-
-		switch {
-		case c.alertType == "geofence_enter" && !prevInside && c.inside:
-			alertMsg = fmt.Sprintf("%s entered %s (%.1f mi from centre)", watchCall, zoneName, c.distMi)
-		case c.alertType == "geofence_exit" && prevInside && !c.inside:
-			alertMsg = fmt.Sprintf("%s left %s (%.1f mi from centre)", watchCall, zoneName, c.distMi)
+	memberStoreMu.RLock()
+	for _, mem := range memberStore.Members {
+		for _, rule := range mem.AlertRules {
+			wc := strings.ToUpper(rule.WatchCallsign)
+			if wc != "*" && wc != strings.ToUpper(watchCall) { continue }
+			distKm := haversineKm(lat, lon, rule.Lat, rule.Lon)
+			distMi := distKm * 0.621371
+			typeAlerts[gfKey(rule.ID, watchCall)] = struct {
+				memberCall string
+				rule       MemberAlertRule
+				distMi     float64
+				inside     bool
+			}{mem.Callsign, rule, distMi, distMi <= rule.RadiusMi}
 		}
-		if alertMsg == "" { continue }
-
-		pushAlertToMember(c.memberCall, c.alertType, watchCall, alertMsg)
 	}
+	memberStoreMu.RUnlock()
+
+	geofenceStateMu.Lock()
+	for key, cand := range typeAlerts {
+		prev, known := geofenceState[key]
+		nowInside := btoi(cand.inside)
+		geofenceState[key] = nowInside
+
+		if !known { continue } // first observation — initialise silently
+
+		zoneName := cand.rule.Name
+		if zoneName == "" { zoneName = "zone" }
+		var alertMsg string
+		switch {
+		case cand.rule.Type == "geofence_enter" && prev == 0 && nowInside == 1:
+			alertMsg = fmt.Sprintf("%s entered %s (%.1f mi from centre)", watchCall, zoneName, cand.distMi)
+		case cand.rule.Type == "geofence_exit" && prev == 1 && nowInside == 0:
+			alertMsg = fmt.Sprintf("%s left %s (%.1f mi from centre)", watchCall, zoneName, cand.distMi)
+		}
+		if alertMsg != "" {
+			go pushAlertToMember(cand.memberCall, cand.rule.Type, watchCall, alertMsg)
+		}
+	}
+	geofenceStateMu.Unlock()
 }
 
-// pushAlertToMember sends an alert WS frame to all sessions belonging to memberCall.
+// pushAlertToMember sends an alert WebSocket frame to all sessions that belong
+// to memberCall (matched by the WS client's authenticated callsign).
 func pushAlertToMember(memberCall, alertType, stationCall, message string) {
 	alert := map[string]interface{}{
 		"type":       "alert",
@@ -4327,7 +4351,7 @@ func pushAlertToMember(memberCall, alertType, stationCall, message string) {
 	clientsMu.Unlock()
 }
 
-// btoi converts bool to int (SQLite has no bool type).
+// btoi converts bool to int for the geofenceState map.
 func btoi(b bool) int { if b { return 1 }; return 0 }
 
 func handleAdminBackup(w http.ResponseWriter, r *http.Request) {
