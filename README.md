@@ -85,6 +85,15 @@ The server powers four dedicated clients — all open source under GPL v3:
 - **aisstream.io** — live AIS ship positions (see above)
 - **Met Office DataHub** — reserved for future detailed-forecast features
 
+### 📍 Geo-fence Alerts
+- Server-side geo-fence rules stored per member account in `members.json`
+- Rules evaluated on **every incoming position packet** — no polling, sub-second latency
+- Alert types: **Station enters zone** / **Station leaves zone**
+- Watch a specific callsign or use `*` for any station
+- Configurable zone name, lat/lon centre, radius (miles)
+- When a transition is detected, a `{"type":"alert","alert_type":"...","callsign":"...","message":"..."}` WebSocket frame is pushed to all live sessions belonging to the rule owner
+- Fully synced to Android (v2.5.11+) and iOS (v1.1.0+) via the REST API
+
 ### ⚙️ Admin Panel
 - First-run setup wizard at `/setup`
 - Hot-reload config, one-click update from GitHub, change password
@@ -151,6 +160,9 @@ echo "M0XYZ>APRS,TCPIP*:=5342.10N/00130.50W-Test" | nc -u -w1 YOUR-IP 14580
 | `GET /api/qrz/lookup?call=X` | No | QRZ.com operator profile (cached 24 h) |
 | `GET /api/wx/warnings` | No | UK Met Office warnings (cached 5 min) |
 | `POST /api/admin/update` | Yes | Pull latest code from GitHub, rebuild binary, restart service (streams progress) |
+| `GET /api/member/alert-rules` | X-Member-Token | List geo-fence alert rules for the authenticated member |
+| `POST /api/member/alert-rules` | X-Member-Token | Create a new geo-fence rule (enter/exit, callsign, lat/lon, radius) |
+| `DELETE /api/member/alert-rules/{id}` | X-Member-Token | Delete a geo-fence rule |
 | `GET /api/config` | Yes | Full server configuration JSON |
 | `POST /api/config` | Yes | Update and hot-reload configuration |
 | `GET /api/member/preferences` | X-Member-Token | Per-member map filter preferences |
@@ -166,6 +178,16 @@ Preferences sync automatically between the web map and Android/iOS clients (v2.5
 | `drop_apdesk` | Hide APDESK (UI-View desktop) beacons |
 
 ---
+
+## Changelog
+
+| Version | Changes |
+|---------|---------|
+| v1.4.0 | Geo-fence alert rules — server-side CRUD API + real-time evaluation on every position packet + WS push to member sessions |
+| v1.3.x | `POST /api/admin/update` self-update endpoint; GitHub Actions auto-deploy workflow; `haversineKm` distance utility |
+| v1.2.x | Per-member map filter preferences API; TOCALL-based station classification (`APZDMR*` → pistar, `APOG*` → ogn) in web map |
+| v1.1.x | Direct member messaging (`/api/member/message/send`); offline message storage and delivery; `AnukBadge` member indicator |
+| v1.0.x | Initial release — APRS-IS gateway, WebSocket API, interactive map, member accounts, AIS relay |
 
 ## Deployment
 
