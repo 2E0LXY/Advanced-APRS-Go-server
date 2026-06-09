@@ -1,0 +1,47 @@
+name: Deploy to theloxleys
+
+# Triggers:
+#  1. Automatically on every push to main
+#  2. Manually from the Actions tab (workflow_dispatch)
+#
+# Required repository secret:
+#   SERVER_SSH_KEY  — private key whose public key is in root@theloxleys:~/.ssh/authorized_keys
+#
+# To add the secret:
+#   GitHub → repo → Settings → Secrets and variables → Actions → New repository secret
+#   Name:  SERVER_SSH_KEY
+#   Value: paste the full private key (-----BEGIN ... -----END ...)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to theloxleys
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host:        aprsnet.uk
+          username:    root
+          key:         ${{ secrets.SERVER_SSH_KEY }}
+          port:        22
+          script: |
+            set -e
+            cd /opt/aprs-gateway
+
+            echo "=== git pull ==="
+            git pull origin main
+
+            echo "=== rebuild binary ==="
+            /usr/local/go/bin/go build -o aprs_server .
+
+            echo "=== restart service ==="
+            systemctl restart aprs
+
+            echo "=== verify running ==="
+            sleep 2
+            systemctl is-active aprs
+            echo "Deploy complete."
