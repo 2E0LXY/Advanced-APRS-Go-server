@@ -402,8 +402,10 @@ body { background: var(--bg-base); color: var(--text-base); }
 
     <!-- Member account -->
     <button onclick="openMemberPanel()" id="member-btn"
-      class="nav-btn px-3 py-1.5 bg-cyan-900 rounded-lg hover:bg-cyan-700 transition-colors font-semibold">
-      Sign in</button>
+      class="nav-btn px-3 py-1.5 bg-cyan-900 rounded-lg hover:bg-cyan-700 transition-colors
+             font-semibold relative flex items-center gap-1">
+      <span id="member-btn-label">Sign in</span>
+    </button>
 
     <!-- Theme -->
     <button onclick="toggleTheme()" id="theme-btn" title="Toggle light/dark mode"
@@ -3975,6 +3977,11 @@ function connectWS() {
         document.getElementById('auth-section').classList.add('hidden');
         document.getElementById('logged-in-section').classList.remove('hidden');
         document.getElementById('active-call').innerText = d.callsign;
+        // Update nav member button to show callsign + connected state
+        var _nl = document.getElementById('member-btn-label');
+        var _nb = document.getElementById('member-btn');
+        if (_nl) _nl.textContent = d.callsign;
+        if (_nb) { _nb.style.background = '#0e7490'; _nb.title = 'Connected — click for member options'; }
         const c = document.getElementById('compose-section');
         c.classList.remove('opacity-50','pointer-events-none');
         ['destCall','msgText'].forEach(id=>document.getElementById(id).disabled=false);
@@ -4415,6 +4422,11 @@ function sendAuth() {
   ws.send(JSON.stringify({type:'auth',callsign:myCallsign,passcode:pass,software:'WebNOC 2.0'}));
 }
 function doLogout() {
+  var _nl = document.getElementById('member-btn-label');
+  var _nb = document.getElementById('member-btn');
+  if (_nl) _nl.textContent = 'Sign in';
+  if (_nb) { _nb.style.background = ''; _nb.title = ''; }
+
   myCallsign='';
   document.getElementById('auth-section').classList.remove('hidden');
   document.getElementById('logged-in-section').classList.add('hidden');
@@ -5176,17 +5188,16 @@ function renderWatchlist() {
       var st = stations[call] || stations[call.split('-')[0]];
       var lastSeen = st ? new Date(st.lastHeard*1000).toLocaleTimeString() : 'Not yet heard';
       var color = st && (Math.floor(Date.now()/1000)-st.lastHeard) < 3600 ? 'text-green-400' : 'text-gray-400';
-      var d = document.createElement('div');
-      d.className = 'flex items-center justify-between bg-gray-700 rounded p-2 text-sm';
-      d.innerHTML = '<div class="flex items-center space-x-3">'
-        + '<span class="font-bold font-mono text-amber-300">' + call + '</span>'
-        + '<span class="text-xs ' + color + '">' + lastSeen + '</span></div>'
+      // Use inline onclick so handlers survive innerHTML serialisation (outerHTML drops them)
+      var sc = call.replace(/'/g, "\\'");
+      return '<div class="flex items-center justify-between bg-gray-700 rounded p-2 text-sm">'
+        + '<div class="flex items-center space-x-3">'
+        + '<span class="font-bold font-mono text-amber-300">' + escapeHtml(call) + '</span>'
+        + '<span class="text-xs ' + color + '">' + escapeHtml(lastSeen) + '</span></div>'
         + '<div class="flex space-x-2">'
-        + '<button class="text-xs text-blue-400 hover:text-blue-300 watch-map-btn">Map</button>'
-        + '<button class="text-xs text-red-400 hover:text-red-300 watch-rm-btn">Remove</button></div>';
-      d.querySelector('.watch-map-btn').onclick = function(){ centerOnStation(call); };
-      d.querySelector('.watch-rm-btn').onclick = function(){ removeFromWatchlist(call); };
-      return d.outerHTML;
+        + '<button class="text-xs text-blue-400 hover:text-blue-300" onclick="centerOnStation(\'' + sc + \')">Map</button>'
+        + '<button class="text-xs text-red-400 hover:text-red-300" onclick="removeFromWatchlist(\'' + sc + \')">✕ Remove</button>'
+        + '</div></div>';
     }).join('');
   }
   renderAlertLog();
@@ -12335,12 +12346,14 @@ var _serverGfRules = [];
 // Update the notification section in the alerts panel based on member state
 function apUpdateNotifSection() {
   var token = localStorage.getItem('aprs-member-token');
+  // Gate on APRS-IS auth (myCallsign) OR member token — server pushes via WS either way
+  var _isAuthed = !!(token || window.myCallsign);
   var signin = document.getElementById('ap-notif-signin-msg');
   var controls = document.getElementById('ap-notif-controls');
   var statusEl = document.getElementById('ap-notif-status');
   var btn = document.getElementById('ap-notif-btn');
   if (!signin || !controls) return;
-  if (!token) {
+  if (!_isAuthed) {
     signin.classList.remove('hidden');
     controls.classList.add('hidden');
   } else {
