@@ -566,7 +566,7 @@ body { background: var(--bg-base); color: var(--text-base); }
     </div>
 
     <!-- Create/Edit Object Modal -->
-    <div id="obj-modal" class="hidden fixed inset-0 flex" style="z-index:100000"  class2=" items-center justify-center p-4 bg-black/70" onclick="if(event.target===this)closeObjModal()">
+    <div id="obj-modal" class="hidden fixed inset-0 flex" style="z-index:100000"   onclick="if(event.target===this)closeObjModal()">
       <div class="bg-gray-900 border border-orange-700 rounded-xl shadow-2xl w-full max-w-2xl">
         <div class="flex items-center justify-between p-4 border-b border-gray-700">
           <h2 class="text-lg font-bold text-orange-400" id="obj-modal-title">📌 Create APRS Object</h2>
@@ -12261,7 +12261,7 @@ saveAlertRule = function() {
 </div>
 
 <!-- Time-Lapse Replay Modal -->
-<div id="timelapse-modal" class="hidden fixed inset-0 flex" style="z-index:100000"  class2=" items-center justify-center p-4 bg-black/70" onclick="if(event.target===this)closeTimelapse()">
+<div id="timelapse-modal" class="hidden fixed inset-0 flex" style="z-index:100000"   onclick="if(event.target===this)closeTimelapse()">
   <div class="bg-gray-900 border border-purple-700 rounded-xl shadow-2xl w-full max-w-md">
     <div class="flex items-center justify-between p-4 border-b border-gray-700">
       <h2 class="text-lg font-bold text-purple-400">⏯ Time-Lapse Replay</h2>
@@ -12304,7 +12304,7 @@ saveAlertRule = function() {
   </div>
 </div>
 <!-- Smart Alert Rule Modal -->
-<div id="alert-rule-modal" class="hidden fixed inset-0 flex" style="z-index:100000"  class2=" items-center justify-center p-4 bg-black/70" onclick="if(event.target===this)closeRuleModal()">
+<div id="alert-rule-modal" class="hidden fixed inset-0 flex items-center justify-center p-4 bg-black bg-opacity-70" style="z-index:100000" onclick="if(event.target===this)closeRuleModal()">
   <div class="bg-gray-900 border border-amber-700 rounded-xl shadow-2xl w-full max-w-lg">
     <div class="flex items-center justify-between p-4 border-b border-gray-700">
       <h2 class="text-lg font-bold text-amber-400">⚡ New Alert Rule</h2>
