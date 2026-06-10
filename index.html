@@ -331,30 +331,90 @@ body { background: var(--bg-base); color: var(--text-base); }
       </div>
     </div>
   </div>
-  <div class="flex space-x-1 text-xs font-medium">
-    <button onclick="togglePanel('map')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Map</button>
-    <button onclick="togglePanel('search')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Stations</button>
-    <button onclick="shareCurrentView()" title="Copy link to this map view" class="px-2 py-1.5 bg-gray-800 hover:bg-cyan-700 rounded transition-colors text-xs">🔗</button>
-    <button onclick="openSearchModal()" title="Smart Search (Ctrl+K)" class="px-2 py-1.5 bg-gray-800 hover:bg-cyan-700 rounded transition-colors text-xs">🔍 <kbd class="hidden md:inline-block ml-1 px-1 py-0.5 bg-gray-700 rounded text-[10px] border border-gray-600">⌘K</kbd></button>
-    <button onclick="togglePanel('messages')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Messages</button>
-    <button onclick="togglePanel('status')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Status</button>
-    <button onclick="togglePanel('wx')" class="px-3 py-1.5 bg-sky-900 hover:bg-sky-700 rounded transition-colors">🌦 Weather</button>
-    <button onclick="togglePanel('watch')" class="px-3 py-1.5 bg-amber-900 hover:bg-amber-700 rounded transition-colors">👁 Watch</button>
-      <button onclick="togglePanel('alerts')" class="px-3 py-1.5 bg-orange-900 hover:bg-orange-700 rounded transition-colors text-sm font-medium" title="Geo-fence alerts and smart notification rules">📍 Alerts</button>
-    <button onclick="togglePanel('iss')" class="px-3 py-1.5 bg-indigo-900 hover:bg-indigo-700 rounded transition-colors">🛸 ISS</button>
-    <button onclick="togglePanel('objects')" class="px-3 py-1.5 bg-orange-900 hover:bg-orange-700 rounded transition-colors">📌 Objects</button>
-    <button onclick="togglePanel('utils')" class="px-3 py-1.5 bg-teal-900 hover:bg-teal-700 rounded transition-colors">🔧 Utils</button>
-    <button onclick="togglePanel('mesh')" class="px-3 py-1.5 bg-violet-900 hover:bg-violet-700 rounded transition-colors">🕸 Mesh</button>
-    <button onclick="togglePanel('leaderboard')" class="px-3 py-1.5 bg-rose-900 hover:bg-rose-700 rounded transition-colors">🏆 Board</button>
-    <button onclick="togglePanel('help')" class="px-3 py-1.5 bg-green-900 hover:bg-green-700 rounded transition-colors">Help</button>
-    <button onclick="openMemberPanel()" id="member-btn" class="px-3 py-1.5 bg-cyan-900 hover:bg-cyan-700 rounded transition-colors">👤 <span id="member-btn-label">Login</span></button>
-    <button onclick="togglePanel('admin')" class="px-3 py-1.5 bg-red-900 hover:bg-red-700 rounded transition-colors">Admin</button>
+  <!-- ── Primary navigation ─────────────────────────────────────────────── -->
+  <nav class="flex items-center gap-1 text-xs">
+
+    <!-- Core views -->
+    <div class="flex items-center bg-gray-800 rounded-lg p-0.5 gap-0.5">
+      <button onclick="togglePanel('map')"
+        class="nav-btn px-3 py-1.5 rounded-md hover:bg-gray-600 transition-colors">Map</button>
+      <button onclick="togglePanel('search')"
+        class="nav-btn px-3 py-1.5 rounded-md hover:bg-gray-600 transition-colors">Stations</button>
+      <button onclick="togglePanel('messages')"
+        class="nav-btn px-3 py-1.5 rounded-md hover:bg-gray-600 transition-colors">Messages</button>
+      <button onclick="togglePanel('alerts')"
+        class="nav-btn px-3 py-1.5 rounded-md hover:bg-gray-600 transition-colors">Alerts</button>
+      <button onclick="togglePanel('watch')"
+        class="nav-btn px-3 py-1.5 rounded-md hover:bg-gray-600 transition-colors">Watch</button>
+      <button onclick="togglePanel('status')"
+        class="nav-btn px-3 py-1.5 rounded-md hover:bg-gray-600 transition-colors">Status</button>
+    </div>
+
+    <!-- Tools dropdown -->
+    <div class="relative" id="tools-dropdown-wrap">
+      <button onclick="toggleToolsMenu()"
+        class="nav-btn flex items-center gap-1 px-3 py-1.5 bg-gray-800 rounded-lg hover:bg-gray-600 transition-colors">
+        Tools <span id="tools-arrow" class="opacity-60">▾</span>
+      </button>
+      <div id="tools-menu"
+        class="hidden absolute left-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl py-1 min-w-36"
+        style="z-index:9999">
+        <button onclick="togglePanel('wx');closeToolsMenu()"
+          class="w-full text-left px-4 py-2 hover:bg-gray-700 flex items-center gap-2">
+          <span class="opacity-60">🌤</span> Weather</button>
+        <button onclick="togglePanel('iss');closeToolsMenu()"
+          class="w-full text-left px-4 py-2 hover:bg-gray-700 flex items-center gap-2">
+          <span class="opacity-60">🛰</span> ISS Tracker</button>
+        <button onclick="togglePanel('objects');closeToolsMenu()"
+          class="w-full text-left px-4 py-2 hover:bg-gray-700 flex items-center gap-2">
+          <span class="opacity-60">📌</span> Objects</button>
+        <button onclick="togglePanel('utils');closeToolsMenu()"
+          class="w-full text-left px-4 py-2 hover:bg-gray-700 flex items-center gap-2">
+          <span class="opacity-60">🔧</span> Utilities</button>
+        <button onclick="togglePanel('mesh');closeToolsMenu()"
+          class="w-full text-left px-4 py-2 hover:bg-gray-700 flex items-center gap-2">
+          <span class="opacity-60">📡</span> Mesh</button>
+        <button onclick="togglePanel('leaderboard');closeToolsMenu()"
+          class="w-full text-left px-4 py-2 hover:bg-gray-700 flex items-center gap-2">
+          <span class="opacity-60">🏆</span> Board</button>
+        <hr class="border-gray-700 my-1">
+        <button onclick="shareCurrentView();closeToolsMenu()"
+          class="w-full text-left px-4 py-2 hover:bg-gray-700 flex items-center gap-2">
+          <span class="opacity-60">🔗</span> Share view</button>
+        <button onclick="openSearchModal();closeToolsMenu()"
+          class="w-full text-left px-4 py-2 hover:bg-gray-700 flex items-center gap-2">
+          <span class="opacity-60">⌨</span> Smart Search</button>
+      </div>
+    </div>
+
+    <!-- Help -->
+    <button onclick="togglePanel('help')"
+      class="nav-btn px-3 py-1.5 bg-gray-800 rounded-lg hover:bg-gray-600 transition-colors">Help</button>
+
+    <!-- Admin -->
+    <button onclick="togglePanel('admin')"
+      class="nav-btn px-3 py-1.5 bg-red-900 rounded-lg hover:bg-red-700 transition-colors font-semibold">Admin</button>
+
+    <!-- Update available (hidden until update detected) -->
     <button id="update-btn" onclick="triggerUpdateFromHeader()"
-       class="hidden px-3 py-1.5 bg-yellow-600 hover:bg-yellow-500 rounded transition-colors font-bold animate-pulse"
-       title="">⬆ Update Available</button>
+      class="hidden px-3 py-1.5 bg-yellow-600 hover:bg-yellow-500 rounded-lg font-bold animate-pulse"
+      title="">⬆ Update</button>
+
+    <!-- Member account -->
+    <button onclick="openMemberPanel()" id="member-btn"
+      class="nav-btn px-3 py-1.5 bg-cyan-900 rounded-lg hover:bg-cyan-700 transition-colors font-semibold">
+      Sign in</button>
+
+    <!-- Theme -->
     <button onclick="toggleTheme()" id="theme-btn" title="Toggle light/dark mode"
-      class="px-2 py-1.5 bg-gray-700 hover:bg-gray-600 rounded transition-colors text-base leading-none">🌙</button>
-  </div>
+      class="px-2 py-1.5 bg-gray-800 rounded-lg hover:bg-gray-600 transition-colors leading-none">🌙</button>
+
+  </nav>
+  <style>
+    .nav-btn { color: #e2e8f0; }
+    .nav-btn:hover { color: #fff; }
+    .nav-active { background: #1d4ed8 !important; color: #fff !important; }
+  </style>
 </div>
 
 <!-- MOTD Banner -->
@@ -934,13 +994,16 @@ body { background: var(--bg-base); color: var(--text-base); }
           <div id="ap-alert-rules-list" class="space-y-1 text-xs"></div>
         </div>
 
-        <!-- Notification permissions -->
-        <div class="bg-gray-800 p-4 rounded border border-gray-700">
+        <!-- Notification permissions — members only -->
+        <div id="ap-notif-section" class="bg-gray-800 p-4 rounded border border-gray-700">
           <h3 class="text-sm font-bold text-gray-300 mb-2">🔔 Browser Notifications</h3>
-          <div class="flex items-center justify-between">
-            <span id="ap-notif-status" class="text-xs text-gray-500"></span>
-            <button onclick="requestNotifPermission()" id="ap-notif-btn"
-              class="text-xs bg-amber-800 hover:bg-amber-700 px-3 py-1.5 rounded">
+          <div id="ap-notif-signin-msg" class="text-xs text-gray-500 hidden">
+            Sign in to your member account to enable geo-fence push notifications.
+          </div>
+          <div id="ap-notif-controls" class="flex items-center justify-between hidden">
+            <span id="ap-notif-status" class="text-xs text-gray-400"></span>
+            <button onclick="apRequestNotif()" id="ap-notif-btn"
+              class="text-xs bg-amber-800 hover:bg-amber-700 px-3 py-1.5 rounded font-medium">
               Enable Notifications
             </button>
           </div>
@@ -3262,7 +3325,7 @@ function togglePanel(panel) {
   if (panel==='status') { loadStatus(); statusInterval = setInterval(loadStatus, 5000); }
   if (panel==='iss') { refreshISS(); renderISSLocal(); }
   if (panel==='watch')   { renderWatchlist(); }
-  if (panel==='alerts')  { loadServerGfRules(); }
+  if (panel==='alerts')  { loadServerGfRules(); apUpdateNotifSection(); }
   if (panel==='wx') { renderWX(); }
   if (panel==='leaderboard') { renderLeaderboard(); }
   if (panel==='utils') { initUtils(); }
@@ -9831,6 +9894,8 @@ function renderAlertRules() {
       + '</div>'
       + '</div>';
   }).join('');
+  // Also update the Alerts panel list
+  if (el2) el2.innerHTML = el.innerHTML;
 }
 function describeRule(r) {
   switch(r.type) {
@@ -9871,7 +9936,10 @@ function updateRuleForm() {
       + '<div><label class="text-xs text-gray-400 block mb-1">Lon</label><input type="number" step="any" id="r-lon" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none"></div>'
       + '<div><label class="text-xs text-gray-400 block mb-1">Radius mi</label><input type="number" id="r-radius" value="5" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none"></div>'
       + '</div>'
-      + '<button onclick="useMapCentre()" class="text-xs bg-blue-700 hover:bg-blue-600 px-2 py-1 rounded mt-1">Use current map centre</button>';
+      + '<div class="flex gap-2 mt-2">'
+      + '<button onclick="useMapCentre()" class="text-xs bg-blue-800 hover:bg-blue-700 px-2 py-1 rounded">📍 Map centre</button>'
+      + '<button onclick="pickFromMapClick()" class="text-xs bg-green-800 hover:bg-green-700 px-2 py-1 rounded">🖱 Click map to pick</button>'
+      + '</div>';
   } else if (t === 'comment_contains') {
     p.innerHTML = '<div><label class="text-xs text-gray-400 block mb-1">Keyword (case-insensitive)</label>'
       + '<input type="text" id="r-keyword" placeholder="e.g. emergency, sar, qrt" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none"></div>';
@@ -9890,6 +9958,39 @@ function useMapCentre() {
     document.getElementById('r-lat').value = c.lat.toFixed(4);
     document.getElementById('r-lon').value = c.lng.toFixed(4);
   } catch(e) {}
+}
+var _pickingForGeoFence = false;
+function pickFromMapClick() {
+  // Close the modal temporarily and drop a banner
+  document.getElementById('alert-rule-modal').classList.add('hidden');
+  _pickingForGeoFence = true;
+  var banner = document.createElement('div');
+  banner.id = '__gf-pick-banner';
+  banner.style.cssText = 'position:fixed;top:60px;left:50%;transform:translateX(-50%);' +
+    'background:#166534;color:#fff;padding:10px 20px;border-radius:8px;' +
+    'z-index:200000;font-size:13px;font-weight:bold;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.4)';
+  banner.textContent = '📍 Click anywhere on the map to set the geo-fence centre';
+  banner.onclick = function() { cancelGfPick(); };
+  document.body.appendChild(banner);
+  map.once('click', function(e) {
+    if (!_pickingForGeoFence) return;
+    document.getElementById('alert-rule-modal').classList.remove('hidden');
+    // Re-run updateRuleForm to restore the form fields
+    document.getElementById('rule-type').value = 'geofence_enter';
+    updateRuleForm();
+    setTimeout(function() {
+      var latEl = document.getElementById('r-lat');
+      var lonEl = document.getElementById('r-lon');
+      if (latEl) latEl.value = e.latlng.lat.toFixed(5);
+      if (lonEl) lonEl.value = e.latlng.lng.toFixed(5);
+    }, 50);
+    cancelGfPick();
+  });
+}
+function cancelGfPick() {
+  _pickingForGeoFence = false;
+  var b = document.getElementById('__gf-pick-banner');
+  if (b) b.remove();
 }
 function saveAlertRule() {
   var r = {
@@ -11849,6 +11950,49 @@ setInterval(checkForUpdates, 3600000); // re-check every hour
 /* ── Server-side geo-fence rule management from web ────────────────────── */
 var _serverGfRules = [];
 
+// Update the notification section in the alerts panel based on member state
+function apUpdateNotifSection() {
+  var token = localStorage.getItem('aprs-member-token');
+  var signin = document.getElementById('ap-notif-signin-msg');
+  var controls = document.getElementById('ap-notif-controls');
+  var statusEl = document.getElementById('ap-notif-status');
+  var btn = document.getElementById('ap-notif-btn');
+  if (!signin || !controls) return;
+  if (!token) {
+    signin.classList.remove('hidden');
+    controls.classList.add('hidden');
+  } else {
+    signin.classList.add('hidden');
+    controls.classList.remove('hidden');
+    if (typeof Notification !== 'undefined') {
+      if (Notification.permission === 'granted') {
+        if (statusEl) statusEl.innerText = '✓ Notifications enabled';
+        if (btn) { btn.innerText = '✓ Enabled'; btn.classList.add('bg-green-800'); btn.classList.remove('bg-amber-800'); }
+      } else if (Notification.permission === 'denied') {
+        if (statusEl) statusEl.innerText = 'Blocked — enable in browser settings';
+        if (btn) btn.disabled = true;
+      } else {
+        if (statusEl) statusEl.innerText = 'Click to enable desktop notifications';
+      }
+    } else {
+      if (statusEl) statusEl.innerText = 'Not supported in this browser';
+      if (btn) btn.disabled = true;
+    }
+  }
+}
+
+function apRequestNotif() {
+  var token = localStorage.getItem('aprs-member-token');
+  if (!token) { alert('Sign in to your member account first.'); return; }
+  if (typeof Notification === 'undefined') return;
+  Notification.requestPermission().then(function(perm) {
+    apUpdateNotifSection();
+    if (perm === 'granted') {
+      new Notification('APRS Net', {body: 'Geo-fence notifications enabled!', icon: '/favicon.ico'});
+    }
+  });
+}
+
 function loadServerGfRules() {
   var token = localStorage.getItem('aprs-member-token');
   if (!token) {
@@ -11949,6 +12093,26 @@ saveAlertRule = function() {
 
 // togglePanel now handles alerts inline (see togglePanel function)
 /* ── End server geo-fence JS ─────────────────────────────────────────────── */
+
+/* ── Tools dropdown ─────────────────────────────────────────────────────── */
+function toggleToolsMenu() {
+  var m = document.getElementById('tools-menu');
+  var a = document.getElementById('tools-arrow');
+  if (!m) return;
+  m.classList.toggle('hidden');
+  if (a) a.textContent = m.classList.contains('hidden') ? '▾' : '▴';
+}
+function closeToolsMenu() {
+  var m = document.getElementById('tools-menu');
+  var a = document.getElementById('tools-arrow');
+  if (m) m.classList.add('hidden');
+  if (a) a.textContent = '▾';
+}
+// Close tools menu when clicking outside
+document.addEventListener('click', function(e) {
+  var wrap = document.getElementById('tools-dropdown-wrap');
+  if (wrap && !wrap.contains(e.target)) closeToolsMenu();
+});
 </script>
 <!-- WX Station Detail Modal -->
 <div id="wx-detail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-2 bg-black/70" onclick="if(event.target===this)closeWXDetail()">
