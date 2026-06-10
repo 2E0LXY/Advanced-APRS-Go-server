@@ -3542,14 +3542,16 @@ function logMsgHistory(m) {
 }
 
 function logChat(sender, message, colorClass) {
-  // Wire incoming APRS messages (format "FROM→TO") into the conversation inbox
-  const _lc_m = String(sender).match(/^([A-Z0-9\-]+)\s*→\s*([A-Z0-9\-]+)$/i);
-  if (_lc_m && colorClass === 'text-gray-300' && _lc_m[1] !== (myCallsign||'')) {
-    const _from = _lc_m[1].toUpperCase();
-    if (!_conversations[_from]) _conversations[_from] = [];
-    _conversations[_from].push({from:_from, to:_lc_m[2], text:String(message), ts:Date.now(), out:false, read:(_activeConv===_from)});
+  // Route incoming APRS messages to conversations store (Android-style)
+  var _lc_m2 = String(sender).match(/^([A-Z0-9\-]+)\s*[→>]\s*([A-Z0-9\-]+)$/i);
+  if (_lc_m2 && _lc_m2[1] !== (myCallsign||'')) {
+    var _from2 = _lc_m2[1].toUpperCase();
+    if (!_conversations[_from2]) _conversations[_from2] = [];
+    _conversations[_from2].push({from:_from2, to:(_lc_m2[2]||'').toUpperCase(),
+      text:String(message), ts:Date.now(), out:false,
+      read:(_activeConv===_from2), state:MSG_STATE.ACKED});
     renderConversationList();
-    if (_activeConv === _from) renderThread(_from);
+    if (_activeConv === _from2) renderThread(_from2);
   }
   const log = document.getElementById('chat-log'); if (!log) return;
   while (log.children.length >= 100) log.removeChild(log.firstChild);
