@@ -4426,13 +4426,55 @@ function doLogout() {
 function sendMsg() {
   if (demoBlock("messaging is disabled")) return;
   if (!myCallsign) return;
-  const to=document.getElementById('destCall').value.toUpperCase().padEnd(9,' ');
-  const text=document.getElementById('msgText').value.trim(); if (!text) return;
-  const id=String(msgCounter).padStart(2,'0');
-  ws.send(JSON.stringify({type:'tx',packet:`${myCallsign}>APRS,TCPIP*::${to}:${text}{${id}`}));
-  logChat(`${myCallsign}→${to.trim()}`,text,'text-white');
-  document.getElementById('msgText').value='';
-  msgCounter=(msgCounter%99)+1;
+  // Get destination from active conversation or destCall fallback
+  var to = (_activeConv || (document.getElementById('destCall') && document.getElementById('destCall').value) || '').toUpperCase().trim();
+  var ta = document.getElementById('msgText');
+  var text = ta ? ta.value.trim() : '';
+  if (!to || !text) return;
+
+  // Build conversation record with Android-matching state
+  if (!_conversations[to]) _conversations[to] = [];
+  var msg = {from:(myCallsign||'ME'), to:to, text:text,
+             ts:Date.now(), out:true, read:true, state:MSG_STATE.SENT, retries:0};
+  _conversations[to].push(msg);
+  if (ta) { ta.value = ''; ta.style.height = 'auto'; }
+  msgCharCount();
+
+  if (typeof _deliveryRoute !== 'undefined' && _deliveryRoute === 'direct') {
+    // Server-direct delivery (no RF)
+    var token = localStorage.getItem('aprs-member-token');
+    msg.state = MSG_STATE.SENDING;
+    if (token) {
+      fetch('/api/member/message/send', {
+        method:'POST', headers:{'Content-Type':'application/json','X-Member-Token':token},
+        body: JSON.stringify({to:to, text:text})
+      }).then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(d){
+          msg.state = d && d.ok ? MSG_STATE.SERVER_SENT : MSG_STATE.FAILED;
+          if (_activeConv===to) renderThread(to);
+          renderConversationList();
+        });
+    } else {
+      msg.state = MSG_STATE.FAILED;
+    }
+  } else {
+    // Send via APRS-IS WS
+    const id = String(msgCounter).padStart(2,'0');
+    ws.send(JSON.stringify({type:'tx', packet:`${myCallsign}>APRS,TCPIP*::${to.padEnd(9,' ')}:${text}{${id}`}));
+    logChat(`${myCallsign}→${to}`, text, 'text-white');
+    msgCounter = (msgCounter % 99) + 1;
+    // Auto-fail after 90s if no ACK
+    setTimeout(function() {
+      if (msg.state === MSG_STATE.SENT) {
+        msg.state = MSG_STATE.FAILED;
+        if (_activeConv === to) renderThread(to);
+        renderConversationList();
+      }
+    }, 90000);
+  }
+
+  renderConversationList();
+  if (_activeConv === to) renderThread(to);
 }
 function sendAck(to,id) {
   if (!myCallsign) return;
