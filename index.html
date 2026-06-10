@@ -931,15 +931,15 @@ body { background: var(--bg-base); color: var(--text-base); }
           <p class="text-xs text-gray-600 mb-2">
             Trigger types: callsign appears, callsign silent, station enters/exits zone, comment keyword, weather threshold.
           </p>
-          <div id="alert-rules-list" class="space-y-1 text-xs"></div>
+          <div id="ap-alert-rules-list" class="space-y-1 text-xs"></div>
         </div>
 
         <!-- Notification permissions -->
         <div class="bg-gray-800 p-4 rounded border border-gray-700">
           <h3 class="text-sm font-bold text-gray-300 mb-2">🔔 Browser Notifications</h3>
           <div class="flex items-center justify-between">
-            <span id="notif-status" class="text-xs text-gray-500"></span>
-            <button onclick="requestNotifPermission()" id="notif-btn"
+            <span id="ap-notif-status" class="text-xs text-gray-500"></span>
+            <button onclick="requestNotifPermission()" id="ap-notif-btn"
               class="text-xs bg-amber-800 hover:bg-amber-700 px-3 py-1.5 rounded">
               Enable Notifications
             </button>
@@ -3249,7 +3249,7 @@ function toggleOverlay(type) {
 
 
 function togglePanel(panel) {
-  ['map','search','messages','status','help','admin','iss','watch','wx','utils','leaderboard','objects','mesh'].forEach(function(p) {
+  ['map','search','messages','status','help','admin','iss','watch','wx','utils','leaderboard','objects','mesh','alerts'].forEach(function(p) {
     var el = document.getElementById(p+'-panel');
     if (el) el.classList.add('hidden');
   });
@@ -3261,7 +3261,8 @@ function togglePanel(panel) {
   if (panel==='admin') { loadAdmin(); if (_latestVersion && _latestVersion !== _runningVersion) showUpdateBanner(); }
   if (panel==='status') { loadStatus(); statusInterval = setInterval(loadStatus, 5000); }
   if (panel==='iss') { refreshISS(); renderISSLocal(); }
-  if (panel==='watch') { renderWatchlist(); }
+  if (panel==='watch')   { renderWatchlist(); }
+  if (panel==='alerts')  { loadServerGfRules(); }
   if (panel==='wx') { renderWX(); }
   if (panel==='leaderboard') { renderLeaderboard(); }
   if (panel==='utils') { initUtils(); }
@@ -9810,9 +9811,11 @@ function saveAlertRulesStorage() {
 }
 function renderAlertRules() {
   var el = document.getElementById('alert-rules-list');
+  var el2 = document.getElementById('ap-alert-rules-list');
   if (!el) return;
   if (!_alertRules.length) {
-    el.innerHTML = '<p class="text-gray-600 text-center py-3">No alert rules - click "+ Add Rule" to create one</p>';
+    if (el) el.innerHTML = '<p class="text-gray-600 text-center py-3">No alert rules - click "+ Add Rule" to create one</p>';
+  if (el2) el2.innerHTML = el ? el.innerHTML : '';
     return;
   }
   el.innerHTML = _alertRules.map(function(r, i) {
@@ -11944,14 +11947,7 @@ saveAlertRule = function() {
   if (_origSaveAlertRule) _origSaveAlertRule();
 };
 
-// Load server rules when alerts panel opens
-var _origTogglePanel = typeof togglePanel === 'function' ? togglePanel : null;
-if (_origTogglePanel) {
-  togglePanel = function(name) {
-    _origTogglePanel(name);
-    if (name === 'alerts') loadServerGfRules();
-  };
-}
+// togglePanel now handles alerts inline (see togglePanel function)
 /* ── End server geo-fence JS ─────────────────────────────────────────────── */
 </script>
 <!-- WX Station Detail Modal -->
