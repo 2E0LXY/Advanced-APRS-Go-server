@@ -5187,18 +5187,25 @@ function renderWatchlist() {
     list.innerHTML = watchlist.map(function(call) {
       var st = stations[call] || stations[call.split('-')[0]];
       var lastSeen = st ? new Date(st.lastHeard*1000).toLocaleTimeString() : 'Not yet heard';
-      var color = st && (Math.floor(Date.now()/1000)-st.lastHeard) < 3600 ? 'text-green-400' : 'text-gray-400';
-      // Use inline onclick so handlers survive innerHTML serialisation (outerHTML drops them)
-      var sc = call.replace(/'/g, "\\'");
-      return '<div class="flex items-center justify-between bg-gray-700 rounded p-2 text-sm">'
+      var col = st && (Math.floor(Date.now()/1000)-st.lastHeard) < 3600 ? 'text-green-400' : 'text-gray-400';
+      // data-call avoids all HTML-quoting issues with special characters in callsigns
+      return '<div class="flex items-center justify-between bg-gray-700 rounded p-2 text-sm" data-call="' + escapeHtml(call) + '">'
         + '<div class="flex items-center space-x-3">'
         + '<span class="font-bold font-mono text-amber-300">' + escapeHtml(call) + '</span>'
-        + '<span class="text-xs ' + color + '">' + escapeHtml(lastSeen) + '</span></div>'
+        + '<span class="text-xs ' + col + '">' + escapeHtml(lastSeen) + '</span></div>'
         + '<div class="flex space-x-2">'
-        + '<button class="text-xs text-blue-400 hover:text-blue-300" onclick="centerOnStation(\'' + sc + \')">Map</button>'
-        + '<button class="text-xs text-red-400 hover:text-red-300" onclick="removeFromWatchlist(\'' + sc + \')">✕ Remove</button>'
+        + '<button class="text-xs text-blue-400 hover:text-blue-300 wl-map-btn">Map</button>'
+        + '<button class="text-xs text-red-400 hover:text-red-300 wl-rm-btn">✕ Remove</button>'
         + '</div></div>';
     }).join('');
+    // Attach delegated click handler to the list container
+    list.onclick = function(e) {
+      var row = e.target.closest('[data-call]');
+      if (!row) return;
+      var c = row.dataset.call;
+      if (e.target.classList.contains('wl-rm-btn'))  removeFromWatchlist(c);
+      if (e.target.classList.contains('wl-map-btn')) centerOnStation(c);
+    };
   }
   renderAlertLog();
   updateNotifBtn();
@@ -12347,7 +12354,7 @@ var _serverGfRules = [];
 function apUpdateNotifSection() {
   var token = localStorage.getItem('aprs-member-token');
   // Gate on APRS-IS auth (myCallsign) OR member token — server pushes via WS either way
-  var _isAuthed = !!(token || window.myCallsign);
+  var _isAuthed = !!(token || myCallsign);
   var signin = document.getElementById('ap-notif-signin-msg');
   var controls = document.getElementById('ap-notif-controls');
   var statusEl = document.getElementById('ap-notif-status');
