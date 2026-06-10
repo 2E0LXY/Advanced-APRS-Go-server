@@ -806,77 +806,160 @@ body { background: var(--bg-base); color: var(--text-base); }
     </div>
 
     <!-- MESSAGES -->
-    <div id="messages-panel" class="absolute inset-0 z-20 bg-gray-900 hidden flex flex-col overflow-hidden">
+    <div id="messages-panel" class="absolute inset-0 z-20 hidden flex flex-col overflow-hidden"
+      style="background:#0b1526;">
 
-      <!-- ── Top bar: auth controls ──────────────────────────────────── -->
-      <div class="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-gray-800 border-b border-gray-700">
+      <!-- Circuit board background canvas -->
+      <canvas id="msg-bg-canvas" class="absolute inset-0"
+        style="width:100%;height:100%;pointer-events:none;opacity:0.18;"></canvas>
+
+      <!-- ── Auth bar ──────────────────────────────────────────────────────── -->
+      <div class="flex-shrink-0 relative flex items-center gap-2 px-3 py-2 border-b"
+        style="z-index:2;background:rgba(11,21,38,0.97);border-color:#1e3a5f;">
+        <!-- not authed -->
         <div id="auth-section" class="flex items-center gap-2 flex-1">
-          <form onsubmit="sendAuth();return false;" class="flex gap-2 flex-1">
+          <form onsubmit="sendAuth();return false;" class="flex gap-2 flex-1 flex-wrap">
             <input type="text" id="myCall" placeholder="Callsign" autocomplete="username"
-              class="bg-gray-700 p-1.5 rounded uppercase text-sm outline-none border border-gray-600 w-28">
+              class="p-1.5 rounded uppercase text-sm outline-none w-28"
+              style="background:#162032;border:1px solid #1e3a5f;color:#e2e8f0;">
             <input type="password" id="myPass" placeholder="Passcode" autocomplete="current-password"
-              class="bg-gray-700 p-1.5 rounded text-sm outline-none border border-gray-600 w-24">
-            <button type="submit" class="bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded text-sm font-bold">Login</button>
+              class="p-1.5 rounded text-sm outline-none w-24"
+              style="background:#162032;border:1px solid #1e3a5f;color:#e2e8f0;">
+            <button type="submit"
+              class="px-3 py-1.5 rounded text-sm font-bold"
+              style="background:#1d4ed8;color:#fff;">Login</button>
           </form>
         </div>
+        <!-- authed -->
         <div id="logged-in-section" class="hidden flex items-center gap-3 flex-1">
-          <span class="text-green-400 text-sm">📡 <span id="active-call" class="font-bold text-white"></span></span>
-          <button onclick="openNewMessage()" class="bg-green-700 hover:bg-green-600 px-3 py-1.5 rounded text-sm font-bold" id="compose-section">✏ New</button>
-          <button onclick="doLogout()" class="bg-red-700 hover:bg-red-600 px-3 py-1.5 rounded text-sm">Disconnect</button>
+          <span class="text-sm" style="color:#4ade80;">
+            📡 <span id="active-call" class="font-bold" style="color:#fff;"></span>
+          </span>
+          <button onclick="doLogout()"
+            class="px-3 py-1.5 rounded text-sm" style="background:#7f1d1d;color:#fca5a5;">
+            Disconnect</button>
         </div>
-        <span class="text-xs text-gray-500 font-bold uppercase tracking-widest ml-auto">Messages</span>
+        <span class="text-xs font-bold uppercase tracking-widest ml-auto" style="color:#475569;">
+          Messages</span>
       </div>
 
-      <!-- ── Main area ────────────────────────────────────────────────── -->
-      <div class="flex flex-1 min-h-0 overflow-hidden">
+      <!-- ── Main area ─────────────────────────────────────────────────────── -->
+      <div class="flex flex-1 min-h-0 overflow-hidden" style="position:relative;z-index:1;">
 
         <!-- Conversations sidebar -->
-        <div class="w-56 flex-shrink-0 border-r border-gray-700 flex flex-col overflow-hidden bg-gray-850">
-          <div class="text-[10px] text-gray-500 uppercase tracking-widest font-bold px-3 py-2 border-b border-gray-700">Inbox</div>
-          <div id="conversations-list" class="flex-1 overflow-y-auto"></div>
-        </div>
+        <div class="flex-shrink-0 flex flex-col overflow-hidden"
+          style="width:260px;background:rgba(11,21,38,0.92);border-right:1px solid #1e3a5f;">
 
-        <!-- Thread view -->
-        <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
-
-          <!-- Thread header -->
-          <div id="thread-header" class="flex-shrink-0 flex items-center gap-3 px-4 py-2 bg-gray-800 border-b border-gray-700 hidden">
-            <span id="thread-call" class="font-bold text-blue-300 text-sm"></span>
-            <span id="thread-count" class="text-xs text-gray-500"></span>
-            <button onclick="deleteConversation(_activeConv)"
-              class="ml-auto text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded hover:bg-red-900/30">🗑 Delete conversation</button>
+          <!-- Sidebar header with compose FAB -->
+          <div class="flex items-center justify-between px-3 py-2 flex-shrink-0"
+            style="border-bottom:1px solid #1e3a5f;">
+            <span class="text-xs font-bold uppercase tracking-widest" style="color:#64748b;">
+              Conversations</span>
+            <button onclick="openNewMessage()" id="new-msg-btn"
+              title="New message" style="display:none;"
+              class="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold transition-colors"
+              style-hover="background:#0284c7"
+              onmouseover="this.style.background='#0284c7'"
+              onmouseout="this.style.background='#0ea5e9'"
+              style2="background:#0ea5e9;color:#fff;">✏</button>
           </div>
 
-          <!-- Message bubbles -->
-          <div id="message-thread" class="flex-1 overflow-y-auto p-4 space-y-2"></div>
-
-          <!-- Empty state -->
-          <div id="thread-empty" class="flex-1 flex items-center justify-center text-gray-600 text-sm">
-            <div class="text-center space-y-2">
-              <div class="text-4xl">💬</div>
-              <div>Select a conversation or start a new message</div>
+          <!-- Empty conversations state -->
+          <div id="conv-empty" class="flex-1 flex items-center justify-center p-4">
+            <div class="text-center" style="color:#334155;">
+              <div style="font-size:32px;margin-bottom:8px;">💬</div>
+              <div class="text-xs">No conversations yet<br>Log in to send a message</div>
             </div>
           </div>
 
-          <!-- Compose bar -->
-          <div id="compose-bar" class="flex-shrink-0 flex gap-2 p-3 bg-gray-800 border-t border-gray-700 hidden">
-            <input type="text" id="destCall" placeholder="To: Callsign"
-              class="bg-gray-700 p-2 rounded uppercase text-sm outline-none border border-gray-600 w-32"
-              oninput="this.value=this.value.toUpperCase()">
-            <textarea id="msgText" placeholder="Message (max 67 chars)…"
-              maxlength="67" rows="1"
-              class="flex-1 bg-gray-700 p-2 rounded text-sm resize-none outline-none border border-gray-600"
-              onkeydown="if(event.key=='Enter'&&!event.shiftKey){event.preventDefault();sendMsg();}"></textarea>
-            <button onclick="sendMsg()"
-              class="bg-green-600 hover:bg-green-500 px-4 py-2 rounded text-sm font-bold self-end" id="send-btn">Send</button>
+          <!-- Conversations list -->
+          <div id="conversations-list" class="flex-1 overflow-y-auto hidden"></div>
+        </div>
+
+        <!-- Thread area -->
+        <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
+
+          <!-- Thread header -->
+          <div id="thread-header"
+            class="flex-shrink-0 items-center gap-3 px-4 py-2 flex-shrink-0"
+            style="display:none;background:rgba(11,21,38,0.95);border-bottom:1px solid #1e3a5f;">
+            <div id="thread-avatar"
+              class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
+              style="color:#fff;"></div>
+            <div class="flex-1 min-w-0">
+              <div id="thread-call" class="font-bold text-sm" style="color:#e2e8f0;"></div>
+              <div id="thread-sub"  class="text-xs" style="color:#64748b;"></div>
+            </div>
+            <button onclick="deleteConversation(_activeConv)"
+              class="text-xs px-2 py-1 rounded ml-auto"
+              style="color:#ef4444;background:rgba(239,68,68,0.08);"
+              onmouseover="this.style.background='rgba(239,68,68,0.18)'"
+              onmouseout="this.style.background='rgba(239,68,68,0.08)'">🗑 Delete</button>
+          </div>
+
+          <!-- Bubbles area -->
+          <div id="message-thread"
+            class="flex-1 overflow-y-auto px-4 py-3"
+            style="display:flex;flex-direction:column;gap:4px;"></div>
+
+          <!-- Empty thread state -->
+          <div id="thread-empty" class="flex-1 flex items-center justify-center">
+            <div class="text-center" style="color:#1e3a5f;">
+              <div style="font-size:52px;margin-bottom:12px;opacity:0.6;">💬</div>
+              <div class="text-sm">Select a conversation or tap ✏ to start a new one</div>
+            </div>
+          </div>
+
+          <!-- Compose area (shown when thread open) -->
+          <div id="compose-area" class="flex-shrink-0 hidden"
+            style="background:rgba(11,21,38,0.97);border-top:1px solid #1e3a5f;">
+
+            <!-- Route selector chips (shown when both parties are members) -->
+            <div id="route-selector" class="hidden flex items-center gap-2 px-4 pt-2">
+              <span class="text-xs" style="color:#64748b;">Route:</span>
+              <button id="chip-aprs"   onclick="setDeliveryRoute('aprs')"
+                class="msg-route-chip text-xs px-3 py-1 rounded-full transition-all"
+                style="border:1px solid #1e3a5f;color:#94a3b8;">📡 APRS</button>
+              <button id="chip-direct" onclick="setDeliveryRoute('direct')"
+                class="msg-route-chip text-xs px-3 py-1 rounded-full transition-all"
+                style="border:1px solid #1e3a5f;color:#94a3b8;">↗ Direct</button>
+              <span id="route-hint" class="text-xs ml-1" style="color:#64748b;"></span>
+            </div>
+
+            <!-- Compose row -->
+            <div class="flex items-end gap-2 px-3 py-2">
+              <textarea id="msgText"
+                placeholder="Message (max 67 chars)…"
+                maxlength="67" rows="1"
+                class="flex-1 rounded-2xl text-sm resize-none outline-none"
+                style="background:#162032;color:#e2e8f0;border:1px solid #1e3a5f;padding:10px 14px;min-height:42px;max-height:110px;line-height:1.4;"
+                oninput="msgAutoResize(this);msgCharCount();"
+                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg();}">
+              </textarea>
+              <button onclick="sendMsg()" id="send-btn"
+                title="Send"
+                class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-base transition-colors"
+                style="background:#0ea5e9;color:#fff;min-width:40px;">
+                &#10148;
+              </button>
+            </div>
+
+            <!-- Char counter -->
+            <div class="flex justify-end px-4 pb-2">
+              <span id="char-count" class="text-xs" style="color:#475569;">0 / 67</span>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- ── Traffic log strip (bottom, 5 rows) ───────────────────────── -->
-      <div class="flex-shrink-0 h-28 border-t border-gray-700 flex flex-col bg-gray-950">
-        <div class="text-[10px] text-gray-500 uppercase tracking-widest font-bold px-3 py-1 border-b border-gray-800 flex-shrink-0">Traffic Log</div>
-        <div id="chat-log" class="flex-1 overflow-y-auto p-2 font-mono text-xs space-y-0.5 text-gray-400"></div>
+      <!-- ── Traffic log strip ──────────────────────────────────────────────── -->
+      <div class="flex-shrink-0 flex flex-col" style="height:70px;border-top:1px solid #1e3a5f;background:rgba(6,12,24,0.97);">
+        <div class="text-xs px-3 py-1 flex-shrink-0"
+          style="color:#334155;border-bottom:1px solid #162032;font-family:monospace;letter-spacing:.05em;">
+          TRAFFIC LOG</div>
+        <div id="chat-log"
+          class="flex-1 overflow-y-auto px-3 py-1 font-mono text-xs"
+          style="color:#475569;line-height:1.4;"></div>
       </div>
     </div>
 
@@ -3492,112 +3575,330 @@ function logChat(sender, message, colorClass) {
 }
 
 /* ─── Messaging centre ─────────────────────────────────────────────────────── */
-var _conversations = {};  // callsign → [{from,to,text,ts,out}]
+
+/* ── Data store ───────────────────────────────────────────────────────────── */
+var _conversations = {};  // callsign → [{id,from,to,text,ts,out,state,read}]
 var _activeConv    = null;
+var _deliveryRoute = 'aprs'; // 'aprs' | 'direct'
+var _msgIdCounter  = 0;
 
-function openNewMessage() {
-  var to = prompt('Send message to callsign:');
-  if (!to) return;
-  openConversation(to.toUpperCase().trim());
-  document.getElementById('destCall').value = to.toUpperCase().trim();
+// Message states matching Android
+var MSG_STATE = { SENDING:'sending', SENT:'sent', ACKED:'acked', FAILED:'failed', SERVER_SENT:'server_sent' };
+
+/* ── Avatar colours (matches Android accent palette) ──────────────────────── */
+var AVATAR_COLOURS = [
+  '#0ea5e9','#8b5cf6','#10b981','#f59e0b','#ef4444','#ec4899','#06b6d4','#84cc16'
+];
+function avatarColour(call) {
+  var h = 0;
+  for (var i = 0; i < call.length; i++) h = (h * 31 + call.charCodeAt(i)) & 0xffffffff;
+  return AVATAR_COLOURS[Math.abs(h) % AVATAR_COLOURS.length];
+}
+function avatarInitials(call) {
+  return call.replace(/-\d+$/, '').slice(0, 2).toUpperCase();
 }
 
-function openConversation(call) {
-  _activeConv = call;
-  if (!_conversations[call]) _conversations[call] = [];
-  renderConversationList();
-  renderThread(call);
-  document.getElementById('thread-header').classList.remove('hidden');
-  document.getElementById('thread-empty').classList.add('hidden');
-  document.getElementById('compose-bar').classList.remove('hidden');
-  document.getElementById('thread-call').innerText = call;
-  document.getElementById('destCall').value = call;
-  // Mark all as read
-  _conversations[call].forEach(function(m){ m.read = true; });
-  renderConversationList();
+/* ── Smart timestamp (matches Android: HH:mm today, day-name this week, date older) ── */
+function smartTs(ts) {
+  var d = new Date(ts); var n = new Date();
+  var dayMs = 86400000;
+  var diff  = n - d;
+  if (diff < dayMs && d.getDate() === n.getDate())
+    return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  if (diff < 7 * dayMs)
+    return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+  return d.toLocaleDateString([], {day:'2-digit',month:'2-digit'});
 }
 
+/* ── Tick mark for message state ──────────────────────────────────────────── */
+function tickMark(state) {
+  if (state === MSG_STATE.SENDING)    return '<span style="color:#64748b;font-size:9px;">○</span>';
+  if (state === MSG_STATE.SENT)       return '<span style="color:#64748b;font-size:9px;">✓</span>';
+  if (state === MSG_STATE.ACKED)      return '<span style="color:#86efac;font-size:9px;">✓✓</span>';
+  if (state === MSG_STATE.FAILED)     return '<span style="color:#ef4444;font-size:9px;">✗</span>';
+  if (state === MSG_STATE.SERVER_SENT)return '<span style="color:#f59e0b;font-size:9px;">↗</span>';
+  return '';
+}
+
+/* ── Bubble gradient for message state ───────────────────────────────────── */
+function bubbleStyle(out, state) {
+  if (!out) return 'background:linear-gradient(180deg,#1e3a5f,#162032);color:#e2e8f0;';
+  if (state === MSG_STATE.ACKED)       return 'background:linear-gradient(180deg,#86efac,#16a34a);color:#052e16;';
+  if (state === MSG_STATE.FAILED)      return 'background:#7f1d1d;color:#fca5a5;';
+  if (state === MSG_STATE.SERVER_SENT) return 'background:linear-gradient(180deg,#f59e0b,#d97706);color:#1c1400;';
+  return 'background:linear-gradient(180deg,#2563eb,#1d4ed8);color:#eff6ff;';
+}
+function bubbleShape(out) {
+  return out ? 'border-radius:18px 18px 4px 18px;' : 'border-radius:18px 18px 18px 4px;';
+}
+
+/* ── Render conversations sidebar ─────────────────────────────────────────── */
 function renderConversationList() {
-  var el = document.getElementById('conversations-list');
+  var el  = document.getElementById('conversations-list');
+  var emp = document.getElementById('conv-empty');
   if (!el) return;
   var calls = Object.keys(_conversations).sort(function(a,b){
-    var aLast = _conversations[a].length ? _conversations[a][_conversations[a].length-1].ts : 0;
-    var bLast = _conversations[b].length ? _conversations[b][_conversations[b].length-1].ts : 0;
-    return bLast - aLast;
+    var aT = _conversations[a].length ? _conversations[a][_conversations[a].length-1].ts : 0;
+    var bT = _conversations[b].length ? _conversations[b][_conversations[b].length-1].ts : 0;
+    return bT - aT;
   });
   if (!calls.length) {
-    el.innerHTML = '<p class="text-xs text-gray-600 p-3 text-center">No messages yet</p>';
-    return;
+    el.classList.add('hidden'); if (emp) emp.classList.remove('hidden'); return;
   }
+  el.classList.remove('hidden'); if (emp) emp.classList.add('hidden');
+
   el.innerHTML = calls.map(function(call) {
-    var msgs = _conversations[call];
-    var last = msgs[msgs.length-1] || {};
+    var msgs   = _conversations[call];
+    var last   = msgs[msgs.length - 1] || {};
     var unread = msgs.filter(function(m){ return !m.out && !m.read; }).length;
-    var isActive = call === _activeConv;
-    return '<div onclick="openConversation(\''+call+'\')" class="px-3 py-2 cursor-pointer border-b border-gray-800 hover:bg-gray-800 '+(isActive?'bg-gray-800 border-l-2 border-blue-500':'')+'">'
-      + '<div class="flex justify-between items-center">'
-      + '<span class="font-bold text-sm '+(isActive?'text-blue-300':'text-gray-200')+'">'+call+'</span>'
-      + (unread ? '<span class="text-[10px] bg-blue-600 text-white rounded-full px-1.5 py-0.5 font-bold">'+unread+'</span>' : '')
+    var active = call === _activeConv;
+    var col    = avatarColour(call);
+    var bg     = active ? 'rgba(14,165,233,0.12)' : 'transparent';
+    var border = active ? 'border-left:3px solid #0ea5e9;' : 'border-left:3px solid transparent;';
+    var preview = escapeHtml((last.text || '').slice(0, 40));
+    if (last.out) preview = '↗ ' + preview;
+    return '<div onclick="openConversation(\'' + call + '\')" '
+      + 'class="flex items-center gap-3 px-3 py-3 cursor-pointer transition-colors" '
+      + 'style="' + border + 'background:' + bg + ';border-bottom:1px solid #0f1f35;" '
+      + 'onmouseover="if(\'' + call + '\'!==_activeConv)this.style.background=\'rgba(255,255,255,0.04)\'" '
+      + 'onmouseout="if(\'' + call + '\'!==_activeConv)this.style.background=\'transparent\'">'
+      + '<div class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0" '
+      +   'style="background:' + col + ';color:#fff;">' + avatarInitials(call) + '</div>'
+      + '<div class="flex-1 min-w-0">'
+      +   '<div class="flex items-center justify-between">'
+      +     '<span class="font-bold text-sm ' + (active?'':'') + '" style="color:#e2e8f0;">' + escapeHtml(call) + '</span>'
+      +     '<span class="text-xs ml-2 flex-shrink-0" style="color:#64748b;">' + (last.ts ? smartTs(last.ts) : '') + '</span>'
+      +   '</div>'
+      +   '<div class="flex items-center justify-between mt-0.5">'
+      +     '<span class="text-xs truncate" style="color:#64748b;">' + preview + '</span>'
+      +     (unread ? '<span class="text-xs font-bold rounded-full px-1.5 py-0.5 ml-1 flex-shrink-0" style="background:#0ea5e9;color:#fff;font-size:10px;">' + unread + '</span>' : '')
+      +   '</div>'
       + '</div>'
-      + '<div class="text-[10px] text-gray-500 truncate">'+(last.text||'')+'</div>'
       + '</div>';
   }).join('');
 }
 
+/* ── Open / switch conversation ───────────────────────────────────────────── */
+function openConversation(call) {
+  _activeConv = call;
+  if (!_conversations[call]) _conversations[call] = [];
+  // mark read
+  _conversations[call].forEach(function(m){ m.read = true; });
+
+  var hdr  = document.getElementById('thread-header');
+  var emp  = document.getElementById('thread-empty');
+  var comp = document.getElementById('compose-area');
+  var avEl = document.getElementById('thread-avatar');
+  var clEl = document.getElementById('thread-call');
+  var subEl= document.getElementById('thread-sub');
+  if (hdr)  { hdr.style.display  = 'flex'; }
+  if (emp)  emp.style.display  = 'none';
+  if (comp) comp.classList.remove('hidden');
+
+  var col = avatarColour(call);
+  if (avEl) { avEl.style.background = col; avEl.textContent = avatarInitials(call); }
+  if (clEl) clEl.textContent = call;
+  if (subEl) subEl.textContent = 'APRS Station';
+
+  // Show route selector if recipient is a member and user is signed in
+  updateRouteSelector(call);
+
+  // Update destCall (hidden now but kept for backward compat)
+  var dc = document.getElementById('destCall');
+  if (dc) dc.value = call;
+
+  renderConversationList();
+  renderThread(call);
+  // Focus compose
+  var ta = document.getElementById('msgText');
+  if (ta) ta.focus();
+}
+
+/* ── Render message thread ────────────────────────────────────────────────── */
 function renderThread(call) {
   var el = document.getElementById('message-thread');
   if (!el) return;
   var msgs = _conversations[call] || [];
-  document.getElementById('thread-count').innerText = msgs.length + ' messages';
-  if (!msgs.length) { el.innerHTML = '<p class="text-gray-600 text-center py-8 text-sm">No messages yet — send one below</p>'; return; }
+  var countEl = document.getElementById('thread-sub');
+
+  if (!msgs.length) {
+    el.innerHTML = '<div style="text-align:center;color:#1e3a5f;padding:32px 16px;font-size:13px;">'
+      + 'No messages yet<br><span style="font-size:11px;">Send the first one below</span></div>';
+    return;
+  }
+
   el.innerHTML = msgs.map(function(m, i) {
-    var time = new Date(m.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    var isOut = m.out;
-    return '<div class="flex '+(isOut?'justify-end':'justify-start')+'">'
-      + '<div class="max-w-xs lg:max-w-md rounded-2xl px-3 py-2 '+(isOut?'bg-blue-700 text-white':'bg-gray-700 text-gray-100')+'">'
-      + (isOut ? '' : '<div class="text-[10px] text-gray-400 mb-0.5">'+escapeHtml(m.from)+'</div>')
-      + '<div class="text-sm break-words">'+escapeHtml(m.text)+'</div>'
-      + '<div class="flex items-center justify-between gap-2 mt-1">'
-      + '<span class="text-[10px] opacity-60">'+time+'</span>'
-      + '<button onclick="deleteMessage(\''+call+'\','+i+')" class="text-[10px] opacity-40 hover:opacity-80">🗑</button>'
-      + '</div>'
-      + '</div></div>';
+    var align   = m.out ? 'flex-end' : 'flex-start';
+    var bStyle  = bubbleStyle(m.out, m.state);
+    var bShape  = bubbleShape(m.out);
+    var timeStr = new Date(m.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    var tick    = m.out ? tickMark(m.state) : '';
+
+    var bubbleHtml = '<div style="max-width:68%;display:flex;flex-direction:column;align-items:' + (m.out?'flex-end':'flex-start') + ';">'
+      // Sender label for incoming
+      + (!m.out ? '<span style="font-size:10px;color:#64748b;margin-bottom:2px;padding:0 4px;">' + escapeHtml(m.from) + '</span>' : '')
+      + '<div style="' + bStyle + bShape + 'padding:10px 14px;max-width:100%;word-break:break-word;">'
+      +   '<div style="font-size:13px;line-height:1.4;">' + escapeHtml(m.text) + '</div>'
+      +   '<div style="display:flex;align-items:center;gap:4px;margin-top:4px;justify-content:' + (m.out?'flex-end':'flex-start') + ';">'
+      +     '<span style="font-size:10px;color:rgba(255,255,255,0.5);">' + timeStr + '</span>'
+      +     tick
+      +   '</div>'
+      + '</div>';
+
+    // Footer lines below bubble
+    if (m.out && m.state === MSG_STATE.FAILED) {
+      bubbleHtml += '<div style="font-size:11px;color:#ef4444;margin-top:2px;">Failed — tap to retry</div>';
+      // "Send via APRS Net" if member-to-member
+      if (_memberCallsigns && _memberCallsigns.has && _memberCallsigns.has((m.to||'').toUpperCase())
+          && localStorage.getItem('aprs-member-token')) {
+        bubbleHtml += '<button onclick="retrySendViaServer(' + i + ',\'' + escapeHtml(call) + '\')" '
+          + 'style="margin-top:4px;font-size:11px;padding:4px 10px;border-radius:8px;background:rgba(13,148,136,0.9);color:#fff;border:none;cursor:pointer;">↗ Send via APRS Net</button>';
+      }
+    }
+    if (m.out && m.state === MSG_STATE.SERVER_SENT) {
+      bubbleHtml += '<div style="font-size:11px;color:#f59e0b;margin-top:2px;">↗ Delivered via APRS Net</div>';
+    }
+    if (m.out && m.state === MSG_STATE.SENT && m.retries > 0) {
+      var sups = ['','¹','²','³'];
+      bubbleHtml += '<div style="font-size:10px;color:#64748b;margin-top:2px;">' + (sups[Math.min(m.retries+1,3)]||'') + '⁄₃</div>';
+    }
+
+    bubbleHtml += '</div>';
+
+    return '<div style="display:flex;justify-content:' + align + ';margin-bottom:2px;">' + bubbleHtml + '</div>';
   }).join('');
+
+  // Scroll to bottom
   el.scrollTop = el.scrollHeight;
 }
 
+/* ── Route selector logic ─────────────────────────────────────────────────── */
+var _memberCallsigns = new Set();
+
+function updateRouteSelector(call) {
+  var rs = document.getElementById('route-selector');
+  if (!rs) return;
+  var token = localStorage.getItem('aprs-member-token');
+  var recipientIsMember = _memberCallsigns.has && _memberCallsigns.has(call.toUpperCase());
+  if (token && recipientIsMember) {
+    rs.classList.remove('hidden');
+    setDeliveryRoute(_deliveryRoute);
+  } else {
+    rs.classList.add('hidden');
+    _deliveryRoute = 'aprs';
+  }
+}
+
+function setDeliveryRoute(route) {
+  _deliveryRoute = route;
+  var ca = document.getElementById('chip-aprs');
+  var cd = document.getElementById('chip-direct');
+  var hint = document.getElementById('route-hint');
+  var sbtn = document.getElementById('send-btn');
+  if (route === 'aprs') {
+    if (ca) { ca.style.background='rgba(14,165,233,0.18)'; ca.style.borderColor='#0ea5e9'; ca.style.color='#0ea5e9'; ca.style.fontWeight='bold'; }
+    if (cd) { cd.style.background='transparent'; cd.style.borderColor='#1e3a5f'; cd.style.color='#94a3b8'; cd.style.fontWeight='normal'; }
+    if (hint) hint.textContent = '';
+    if (sbtn) sbtn.style.background = '#0ea5e9';
+  } else {
+    if (ca) { ca.style.background='transparent'; ca.style.borderColor='#1e3a5f'; ca.style.color='#94a3b8'; ca.style.fontWeight='normal'; }
+    if (cd) { cd.style.background='rgba(13,148,136,0.18)'; cd.style.borderColor='#0d9488'; cd.style.color='#0d9488'; cd.style.fontWeight='bold'; }
+    if (hint) hint.textContent = 'no RF';
+    if (sbtn) sbtn.style.background = '#0d9488';
+  }
+}
+
+/* ── Open new message prompt ──────────────────────────────────────────────── */
+function openNewMessage() {
+  var to = prompt('Send message to callsign:');
+  if (!to) return;
+  to = to.toUpperCase().trim();
+  if (!_conversations[to]) _conversations[to] = [];
+  openConversation(to);
+}
+
+/* ── Char counter + auto-resize ──────────────────────────────────────────── */
+function msgCharCount() {
+  var ta = document.getElementById('msgText');
+  var cc = document.getElementById('char-count');
+  if (!ta || !cc) return;
+  var len = ta.value.length;
+  cc.textContent = len + ' / 67';
+  cc.style.color = len > 60 ? '#f59e0b' : len >= 67 ? '#ef4444' : '#475569';
+}
+function msgAutoResize(ta) {
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight, 110) + 'px';
+}
+
+/* ── Message delete helpers ───────────────────────────────────────────────── */
 function deleteMessage(call, idx) {
   if (!_conversations[call]) return;
   _conversations[call].splice(idx, 1);
   if (_activeConv === call) renderThread(call);
   renderConversationList();
 }
-
 function deleteConversation(call) {
   if (!call) return;
   if (!confirm('Delete all messages with ' + call + '?')) return;
   delete _conversations[call];
   _activeConv = null;
-  document.getElementById('thread-header').classList.add('hidden');
-  document.getElementById('compose-bar').classList.add('hidden');
-  document.getElementById('thread-empty').classList.remove('hidden');
-  document.getElementById('message-thread').innerHTML = '';
+  var hdr  = document.getElementById('thread-header');
+  var comp = document.getElementById('compose-area');
+  var emp  = document.getElementById('thread-empty');
+  var thr  = document.getElementById('message-thread');
+  if (hdr)  hdr.style.display = 'none';
+  if (comp) comp.classList.add('hidden');
+  if (emp)  emp.style.display = 'flex';
+  if (thr)  thr.innerHTML = '';
   renderConversationList();
 }
 
-// Patch sendMsg to also record outgoing messages
-var _origSendMsg = typeof sendMsg === 'function' ? sendMsg : null;
-function sendMsg() {
-  var to = (document.getElementById('destCall').value||'').toUpperCase().trim();
-  var text = (document.getElementById('msgText').value||'').trim();
-  if (!to || !text) return;
-  if (!_conversations[to]) _conversations[to] = [];
-  _conversations[to].push({from: myCallsign||'ME', to: to, text: text, ts: Date.now(), out: true, read: true});
-  if (_origSendMsg) _origSendMsg();
-  document.getElementById('msgText').value = '';
-  if (_activeConv === to) renderThread(to);
-  renderConversationList();
+/* ── Retry via server ─────────────────────────────────────────────────────── */
+function retrySendViaServer(idx, call) {
+  var token = localStorage.getItem('aprs-member-token');
+  if (!token || !_conversations[call]) return;
+  var m = _conversations[call][idx];
+  if (!m) return;
+  m.state = MSG_STATE.SENDING;
+  fetch('/api/member/message/send', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json','X-Member-Token':token},
+    body: JSON.stringify({to: call, text: m.text})
+  }).then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(d){
+      m.state = d && d.ok ? MSG_STATE.SERVER_SENT : MSG_STATE.FAILED;
+      renderThread(call); renderConversationList();
+    });
 }
+
+/* ── Draw circuit background ─────────────────────────────────────────────── */
+function drawMsgBackground() {
+  var canvas = document.getElementById('msg-bg-canvas');
+  if (!canvas || !canvas.getContext) return;
+  var W = canvas.parentElement.offsetWidth  || 1200;
+  var H = canvas.parentElement.offsetHeight || 800;
+  canvas.width  = W;
+  canvas.height = H;
+  var ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  var G = 44;
+  ctx.strokeStyle = '#38bdf8';
+  ctx.lineWidth   = 0.8;
+  // Seed a deterministic pattern from grid position
+  function r(x, y) { return ((x*73856093 ^ y*19349663) & 0x7fffffff) / 0x7fffffff; }
+  for (var x = 0; x <= W; x += G) {
+    for (var y = 0; y <= H; y += G) {
+      if (r(x,y) > 0.55) { ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+G,y); ctx.stroke(); }
+      if (r(x,y+1) > 0.55) { ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x,y+G); ctx.stroke(); }
+      if (r(x+1,y) > 0.82) {
+        ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI*2);
+        ctx.fillStyle = '#38bdf8'; ctx.fill();
+      }
+    }
+  }
+}
+
 /* ─── End messaging centre ──────────────────────────────────────────────────── */
 
 
