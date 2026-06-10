@@ -745,33 +745,77 @@ body { background: var(--bg-base); color: var(--text-base); }
     </div>
 
     <!-- MESSAGES -->
-    <div id="messages-panel" class="absolute inset-0 z-20 bg-gray-900 hidden flex flex-col p-4 overflow-hidden">
-      <div class="flex space-x-4 h-full">
-        <div class="w-80 flex flex-col space-y-3">
-          <div id="auth-section" class="bg-gray-800 p-4 rounded border border-gray-700">
-            <h2 class="font-bold mb-2 text-blue-400 uppercase text-xs tracking-wider">APRS-IS Auth</h2>
-            <form onsubmit="sendAuth();return false;">
-            <input type="text" id="myCall" placeholder="Callsign" class="w-full bg-gray-700 p-2 rounded mb-2 uppercase text-sm outline-none border border-gray-600" autocomplete="username">
-            <input type="password" id="myPass" placeholder="Passcode" class="w-full bg-gray-700 p-2 rounded mb-2 text-sm outline-none border border-gray-600" autocomplete="current-password">
-            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 p-2 rounded text-sm font-bold">Login</button>
-            </form>
+    <div id="messages-panel" class="absolute inset-0 z-20 bg-gray-900 hidden flex flex-col overflow-hidden">
+
+      <!-- ── Top bar: auth controls ──────────────────────────────────── -->
+      <div class="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-gray-800 border-b border-gray-700">
+        <div id="auth-section" class="flex items-center gap-2 flex-1">
+          <form onsubmit="sendAuth();return false;" class="flex gap-2 flex-1">
+            <input type="text" id="myCall" placeholder="Callsign" autocomplete="username"
+              class="bg-gray-700 p-1.5 rounded uppercase text-sm outline-none border border-gray-600 w-28">
+            <input type="password" id="myPass" placeholder="Passcode" autocomplete="current-password"
+              class="bg-gray-700 p-1.5 rounded text-sm outline-none border border-gray-600 w-24">
+            <button type="submit" class="bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded text-sm font-bold">Login</button>
+          </form>
+        </div>
+        <div id="logged-in-section" class="hidden flex items-center gap-3 flex-1">
+          <span class="text-green-400 text-sm">📡 <span id="active-call" class="font-bold text-white"></span></span>
+          <button onclick="openNewMessage()" class="bg-green-700 hover:bg-green-600 px-3 py-1.5 rounded text-sm font-bold" id="compose-section">✏ New</button>
+          <button onclick="doLogout()" class="bg-red-700 hover:bg-red-600 px-3 py-1.5 rounded text-sm">Disconnect</button>
+        </div>
+        <span class="text-xs text-gray-500 font-bold uppercase tracking-widest ml-auto">Messages</span>
+      </div>
+
+      <!-- ── Main area ────────────────────────────────────────────────── -->
+      <div class="flex flex-1 min-h-0 overflow-hidden">
+
+        <!-- Conversations sidebar -->
+        <div class="w-56 flex-shrink-0 border-r border-gray-700 flex flex-col overflow-hidden bg-gray-850">
+          <div class="text-[10px] text-gray-500 uppercase tracking-widest font-bold px-3 py-2 border-b border-gray-700">Inbox</div>
+          <div id="conversations-list" class="flex-1 overflow-y-auto"></div>
+        </div>
+
+        <!-- Thread view -->
+        <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
+
+          <!-- Thread header -->
+          <div id="thread-header" class="flex-shrink-0 flex items-center gap-3 px-4 py-2 bg-gray-800 border-b border-gray-700 hidden">
+            <span id="thread-call" class="font-bold text-blue-300 text-sm"></span>
+            <span id="thread-count" class="text-xs text-gray-500"></span>
+            <button onclick="deleteConversation(_activeConv)"
+              class="ml-auto text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded hover:bg-red-900/30">🗑 Delete conversation</button>
           </div>
-          <div id="logged-in-section" class="bg-gray-800 p-4 rounded border border-green-700 hidden">
-            <h2 class="font-bold mb-2 text-green-400 uppercase text-xs tracking-wider">Authenticated</h2>
-            <p class="text-sm mb-2">Operating as: <span id="active-call" class="font-bold text-white text-base"></span></p>
-            <button onclick="doLogout()" class="w-full bg-red-600 hover:bg-red-500 p-2 rounded text-sm font-bold">Disconnect</button>
+
+          <!-- Message bubbles -->
+          <div id="message-thread" class="flex-1 overflow-y-auto p-4 space-y-2"></div>
+
+          <!-- Empty state -->
+          <div id="thread-empty" class="flex-1 flex items-center justify-center text-gray-600 text-sm">
+            <div class="text-center space-y-2">
+              <div class="text-4xl">💬</div>
+              <div>Select a conversation or start a new message</div>
+            </div>
           </div>
-          <div id="compose-section" class="bg-gray-800 p-4 rounded border border-gray-700 flex-1 flex flex-col opacity-50 pointer-events-none">
-            <h2 class="font-bold mb-2 uppercase text-xs tracking-wider">Compose</h2>
-            <input type="text" id="destCall" disabled placeholder="To Callsign" class="w-full bg-gray-700 p-2 rounded mb-2 uppercase text-sm outline-none border border-gray-600">
-            <textarea id="msgText" disabled placeholder="Message..." class="w-full bg-gray-700 p-2 rounded mb-2 text-sm flex-1 resize-none outline-none border border-gray-600"></textarea>
-            <button onclick="sendMsg()" disabled class="w-full bg-green-600 hover:bg-green-500 p-2 rounded text-sm font-bold">Send</button>
+
+          <!-- Compose bar -->
+          <div id="compose-bar" class="flex-shrink-0 flex gap-2 p-3 bg-gray-800 border-t border-gray-700 hidden">
+            <input type="text" id="destCall" placeholder="To: Callsign"
+              class="bg-gray-700 p-2 rounded uppercase text-sm outline-none border border-gray-600 w-32"
+              oninput="this.value=this.value.toUpperCase()">
+            <textarea id="msgText" placeholder="Message (max 67 chars)…"
+              maxlength="67" rows="1"
+              class="flex-1 bg-gray-700 p-2 rounded text-sm resize-none outline-none border border-gray-600"
+              onkeydown="if(event.key=='Enter'&&!event.shiftKey){event.preventDefault();sendMsg();}"></textarea>
+            <button onclick="sendMsg()"
+              class="bg-green-600 hover:bg-green-500 px-4 py-2 rounded text-sm font-bold self-end" id="send-btn">Send</button>
           </div>
         </div>
-        <div class="flex-1 bg-gray-800 rounded border border-gray-700 flex flex-col overflow-hidden">
-          <div class="p-2 bg-gray-700 border-b border-gray-600 font-bold text-xs uppercase tracking-widest text-gray-300">Traffic Log</div>
-          <div id="chat-log" class="flex-1 p-3 overflow-y-auto font-mono text-xs space-y-1 text-gray-200"></div>
-        </div>
+      </div>
+
+      <!-- ── Traffic log strip (bottom, 5 rows) ───────────────────────── -->
+      <div class="flex-shrink-0 h-28 border-t border-gray-700 flex flex-col bg-gray-950">
+        <div class="text-[10px] text-gray-500 uppercase tracking-widest font-bold px-3 py-1 border-b border-gray-800 flex-shrink-0">Traffic Log</div>
+        <div id="chat-log" class="flex-1 overflow-y-auto p-2 font-mono text-xs space-y-0.5 text-gray-400"></div>
       </div>
     </div>
 
@@ -3314,6 +3358,116 @@ function logChat(sender, message, colorClass) {
   log.appendChild(el); log.scrollTop = log.scrollHeight;
 }
 
+/* ─── Messaging centre ─────────────────────────────────────────────────────── */
+var _conversations = {};  // callsign → [{from,to,text,ts,out}]
+var _activeConv    = null;
+
+function openNewMessage() {
+  var to = prompt('Send message to callsign:');
+  if (!to) return;
+  openConversation(to.toUpperCase().trim());
+  document.getElementById('destCall').value = to.toUpperCase().trim();
+}
+
+function openConversation(call) {
+  _activeConv = call;
+  if (!_conversations[call]) _conversations[call] = [];
+  renderConversationList();
+  renderThread(call);
+  document.getElementById('thread-header').classList.remove('hidden');
+  document.getElementById('thread-empty').classList.add('hidden');
+  document.getElementById('compose-bar').classList.remove('hidden');
+  document.getElementById('thread-call').innerText = call;
+  document.getElementById('destCall').value = call;
+  // Mark all as read
+  _conversations[call].forEach(function(m){ m.read = true; });
+  renderConversationList();
+}
+
+function renderConversationList() {
+  var el = document.getElementById('conversations-list');
+  if (!el) return;
+  var calls = Object.keys(_conversations).sort(function(a,b){
+    var aLast = _conversations[a].length ? _conversations[a][_conversations[a].length-1].ts : 0;
+    var bLast = _conversations[b].length ? _conversations[b][_conversations[b].length-1].ts : 0;
+    return bLast - aLast;
+  });
+  if (!calls.length) {
+    el.innerHTML = '<p class="text-xs text-gray-600 p-3 text-center">No messages yet</p>';
+    return;
+  }
+  el.innerHTML = calls.map(function(call) {
+    var msgs = _conversations[call];
+    var last = msgs[msgs.length-1] || {};
+    var unread = msgs.filter(function(m){ return !m.out && !m.read; }).length;
+    var isActive = call === _activeConv;
+    return '<div onclick="openConversation(\''+call+'\')" class="px-3 py-2 cursor-pointer border-b border-gray-800 hover:bg-gray-800 '+(isActive?'bg-gray-800 border-l-2 border-blue-500':'')+'">'
+      + '<div class="flex justify-between items-center">'
+      + '<span class="font-bold text-sm '+(isActive?'text-blue-300':'text-gray-200')+'">'+call+'</span>'
+      + (unread ? '<span class="text-[10px] bg-blue-600 text-white rounded-full px-1.5 py-0.5 font-bold">'+unread+'</span>' : '')
+      + '</div>'
+      + '<div class="text-[10px] text-gray-500 truncate">'+(last.text||'')+'</div>'
+      + '</div>';
+  }).join('');
+}
+
+function renderThread(call) {
+  var el = document.getElementById('message-thread');
+  if (!el) return;
+  var msgs = _conversations[call] || [];
+  document.getElementById('thread-count').innerText = msgs.length + ' messages';
+  if (!msgs.length) { el.innerHTML = '<p class="text-gray-600 text-center py-8 text-sm">No messages yet — send one below</p>'; return; }
+  el.innerHTML = msgs.map(function(m, i) {
+    var time = new Date(m.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    var isOut = m.out;
+    return '<div class="flex '+(isOut?'justify-end':'justify-start')+'">'
+      + '<div class="max-w-xs lg:max-w-md rounded-2xl px-3 py-2 '+(isOut?'bg-blue-700 text-white':'bg-gray-700 text-gray-100')+'">'
+      + (isOut ? '' : '<div class="text-[10px] text-gray-400 mb-0.5">'+escapeHtml(m.from)+'</div>')
+      + '<div class="text-sm break-words">'+escapeHtml(m.text)+'</div>'
+      + '<div class="flex items-center justify-between gap-2 mt-1">'
+      + '<span class="text-[10px] opacity-60">'+time+'</span>'
+      + '<button onclick="deleteMessage(\''+call+'\','+i+')" class="text-[10px] opacity-40 hover:opacity-80">🗑</button>'
+      + '</div>'
+      + '</div></div>';
+  }).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+function deleteMessage(call, idx) {
+  if (!_conversations[call]) return;
+  _conversations[call].splice(idx, 1);
+  if (_activeConv === call) renderThread(call);
+  renderConversationList();
+}
+
+function deleteConversation(call) {
+  if (!call) return;
+  if (!confirm('Delete all messages with ' + call + '?')) return;
+  delete _conversations[call];
+  _activeConv = null;
+  document.getElementById('thread-header').classList.add('hidden');
+  document.getElementById('compose-bar').classList.add('hidden');
+  document.getElementById('thread-empty').classList.remove('hidden');
+  document.getElementById('message-thread').innerHTML = '';
+  renderConversationList();
+}
+
+// Patch sendMsg to also record outgoing messages
+var _origSendMsg = typeof sendMsg === 'function' ? sendMsg : null;
+function sendMsg() {
+  var to = (document.getElementById('destCall').value||'').toUpperCase().trim();
+  var text = (document.getElementById('msgText').value||'').trim();
+  if (!to || !text) return;
+  if (!_conversations[to]) _conversations[to] = [];
+  _conversations[to].push({from: myCallsign||'ME', to: to, text: text, ts: Date.now(), out: true, read: true});
+  if (_origSendMsg) _origSendMsg();
+  document.getElementById('msgText').value = '';
+  if (_activeConv === to) renderThread(to);
+  renderConversationList();
+}
+/* ─── End messaging centre ──────────────────────────────────────────────────── */
+
+
 // Click-to-Reply: populate destCall and focus msgText for fast replies
 function replyToCallsign(call) {
   const dest = document.getElementById('destCall');
@@ -3694,7 +3848,8 @@ function redrawMap() {
     const icon = makeIcon(st, call);
     const si = getSymbolInfo(st.sym);
     const _dev = lookupDevice(extractTocall(st.raw));
-    const _devLine = _dev ? `<br><span style="color:#a78bfa;font-size:10px">📟 ${_dev.vendor||''} ${_dev.model||''}</span>` : '';
+    const _devDesc = _dev ? [_dev.vendor,_dev.model].filter(x=>x&&x.toLowerCase()!=="unknown"&&x.trim()!=="").join(" ").trim() : "";
+    const _devLine = _devDesc ? `<br><span style="color:#a78bfa;font-size:10px">📟 ${_devDesc}</span>` : '';
     const tip = `<b style="color:#60a5fa">${call}</b> <span style="color:#94a3b8;font-size:10px">${si.label}</span>${_devLine}`;
     if (!st.marker) {
       st.marker = L.marker([latest.lat,latest.lon],{icon})
