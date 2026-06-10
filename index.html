@@ -294,14 +294,14 @@ body { background: var(--bg-base); color: var(--text-base); }
 <div id="band-alert" class="hidden fixed top-0 left-0 right-0 z-[60] text-center py-2 px-4 font-bold text-sm"
      style="background:linear-gradient(90deg,#059669,#10b981);color:#fff;box-shadow:0 2px 12px rgba(0,0,0,0.4)">
   <span id="band-alert-text"></span>
-  <button onclick="dismissBandAlert()" class="ml-3 px-2 py-0.5 bg-black/20 rounded hover:bg-black/40 text-xs">✕</button>
+  <button onclick="dismissBandAlert()" class="ml-3 px-2 py-0.5 bg-black bg-opacity-20 rounded hover:bg-black bg-opacity-40 text-xs">✕</button>
 </div>
 
 <!-- Severe Weather Warning Banner -->
 <div id="wx-warn-banner" class="hidden fixed left-0 right-0 z-[59] text-center py-1.5 px-4 font-bold text-sm"
      style="top:0;background:linear-gradient(90deg,#b45309,#d97706);color:#fff;box-shadow:0 2px 12px rgba(0,0,0,0.4)">
   <span id="wx-warn-text"></span>
-  <button onclick="dismissWxWarn()" class="ml-3 px-2 py-0.5 bg-black/20 rounded hover:bg-black/40 text-xs">✕</button>
+  <button onclick="dismissWxWarn()" class="ml-3 px-2 py-0.5 bg-black bg-opacity-20 rounded hover:bg-black bg-opacity-40 text-xs">✕</button>
 </div>
 
 <!-- HEADER -->
@@ -2786,7 +2786,7 @@ ws.onmessage = (ev) => {
 </div>
 
 <!-- Station Detail Modal -->
-<div id="detail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-2 bg-black/70" onclick="if(event.target===this)closeDetail()">
+<div id="detail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-2 bg-black bg-opacity-70" onclick="if(event.target===this)closeDetail()">
   <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col">
 
     <!-- Header -->
@@ -12495,9 +12495,21 @@ document.addEventListener('click', function(e) {
   var wrap = document.getElementById('tools-dropdown-wrap');
   if (wrap && !wrap.contains(e.target)) closeToolsMenu();
 });
+
+// Ctrl+K / Cmd+K opens Smart Search
+document.addEventListener('keydown', function(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+    e.preventDefault();
+    openSearchModal();
+  }
+  if (e.key === 'Escape') {
+    closeSearchModal();
+    closeToolsMenu();
+  }
+});
 </script>
 <!-- WX Station Detail Modal -->
-<div id="wx-detail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-2 bg-black/70" onclick="if(event.target===this)closeWXDetail()">
+<div id="wx-detail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-2 bg-black bg-opacity-70" onclick="if(event.target===this)closeWXDetail()">
   <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col">
 
     <div class="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
@@ -12547,7 +12559,7 @@ document.addEventListener('click', function(e) {
 </div>
 
 <!-- Member Login/Register/Dashboard Modal -->
-<div id="member-modal" class="hidden fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70" onclick="if(event.target===this)closeMemberModal()">
+<div id="member-modal" class="hidden fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black bg-opacity-70" onclick="if(event.target===this)closeMemberModal()">
   <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
 
     <!-- Header -->
@@ -12789,7 +12801,7 @@ document.addEventListener('click', function(e) {
 
 
 <!-- Smart Search Modal (Ctrl+K) -->
-<div id="search-modal" class="hidden fixed inset-0  flex items-start justify-center pt-20 p-4 bg-black/60" onclick="if(event.target===this)closeSearchModal()">
+<div id="search-modal" class="hidden fixed inset-0 flex items-start justify-center pt-20 p-4 bg-black bg-opacity-60" style="z-index:200000" onclick="if(event.target===this)closeSearchModal()">
   <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl flex flex-col" style="max-height:75vh">
     <div class="flex items-center border-b border-gray-700 p-3">
       <span class="text-gray-500 text-lg mr-3">🔍</span>
@@ -12889,7 +12901,7 @@ document.addEventListener('click', function(e) {
   </div>
 </div>
 <!-- Trip History Modal -->
-<div id="trip-modal" class="hidden fixed inset-0  flex items-center justify-center p-4 bg-black/70" onclick="if(event.target===this)closeTripModal()">
+<div id="trip-modal" class="hidden fixed inset-0  flex items-center justify-center p-4 bg-black bg-opacity-70" onclick="if(event.target===this)closeTripModal()">
   <div class="bg-gray-900 border border-emerald-700 rounded-xl shadow-2xl w-full max-w-2xl">
     <div class="flex items-center justify-between p-4 border-b border-gray-700">
       <div>
