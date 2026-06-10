@@ -3336,7 +3336,17 @@ function logMsgHistory(m) {
 }
 
 function logChat(sender, message, colorClass) {
+  // Wire incoming APRS messages (format "FROM→TO") into the conversation inbox
+  const _lc_m = String(sender).match(/^([A-Z0-9\-]+)\s*→\s*([A-Z0-9\-]+)$/i);
+  if (_lc_m && colorClass === 'text-gray-300' && _lc_m[1] !== (myCallsign||'')) {
+    const _from = _lc_m[1].toUpperCase();
+    if (!_conversations[_from]) _conversations[_from] = [];
+    _conversations[_from].push({from:_from, to:_lc_m[2], text:String(message), ts:Date.now(), out:false, read:(_activeConv===_from)});
+    renderConversationList();
+    if (_activeConv === _from) renderThread(_from);
+  }
   const log = document.getElementById('chat-log'); if (!log) return;
+  while (log.children.length >= 100) log.removeChild(log.firstChild);
   const el = document.createElement('div');
   // Detect "FROMCALL→TOCALL" format = received message that can be replied to
   const m = String(sender).match(/^([A-Z0-9\-]+)\s*→\s*([A-Z0-9\-]+)$/i);
@@ -3525,7 +3535,16 @@ function connectWS() {
     const d = JSON.parse(e.data);
     if (d.type==='sys') {
       logChat('SYS', d.packet, 'text-yellow-500');
-    } else if (d.type==='auth_ack') {
+    } else if (d.type==='alert') {
+  // Geo-fence alert pushed from server to this authenticated session
+  var _at = d.alert_type||'';
+  var _title = _at==='geofence_enter' ? '📍 Station entered zone' : _at==='geofence_exit' ? '📍 Station left zone' : '⚡ Alert';
+  if (Notification && Notification.permission==='granted') {
+    try { new Notification(_title, {body: d.message||'', icon:'/favicon.ico'}); } catch(e){}
+  }
+  logChat('🚨', d.message||_title, 'text-amber-400');
+  if (typeof showToast==='function') showToast(_title+': '+(d.message||''), 4000, 'amber');
+} else if (d.type==='auth_ack') {
       if (d.status==='success') {
         document.getElementById('auth-section').classList.add('hidden');
         document.getElementById('logged-in-section').classList.remove('hidden');
