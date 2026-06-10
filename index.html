@@ -340,6 +340,7 @@ body { background: var(--bg-base); color: var(--text-base); }
     <button onclick="togglePanel('status')" class="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 rounded transition-colors">Status</button>
     <button onclick="togglePanel('wx')" class="px-3 py-1.5 bg-sky-900 hover:bg-sky-700 rounded transition-colors">🌦 Weather</button>
     <button onclick="togglePanel('watch')" class="px-3 py-1.5 bg-amber-900 hover:bg-amber-700 rounded transition-colors">👁 Watch</button>
+      <button onclick="togglePanel('alerts')" class="px-3 py-1.5 bg-orange-900 hover:bg-orange-700 rounded transition-colors text-sm font-medium" title="Geo-fence alerts and smart notification rules">📍 Alerts</button>
     <button onclick="togglePanel('iss')" class="px-3 py-1.5 bg-indigo-900 hover:bg-indigo-700 rounded transition-colors">🛸 ISS</button>
     <button onclick="togglePanel('objects')" class="px-3 py-1.5 bg-orange-900 hover:bg-orange-700 rounded transition-colors">📌 Objects</button>
     <button onclick="togglePanel('utils')" class="px-3 py-1.5 bg-teal-900 hover:bg-teal-700 rounded transition-colors">🔧 Utils</button>
@@ -885,6 +886,64 @@ body { background: var(--bg-base); color: var(--text-base); }
                class="text-xs bg-purple-900 hover:bg-purple-800 px-3 py-2 rounded text-purple-300 font-bold" title="Requires admin login">📊 /metrics 🔒</a>
           </div>
           <p class="text-[10px] text-gray-600">GeoJSON/KML: all stations + objects in memory. Prometheus /metrics: requires admin credentials (HTTP Basic Auth). For Grafana: add credentials in the datasource config.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ALERTS PANEL -->
+    <div id="alerts-panel" class="absolute inset-0 z-30 bg-gray-900 hidden p-4 overflow-y-auto">
+      <div class="max-w-2xl mx-auto space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-bold text-orange-400">📍 Geo-fence &amp; Alerts</h2>
+          <button onclick="togglePanel('map')" class="text-gray-400 hover:text-white text-sm">✕ Close</button>
+        </div>
+
+        <!-- Server-side geo-fence rules (synced to Android / iOS) -->
+        <div class="bg-gray-800 p-4 rounded border border-orange-900">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <h3 class="text-sm font-bold text-orange-400">📡 Server Geo-fence Rules</h3>
+              <p class="text-xs text-gray-500 mt-0.5">Synced to Android and iOS apps. Evaluated server-side on every packet.</p>
+            </div>
+            <button onclick="addServerGeoFenceRule()"
+              id="server-gf-add-btn"
+              class="text-xs bg-orange-700 hover:bg-orange-600 px-3 py-1.5 rounded font-bold hidden">
+              + Add Rule
+            </button>
+          </div>
+          <div id="server-gf-signin" class="text-xs text-gray-500 py-2">
+            Sign in to your aprsnet.uk member account (Messages tab) to manage server-side geo-fence rules.
+          </div>
+          <div id="server-gf-list" class="space-y-2 hidden"></div>
+        </div>
+
+        <!-- Browser smart alert rules (local, no sign-in needed) -->
+        <div class="bg-gray-800 p-4 rounded border border-amber-900">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <h3 class="text-sm font-bold text-amber-400">⚡ Browser Smart Rules</h3>
+              <p class="text-xs text-gray-500 mt-0.5">Run in your browser only. Active while this tab is open. No sign-in needed.</p>
+            </div>
+            <button onclick="addAlertRule()" class="text-xs bg-amber-700 hover:bg-amber-600 px-3 py-1.5 rounded font-bold">
+              + Add Rule
+            </button>
+          </div>
+          <p class="text-xs text-gray-600 mb-2">
+            Trigger types: callsign appears, callsign silent, station enters/exits zone, comment keyword, weather threshold.
+          </p>
+          <div id="alert-rules-list" class="space-y-1 text-xs"></div>
+        </div>
+
+        <!-- Notification permissions -->
+        <div class="bg-gray-800 p-4 rounded border border-gray-700">
+          <h3 class="text-sm font-bold text-gray-300 mb-2">🔔 Browser Notifications</h3>
+          <div class="flex items-center justify-between">
+            <span id="notif-status" class="text-xs text-gray-500"></span>
+            <button onclick="requestNotifPermission()" id="notif-btn"
+              class="text-xs bg-amber-800 hover:bg-amber-700 px-3 py-1.5 rounded">
+              Enable Notifications
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -11783,6 +11842,117 @@ setInterval(checkForUpdates, 3600000); // re-check every hour
     }
   };
 })();
+
+/* ── Server-side geo-fence rule management from web ────────────────────── */
+var _serverGfRules = [];
+
+function loadServerGfRules() {
+  var token = localStorage.getItem('aprs-member-token');
+  if (!token) {
+    document.getElementById('server-gf-signin').classList.remove('hidden');
+    document.getElementById('server-gf-list').classList.add('hidden');
+    document.getElementById('server-gf-add-btn').classList.add('hidden');
+    return;
+  }
+  document.getElementById('server-gf-signin').classList.add('hidden');
+  document.getElementById('server-gf-add-btn').classList.remove('hidden');
+  fetch('/api/member/alert-rules', {
+    headers: { 'X-Member-Token': token }
+  })
+  .then(function(r) { return r.ok ? r.json() : []; })
+  .then(function(rules) {
+    _serverGfRules = rules || [];
+    renderServerGfRules();
+  })
+  .catch(function() {});
+}
+
+function renderServerGfRules() {
+  var el = document.getElementById('server-gf-list');
+  if (!el) return;
+  el.classList.remove('hidden');
+  if (!_serverGfRules.length) {
+    el.innerHTML = '<p class="text-xs text-gray-600 py-2 text-center">No rules yet — click + Add Rule</p>';
+    return;
+  }
+  el.innerHTML = _serverGfRules.map(function(r) {
+    var icon = r.type === 'geofence_enter' ? '📍↗' : '📍↘';
+    var who  = r.watch_callsign === '*' ? 'any station' : r.watch_callsign;
+    var verb = r.type === 'geofence_enter' ? 'enters' : 'leaves';
+    return '<div class="bg-gray-900 rounded p-2 flex items-center justify-between">'
+      + '<div class="flex-1 min-w-0">'
+      + '<span class="font-bold text-orange-300 text-xs">' + icon + ' ' + escapeHtml(r.name || (who + ' ' + verb + ' zone')) + '</span>'
+      + '<div class="text-gray-500 text-[10px]">' + who + ' ' + verb + ' a ' + r.radius_mi + ' mi radius around '
+      + parseFloat(r.lat).toFixed(3) + ', ' + parseFloat(r.lon).toFixed(3) + '</div>'
+      + '</div>'
+      + '<button onclick="deleteServerGfRule(' + r.id + ')" class="text-red-400 hover:text-red-300 ml-2 text-xs">✕</button>'
+      + '</div>';
+  }).join('');
+}
+
+function addServerGeoFenceRule() {
+  var token = localStorage.getItem('aprs-member-token');
+  if (!token) { alert('Sign in first (Messages tab)'); return; }
+  // Re-use the existing alert rule modal but save to server instead
+  document.getElementById('alert-rule-modal').classList.remove('hidden');
+  document.getElementById('rule-name').value = '';
+  document.getElementById('rule-type').value = 'geofence_enter';
+  updateRuleForm();
+  // Tag the modal so Save goes to server
+  document.getElementById('alert-rule-modal').dataset.serverMode = '1';
+}
+
+function deleteServerGfRule(id) {
+  var token = localStorage.getItem('aprs-member-token');
+  if (!token) return;
+  if (!confirm('Delete this geo-fence rule?')) return;
+  fetch('/api/member/alert-rules/' + id, {
+    method: 'DELETE',
+    headers: { 'X-Member-Token': token }
+  }).then(function() { loadServerGfRules(); });
+}
+
+// Patch saveAlertRule to optionally save to server
+var _origSaveAlertRule = typeof saveAlertRule === 'function' ? saveAlertRule : null;
+saveAlertRule = function() {
+  var modal = document.getElementById('alert-rule-modal');
+  if (modal && modal.dataset.serverMode === '1') {
+    modal.dataset.serverMode = '';
+    var token = localStorage.getItem('aprs-member-token');
+    if (!token) { alert('Not signed in'); return; }
+    var rType = document.getElementById('rule-type').value;
+    var rule = {
+      type:           (rType === 'geofence_enter' || rType === 'geofence_exit') ? rType : 'geofence_enter',
+      watch_callsign: (document.getElementById('r-callsign') && document.getElementById('r-callsign').value) || '*',
+      lat:            parseFloat(document.getElementById('r-lat') && document.getElementById('r-lat').value) || 0,
+      lon:            parseFloat(document.getElementById('r-lon') && document.getElementById('r-lon').value) || 0,
+      radius_mi:      parseFloat(document.getElementById('r-radius') && document.getElementById('r-radius').value) || 10,
+      name:           document.getElementById('rule-name').value.trim()
+    };
+    fetch('/api/member/alert-rules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Member-Token': token },
+      body: JSON.stringify(rule)
+    })
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(created) {
+      if (created) { _serverGfRules.push(created); renderServerGfRules(); }
+      closeRuleModal();
+    });
+    return;
+  }
+  if (_origSaveAlertRule) _origSaveAlertRule();
+};
+
+// Load server rules when alerts panel opens
+var _origTogglePanel = typeof togglePanel === 'function' ? togglePanel : null;
+if (_origTogglePanel) {
+  togglePanel = function(name) {
+    _origTogglePanel(name);
+    if (name === 'alerts') loadServerGfRules();
+  };
+}
+/* ── End server geo-fence JS ─────────────────────────────────────────────── */
 </script>
 <!-- WX Station Detail Modal -->
 <div id="wx-detail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-2 bg-black/70" onclick="if(event.target===this)closeWXDetail()">
