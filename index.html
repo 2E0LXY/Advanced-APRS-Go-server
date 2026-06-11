@@ -11320,16 +11320,123 @@ function updateQuietHoursStatus() {
   }
 }
 
-// Auto-load Quiet Hours UI when settings tab opens
+// Auto-load Quiet Hours UI + WX settings when settings tab opens
 (function() {
   var origMmTab = (typeof mmTab === 'function') ? mmTab : null;
   if (origMmTab) {
     window.mmTab = function(tab) {
       origMmTab(tab);
-      if (tab === 'settings') setTimeout(loadQuietHoursUI, 100);
+      if (tab === 'settings') {
+        setTimeout(loadQuietHoursUI, 100);
+        setTimeout(loadWxSettings, 150);
+      }
     };
   }
 })();
+
+// ─── Weather Station Settings ─────────────────────────────────────────────────
+var wxSelectedInterval = 30;
+
+function setWxInterval(mins) {
+  wxSelectedInterval = mins;
+  document.querySelectorAll('.wx-int-btn').forEach(function(b) {
+    b.classList.remove('bg-cyan-700', 'text-white');
+    b.classList.add('bg-gray-700', 'text-gray-300');
+  });
+  var btn = document.getElementById('wx-int-' + mins);
+  if (btn) { btn.classList.remove('bg-gray-700', 'text-gray-300'); btn.classList.add('bg-cyan-700', 'text-white'); }
+}
+
+function loadWxSettings() {
+  // Build SSID dropdown (1-15) once
+  var ssidSel = document.getElementById('wx-ssid');
+  if (ssidSel && ssidSel.options.length === 0) {
+    for (var i = 1; i <= 15; i++) {
+      var opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = '-' + i + (i === 13 ? ' (WX convention)' : '');
+      if (i === 13) opt.selected = true;
+      ssidSel.appendChild(opt);
+    }
+  }
+  var p = (memberSession && memberSession.preferences) ? memberSession.preferences : {};
+  var el = function(id) { return document.getElementById(id); };
+  if (el('wx-enabled'))   el('wx-enabled').checked   = !!p.wx_enabled;
+  if (el('wx-app-key')  && p.wx_app_key)  el('wx-app-key').value  = p.wx_app_key;
+  if (el('wx-api-key')  && p.wx_api_key)  el('wx-api-key').value  = p.wx_api_key;
+  if (el('wx-mac')      && p.wx_mac)      el('wx-mac').value       = p.wx_mac;
+  if (el('wx-lat')      && p.wx_lat)      el('wx-lat').value       = p.wx_lat;
+  if (el('wx-lon')      && p.wx_lon)      el('wx-lon').value       = p.wx_lon;
+  if (el('wx-ssid')     && p.wx_ssid)     el('wx-ssid').value      = p.wx_ssid;
+  if (el('wx-pressure') && p.wx_pressure) el('wx-pressure').value  = p.wx_pressure;
+  if (el('wx-solar')    && p.wx_solar !== undefined) el('wx-solar').checked    = !!p.wx_solar;
+  if (el('wx-uv')       && p.wx_uv    !== undefined) el('wx-uv').checked       = !!p.wx_uv;
+  if (el('wx-lightning')&& p.wx_lightning !== undefined) el('wx-lightning').checked = !!p.wx_lightning;
+  if (el('wx-comment'))  el('wx-comment').value = p.wx_comment || 'Ecowitt WS3900A';
+  setWxInterval(p.wx_interval || 30);
+}
+
+function saveWxSettings() {
+  var token = memberSession && memberSession.token;
+  if (!token) { showWxStatus('Not signed in', false); return; }
+  var el = function(id) { return document.getElementById(id); };
+  var prefs = (memberSession && memberSession.preferences) ? Object.assign({}, memberSession.preferences) : {};
+  prefs.wx_enabled   = el('wx-enabled')  ? el('wx-enabled').checked  : false;
+  prefs.wx_app_key   = el('wx-app-key')  ? el('wx-app-key').value.trim()  : '';
+  prefs.wx_api_key   = el('wx-api-key')  ? el('wx-api-key').value.trim()  : '';
+  prefs.wx_mac       = el('wx-mac')      ? el('wx-mac').value.trim()       : '';
+  prefs.wx_lat       = el('wx-lat')      ? parseFloat(el('wx-lat').value)  || 0 : 0;
+  prefs.wx_lon       = el('wx-lon')      ? parseFloat(el('wx-lon').value)  || 0 : 0;
+  prefs.wx_interval  = wxSelectedInterval;
+  prefs.wx_ssid      = el('wx-ssid')     ? parseInt(el('wx-ssid').value)   || 13 : 13;
+  prefs.wx_pressure  = el('wx-pressure') ? el('wx-pressure').value         : 'relative';
+  prefs.wx_solar     = el('wx-solar')    ? el('wx-solar').checked          : false;
+  prefs.wx_uv        = el('wx-uv')       ? el('wx-uv').checked             : false;
+  prefs.wx_lightning = el('wx-lightning')? el('wx-lightning').checked      : false;
+  prefs.wx_comment   = el('wx-comment')  ? el('wx-comment').value.trim()   : '';
+
+  fetch('/api/member/preferences', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-Member-Token': token },
+    body: JSON.stringify(prefs)
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.ok) {
+      if (memberSession) memberSession.preferences = prefs;
+      showWxStatus('✓ Weather settings saved', true);
+    } else {
+      showWxStatus('Error: ' + (d.error || 'unknown'), false);
+    }
+  }).catch(function(e) { showWxStatus('✗ ' + e.message, false); });
+}
+
+function testWxConnection() {
+  var el = function(id) { return document.getElementById(id); };
+  var appKey = el('wx-app-key') ? el('wx-app-key').value.trim() : '';
+  var apiKey = el('wx-api-key') ? el('wx-api-key').value.trim() : '';
+  var mac    = el('wx-mac')     ? el('wx-mac').value.trim()     : '';
+  if (!appKey || !apiKey || !mac) { showWxStatus('Fill Application Key, API Key and MAC first', false); return; }
+  showWxStatus('Testing connection…', null);
+  var token = memberSession && memberSession.token;
+  fetch('/api/member/wx_test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Member-Token': token || '' },
+    body: JSON.stringify({ app_key: appKey, api_key: apiKey, mac: mac })
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.ok) {
+      showWxStatus('✓ ' + d.summary, true);
+    } else {
+      showWxStatus('✗ ' + (d.error || 'Connection failed'), false);
+    }
+  }).catch(function(e) { showWxStatus('✗ ' + e.message, false); });
+}
+
+function showWxStatus(msg, ok) {
+  var el = document.getElementById('wx-status');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'text-xs mt-2 ' + (ok === true ? 'text-green-400' : ok === false ? 'text-red-400' : 'text-gray-400');
+  el.classList.remove('hidden');
+}
 
 
 
@@ -12680,7 +12787,7 @@ document.addEventListener('keydown', function(e) {
     </div>
 
     <!-- Content -->
-    <div class="flex-1 overflow-y-auto p-4">
+    <div class="flex-1 overflow-y-auto p-4 min-h-0">
 
       <!-- LOGIN FORM -->
       <div id="mm-login" class="space-y-3">
@@ -12884,6 +12991,111 @@ document.addEventListener('keydown', function(e) {
               </label>
             </div>
             <p id="mp-status" class="text-[11px] text-gray-500"></p>
+          </div>
+
+          <!-- ── Weather Station ───────────────────────────────────────── -->
+          <div class="bg-gray-800 border border-gray-700 rounded p-3">
+            <div class="flex items-center justify-between mb-1">
+              <p class="text-xs text-cyan-400 font-bold uppercase">🌤 Weather Station (Ecowitt)</p>
+              <label class="flex items-center gap-1.5 cursor-pointer text-xs">
+                <input type="checkbox" id="wx-enabled" class="w-4 h-4">
+                <span class="text-gray-300">Enable</span>
+              </label>
+            </div>
+            <p class="text-[11px] text-gray-500 mb-3">Polls your Ecowitt station and beacons APRS WX packets on your chosen schedule. Beaconing is handled server-side — no app needs to stay open.</p>
+
+            <!-- API Credentials -->
+            <div class="space-y-2 mb-3">
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">Application Key</label>
+                <input type="password" id="wx-app-key" placeholder="DA7AE0CAB…"
+                  class="w-full bg-gray-900 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500 font-mono">
+              </div>
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">API Key</label>
+                <input type="password" id="wx-api-key" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  class="w-full bg-gray-900 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500 font-mono">
+              </div>
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">Station MAC Address</label>
+                <input type="text" id="wx-mac" placeholder="9C:9E:6E:31:48:E4"
+                  class="w-full bg-gray-900 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500 font-mono uppercase"
+                  oninput="this.value=this.value.toUpperCase()">
+              </div>
+            </div>
+
+            <!-- Station Position -->
+            <div class="grid grid-cols-2 gap-2 mb-3">
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">Station Latitude</label>
+                <input type="number" id="wx-lat" placeholder="53.7000" step="0.0001"
+                  class="w-full bg-gray-900 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500">
+              </div>
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">Station Longitude</label>
+                <input type="number" id="wx-lon" placeholder="-1.5000" step="0.0001"
+                  class="w-full bg-gray-900 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500">
+              </div>
+            </div>
+
+            <!-- Beacon Interval -->
+            <div class="mb-3">
+              <label class="text-xs text-gray-500 block mb-1">Beacon Interval</label>
+              <div class="grid grid-cols-4 gap-1">
+                <button type="button" onclick="setWxInterval(30)"  id="wx-int-30"  class="wx-int-btn py-1.5 rounded text-xs bg-gray-700 text-gray-300 hover:bg-cyan-800">30 min</button>
+                <button type="button" onclick="setWxInterval(60)"  id="wx-int-60"  class="wx-int-btn py-1.5 rounded text-xs bg-gray-700 text-gray-300 hover:bg-cyan-800">60 min</button>
+                <button type="button" onclick="setWxInterval(90)"  id="wx-int-90"  class="wx-int-btn py-1.5 rounded text-xs bg-gray-700 text-gray-300 hover:bg-cyan-800">90 min</button>
+                <button type="button" onclick="setWxInterval(120)" id="wx-int-120" class="wx-int-btn py-1.5 rounded text-xs bg-gray-700 text-gray-300 hover:bg-cyan-800">2 hrs</button>
+              </div>
+            </div>
+
+            <!-- SSID + Pressure -->
+            <div class="grid grid-cols-2 gap-2 mb-3">
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">WX SSID <span class="text-gray-600 font-normal">(-13 = convention)</span></label>
+                <select id="wx-ssid" class="w-full bg-gray-900 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500"></select>
+              </div>
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">Pressure Source</label>
+                <select id="wx-pressure" class="w-full bg-gray-900 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500">
+                  <option value="relative">Relative (sea-level)</option>
+                  <option value="absolute">Absolute (station)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Optional comment fields -->
+            <div class="space-y-1.5 mb-3">
+              <p class="text-[10px] text-gray-500 uppercase font-bold tracking-wide">Optional comment fields</p>
+              <label class="flex items-center gap-2 cursor-pointer text-xs">
+                <input type="checkbox" id="wx-solar" class="w-4 h-4">
+                <span class="text-gray-300">Solar radiation (W/m²)</span>
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer text-xs">
+                <input type="checkbox" id="wx-uv" class="w-4 h-4">
+                <span class="text-gray-300">UV index</span>
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer text-xs">
+                <input type="checkbox" id="wx-lightning" class="w-4 h-4">
+                <span class="text-gray-300">Lightning strike count</span>
+              </label>
+            </div>
+
+            <!-- Comment -->
+            <div class="mb-3">
+              <label class="text-xs text-gray-500 block mb-1">Packet Comment</label>
+              <input type="text" id="wx-comment" value="Ecowitt WS3900A"
+                class="w-full bg-gray-900 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500">
+            </div>
+
+            <!-- Actions -->
+            <div class="flex items-center gap-2 flex-wrap">
+              <button type="button" onclick="testWxConnection()"
+                class="bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded text-xs text-white">Test Connection</button>
+              <button type="button" onclick="saveWxSettings()"
+                class="bg-cyan-700 hover:bg-cyan-600 px-3 py-1.5 rounded text-xs text-white font-bold">Save Weather Settings</button>
+            </div>
+            <p id="wx-status" class="text-xs mt-2 hidden"></p>
           </div>
 
           <button onclick="saveMemberSettings()" class="bg-cyan-700 hover:bg-cyan-600 px-4 py-2 rounded text-sm text-white font-bold">Save Changes</button>

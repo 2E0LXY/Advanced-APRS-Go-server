@@ -793,6 +793,7 @@ func main() {
 	go listenTCPClients()
 	go keepaliveLoop()
 	go runAISStream()
+	go weatherBeaconLoop()
 
 	http.HandleFunc("/symbols/", http.StripPrefix("/symbols/", http.FileServer(http.Dir("symbols"))).ServeHTTP)
 	http.HandleFunc("/demo", serveDemo)
@@ -821,6 +822,7 @@ func main() {
 	http.HandleFunc("/api/member/message/send",   handleMemberMessageSend)
 	http.HandleFunc("/api/member/alert-rules",    handleAlertRules)
 	http.HandleFunc("/api/member/alert-rules/",   handleAlertRuleDelete)
+	http.HandleFunc("/api/member/wx_test",     handleWxTest)
 	// Public MOTD
 	http.HandleFunc("/api/motd", handlePublicMOTD)
 	// Admin features
@@ -4574,3 +4576,321 @@ func loadConfigFromFile() interface{} {
 var embeddedTocallsJSON []byte
 
 
+
+// ─── Ecowitt Weather Station Beaconing ───────────────────────────────────────
+
+// ecowittReading holds the fields needed for an APRS WX packet.
+type ecowittReading struct {
+	WindDirDeg  int
+	WindMph     float64
+	GustMph     float64
+	TempF       float64
+	Rain1hMm    float64
+	Rain24hMm   float64
+	RainDailyMm float64
+	HumidityPct int
+	PressureHpa float64
+	SolarWm2    *float64
+	UvIndex     *int
+	Lightning   *int
+}
+
+// fetchEcowittReading calls the Ecowitt real-time API and returns parsed data.
+// Units requested: °F (temp_unitid=2), hPa (pressure_unitid=3),
+// mph (wind_speed_unitid=6), mm (rainfall_unitid=12).
+func fetchEcowittReading(appKey, apiKey, mac string, relPressure bool) (*ecowittReading, error) {
+	pressureKey := "relative"
+	if !relPressure {
+		pressureKey = "absolute"
+	}
+	url := fmt.Sprintf(
+		"https://api.ecowitt.net/api/v3/device/real_time?application_key=%s&api_key=%s&mac=%s"+
+			"&call_back=all&temp_unitid=2&pressure_unitid=3&wind_speed_unitid=6&rainfall_unitid=12",
+		appKey, apiKey, mac,
+	)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var raw map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, err
+	}
+	if code, _ := raw["code"].(float64); code != 0 {
+		msg, _ := raw["msg"].(string)
+		return nil, fmt.Errorf("ecowitt api error %v: %s", code, msg)
+	}
+	data, _ := raw["data"].(map[string]interface{})
+	if data == nil {
+		return nil, fmt.Errorf("ecowitt: empty data")
+	}
+
+	getVal := func(section, key string) float64 {
+		s, _ := data[section].(map[string]interface{})
+		if s == nil {
+			return 0
+		}
+		f, _ := s[key].(map[string]interface{})
+		if f == nil {
+			return 0
+		}
+		v, _ := f["value"].(string)
+		n, _ := strconv.ParseFloat(v, 64)
+		return n
+	}
+	r := &ecowittReading{
+		WindDirDeg:  int(getVal("wind", "wind_direction")),
+		WindMph:     getVal("wind", "wind_speed"),
+		GustMph:     getVal("wind", "wind_gust"),
+		TempF:       getVal("outdoor", "temperature"),
+		Rain1hMm:    getVal("rainfall", "1_hour"),
+		Rain24hMm:   getVal("rainfall", "24_hours"),
+		RainDailyMm: getVal("rainfall", "daily"),
+		HumidityPct: int(getVal("outdoor", "humidity")),
+	}
+	// Pressure: data.pressure.relative.value is a plain string — read directly.
+	if pSec, ok := data["pressure"].(map[string]interface{}); ok {
+		if pObj, ok := pSec[pressureKey].(map[string]interface{}); ok {
+			if v, ok := pObj["value"].(string); ok {
+				r.PressureHpa, _ = strconv.ParseFloat(v, 64)
+			}
+		}
+	}
+
+	if solarSec, ok := data["solar_and_uvi"].(map[string]interface{}); ok {
+		if sv, ok := solarSec["solar"].(map[string]interface{}); ok {
+			if v, _ := sv["value"].(string); v != "" {
+				f, _ := strconv.ParseFloat(v, 64)
+				r.SolarWm2 = &f
+			}
+		}
+		if uv, ok := solarSec["uvi"].(map[string]interface{}); ok {
+			if v, _ := uv["value"].(string); v != "" {
+				f, _ := strconv.ParseFloat(v, 64)
+				i := int(f)
+				r.UvIndex = &i
+			}
+		}
+	}
+	if lightningSec, ok := data["lightning"].(map[string]interface{}); ok {
+		if lc, ok := lightningSec["count"].(map[string]interface{}); ok {
+			if v, _ := lc["value"].(string); v != "" {
+				f, _ := strconv.ParseFloat(v, 64)
+				i := int(f)
+				r.Lightning = &i
+			}
+		}
+	}
+	return r, nil
+}
+
+// mmToHundredths converts mm to 1/100 inch, capped at 999.
+func mmToHundredths(mm float64) int {
+	v := int(mm * 3.93701)
+	if v < 0 {
+		v = 0
+	}
+	if v > 999 {
+		v = 999
+	}
+	return v
+}
+
+// formatWxPacket builds the full APRS WX packet string.
+func formatWxPacket(callsign string, ssid int, lat, lon float64, r *ecowittReading,
+	solar, uv, lightning bool, comment string) string {
+
+	ts := time.Now().UTC().Format("021504") + "z"
+
+	// Position
+	latNS, lonEW := "N", "E"
+	latAbs, lonAbs := lat, lon
+	if lat < 0 {
+		latNS = "S"
+		latAbs = -lat
+	}
+	if lon < 0 {
+		lonEW = "W"
+		lonAbs = -lon
+	}
+	latDeg := int(latAbs)
+	latMin := (latAbs - float64(latDeg)) * 60.0
+	lonDeg := int(lonAbs)
+	lonMin := (lonAbs - float64(lonDeg)) * 60.0
+	pos := fmt.Sprintf("%02d%05.2f%s/%03d%05.2f%s",
+		latDeg, latMin, latNS, lonDeg, lonMin, lonEW)
+
+	// Temperature: signed 3-digit (APRS spec allows - prefix)
+	tempStr := fmt.Sprintf("%03d", int(r.TempF))
+	if r.TempF < 0 {
+		tempStr = fmt.Sprintf("-%02d", int(-r.TempF))
+	}
+
+	// Humidity: 00 = 100%
+	humStr := fmt.Sprintf("%02d", r.HumidityPct)
+	if r.HumidityPct >= 100 {
+		humStr = "00"
+	}
+
+	wx := fmt.Sprintf("_%03d/%03dg%03dt%sr%03dp%03dP%03dh%sb%05d",
+		r.WindDirDeg%360,
+		int(r.WindMph+0.5),
+		int(r.GustMph+0.5),
+		tempStr,
+		mmToHundredths(r.Rain1hMm),
+		mmToHundredths(r.Rain24hMm),
+		mmToHundredths(r.RainDailyMm),
+		humStr,
+		int(r.PressureHpa*10+0.5),
+	)
+
+	// Optional comment suffixes
+	var parts []string
+	if comment != "" {
+		parts = append(parts, comment)
+	}
+	if solar && r.SolarWm2 != nil {
+		parts = append(parts, fmt.Sprintf("L%d", int(*r.SolarWm2+0.5)))
+	}
+	if uv && r.UvIndex != nil {
+		parts = append(parts, fmt.Sprintf("UV%d", *r.UvIndex))
+	}
+	if lightning && r.Lightning != nil {
+		parts = append(parts, fmt.Sprintf("LS%d", *r.Lightning))
+	}
+	commentStr := ""
+	if len(parts) > 0 {
+		commentStr = " " + strings.Join(parts, " ")
+	}
+
+	src := fmt.Sprintf("%s-%d>APRS,TCPIP*", strings.ToUpper(callsign), ssid)
+	return fmt.Sprintf("%s:@%s%s%s%s", src, ts, pos, wx, commentStr)
+}
+
+// weatherBeaconLoop fires every minute, checks each member's WX preferences,
+// and beacons when their interval has elapsed.
+func weatherBeaconLoop() {
+	// memberID → last beacon time
+	lastBeacon := make(map[string]time.Time)
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		memberStoreMu.RLock()
+		members := make([]Member, 0, len(memberStore.Members))
+		for _, m := range memberStore.Members {
+			members = append(members, m)
+		}
+		memberStoreMu.RUnlock()
+
+		for _, m := range members {
+			p := m.Preferences
+			if p == nil {
+				continue
+			}
+			enabled, _ := p["wx_enabled"].(bool)
+			if !enabled {
+				continue
+			}
+			appKey, _ := p["wx_app_key"].(string)
+			apiKey, _ := p["wx_api_key"].(string)
+			mac, _    := p["wx_mac"].(string)
+			if appKey == "" || apiKey == "" || mac == "" {
+				continue
+			}
+
+			interval := 30
+			if iv, ok := p["wx_interval"].(float64); ok && iv > 0 {
+				interval = int(iv)
+			}
+			if last, ok := lastBeacon[m.ID]; ok {
+				if time.Since(last) < time.Duration(interval)*time.Minute {
+					continue
+				}
+			}
+
+			// Fetch and beacon
+			relPressure := true
+			if v, ok := p["wx_pressure"].(string); ok && v == "absolute" {
+				relPressure = false
+			}
+			reading, err := fetchEcowittReading(appKey, apiKey, mac, relPressure)
+			if err != nil {
+				log.Printf("WxBeacon [%s]: fetch error: %v", m.Callsign, err)
+				continue
+			}
+
+			ssid := 13
+			if v, ok := p["wx_ssid"].(float64); ok && v >= 1 && v <= 15 {
+				ssid = int(v)
+			}
+			lat, _ := p["wx_lat"].(float64)
+			lon, _ := p["wx_lon"].(float64)
+			solar, _    := p["wx_solar"].(bool)
+			uvOpt, _    := p["wx_uv"].(bool)
+			lsOpt, _    := p["wx_lightning"].(bool)
+			commentStr, _ := p["wx_comment"].(string)
+			if commentStr == "" {
+				commentStr = "Ecowitt"
+			}
+
+			packet := formatWxPacket(m.Callsign, ssid, lat, lon, reading,
+				solar, uvOpt, lsOpt, commentStr)
+			routed := injectQConstruct(packet, "qAC")
+			if isAllowed(routed) && !isDuplicate(routed) {
+				log.Printf("WxBeacon TX [%s]: %s", m.Callsign, routed)
+				select {
+				case broadcast <- routed:
+				default:
+					log.Printf("WxBeacon [%s]: broadcast channel full, dropping", m.Callsign)
+				}
+				select {
+				case upstreamOut <- routed:
+				default:
+				}
+			}
+			lastBeacon[m.ID] = time.Now()
+		}
+	}
+}
+
+// handleWxTest is a thin server-side proxy for the Ecowitt test-connection call.
+// It avoids CORS issues from the browser and keeps credentials off the network
+// as plaintext query parameters in browser devtools.
+// POST /api/member/wx_test   body: {"app_key":"…","api_key":"…","mac":"…"}
+func handleWxTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	m := getMemberFromRequest(r)
+	if m == nil {
+		w.WriteHeader(401)
+		json.NewEncoder(w).Encode(map[string]string{"error": "not logged in"})
+		return
+	}
+	var req struct {
+		AppKey string `json:"app_key"`
+		ApiKey string `json:"api_key"`
+		Mac    string `json:"mac"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.AppKey == "" {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request"})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	reading, err := fetchEcowittReading(req.AppKey, req.ApiKey, req.Mac, true)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok": false, "error": err.Error(),
+		})
+		return
+	}
+	summary := fmt.Sprintf("%.1f°F | %d%% RH | %.1f hPa | wind %d° @ %.0f mph",
+		reading.TempF, reading.HumidityPct, reading.PressureHpa,
+		reading.WindDirDeg, reading.WindMph)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok": true, "summary": summary,
+	})
+}
