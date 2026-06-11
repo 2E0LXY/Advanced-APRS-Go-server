@@ -3500,6 +3500,22 @@ func handleMemberPreferences(w http.ResponseWriter, r *http.Request) {
 		saveMemberStore()
 		memberStoreMu.Unlock()
 		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+		// Push real-time settings update to all of this member's connected sessions
+		// so that other devices (Android, iOS, other web tabs) update instantly.
+		go func(call string, p map[string]interface{}) {
+			syncMsg := wsMessage{Type: "member_sync", Data: p}
+			data, _ := json.Marshal(syncMsg)
+			clientsMu.Lock()
+			defer clientsMu.Unlock()
+			for c := range clients {
+				if c.authenticated && strings.EqualFold(c.callsign, call) {
+					select {
+					case c.send <- data:
+					default:
+					}
+				}
+			}
+		}(m.Callsign, prefs)
 		return
 	}
 	http.Error(w, "method not allowed", 405)
