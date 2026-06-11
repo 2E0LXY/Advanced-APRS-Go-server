@@ -10363,17 +10363,11 @@ function useMapCentre() {
 }
 var _pickingForGeoFence = false;
 function pickFromMapClick() {
-  // Remember which rule type was selected so we can restore it
   var savedType = (document.getElementById('rule-type') || {}).value || 'geofence_enter';
-
-  // 1. Hide the modal
   document.getElementById('alert-rule-modal').classList.add('hidden');
   _pickingForGeoFence = true;
-
-  // 2. Switch to the map panel so the user can actually see and click the map
   togglePanel('map');
 
-  // 3. Show the green pick-mode banner
   var banner = document.createElement('div');
   banner.id = '__gf-pick-banner';
   banner.innerHTML = '📍 <b>Click anywhere on the map</b> to set the geo-fence centre'
@@ -10383,57 +10377,55 @@ function pickFromMapClick() {
     + 'background:#166534;color:#fff;padding:12px 24px;border-radius:10px;'
     + 'z-index:300000;font-size:13px;font-weight:bold;cursor:pointer;'
     + 'box-shadow:0 4px 20px rgba(0,0,0,.6);text-align:center;min-width:280px;';
-  banner.onclick = function() { cancelGfPick(savedType, _gfPickHandler); };
-  document.body.appendChild(banner);
-  map.on('click', _gfPickHandler);
 
-  // 4. Register a one-shot Leaflet click handler
-  var _gfPickHandler = null;
-  _gfPickHandler = function(e) {
+  // Named handler so only this one is removed on completion/cancel
+  var _gfHandler = null;
+  _gfHandler = function(e) {
     if (!_pickingForGeoFence) return;
-    map.off('click', _gfPickHandler);  // remove only this handler
-    var pickedLat = e.latlng.lat.toFixed(5);
-    var pickedLon = e.latlng.lng.toFixed(5);
-
-    // 5. Switch back to the Alerts panel
+    map.off('click', _gfHandler);
+    var lat = e.latlng.lat.toFixed(5);
+    var lon = e.latlng.lng.toFixed(5);
     togglePanel('alerts');
-
-    // 6. Re-open the modal and fill in the coordinates
     setTimeout(function() {
-      document.getElementById('alert-rule-modal').classList.remove('hidden');
-      // Restore the rule type and rebuild the form
+      var modal = document.getElementById('alert-rule-modal');
+      if (modal) modal.classList.remove('hidden');
       var typeEl = document.getElementById('rule-type');
       if (typeEl) typeEl.value = savedType;
       updateRuleForm();
-      // Wait a tick for the form fields to be created before filling them
       setTimeout(function() {
         var latEl = document.getElementById('r-lat');
         var lonEl = document.getElementById('r-lon');
-        if (latEl) latEl.value = pickedLat;
-        if (lonEl) lonEl.value = pickedLon;
+        if (latEl) latEl.value = lat;
+        if (lonEl) lonEl.value = lon;
       }, 80);
-      cancelGfPick(savedType);
-    }, 350); // small delay for panel transition animation
-  });
+      cancelGfPick(null, _gfHandler);
+    }, 350);
+  };
+
+  banner.onclick = function() { cancelGfPick(savedType, _gfHandler); };
+  document.body.appendChild(banner);
+  map.on('click', _gfHandler);
 }
 
-function cancelGfPick(savedType, _handler) {
-  // If the user cancels, go back to the Alerts panel and reopen the modal
+
+function cancelGfPick(savedType, handler) {
   if (_pickingForGeoFence) {
     _pickingForGeoFence = false;
-    if (_handler) map.off('click', _handler); // remove only the geo-fence picker handler
+    if (handler && map) map.off('click', handler);
     togglePanel('alerts');
     setTimeout(function() {
-      document.getElementById('alert-rule-modal').classList.remove('hidden');
+      var modal = document.getElementById('alert-rule-modal');
+      if (modal) modal.classList.remove('hidden');
       var typeEl = document.getElementById('rule-type');
       if (typeEl && savedType) typeEl.value = savedType;
-      updateRuleForm();
+      if (savedType) updateRuleForm();
     }, 300);
   }
   _pickingForGeoFence = false;
   var b = document.getElementById('__gf-pick-banner');
   if (b) b.remove();
 }
+
 function saveAlertRule() {
   var r = {
     name: document.getElementById('rule-name').value.trim(),
