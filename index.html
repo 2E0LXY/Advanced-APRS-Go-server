@@ -860,10 +860,9 @@ body { background: var(--bg-base); color: var(--text-base); }
             <button onclick="openNewMessage()" id="new-msg-btn"
               title="New message" style="display:none;"
               class="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold transition-colors"
-              style-hover="background:#0284c7"
               onmouseover="this.style.background='#0284c7'"
               onmouseout="this.style.background='#0ea5e9'"
-              style2="background:#0ea5e9;color:#fff;">✏</button>
+              style="background:#0ea5e9;color:#fff;">✏</button>
           </div>
 
           <!-- Empty conversations state -->
@@ -902,10 +901,10 @@ body { background: var(--bg-base); color: var(--text-base); }
           <!-- Bubbles area -->
           <div id="message-thread"
             class="flex-1 overflow-y-auto px-4 py-3"
-            style="display:flex;flex-direction:column;gap:4px;"></div>
+            style="display:none;flex-direction:column;gap:4px;"></div>
 
           <!-- Empty thread state -->
-          <div id="thread-empty" class="flex-1 flex items-center justify-center">
+          <div id="thread-empty" class="flex-1 flex items-center justify-center" style="display:flex">
             <div class="text-center" style="color:#1e3a5f;">
               <div style="font-size:52px;margin-bottom:12px;opacity:0.6;">💬</div>
               <div class="text-sm">Select a conversation or tap ✏ to start a new one</div>
@@ -3704,6 +3703,8 @@ function openConversation(call) {
   var subEl= document.getElementById('thread-sub');
   if (hdr)  { hdr.style.display  = 'flex'; }
   if (emp)  emp.style.display  = 'none';
+  var _mt = document.getElementById('message-thread');
+  if (_mt) _mt.style.display = 'flex';
   if (comp) comp.classList.remove('hidden');
 
   var col = avatarColour(call);
@@ -3989,10 +3990,14 @@ function connectWS() {
         var _nb = document.getElementById('member-btn');
         if (_nl) _nl.textContent = d.callsign;
         if (_nb) { _nb.style.background = '#0e7490'; _nb.title = 'Connected — click for member options'; }
-        const c = document.getElementById('compose-section');
-        c.classList.remove('opacity-50','pointer-events-none');
-        ['destCall','msgText'].forEach(id=>document.getElementById(id).disabled=false);
-        c.querySelector('button').disabled=false;
+        // Show compose FAB — new messages panel handles its own compose state via openConversation()
+        var _fab = document.getElementById('new-msg-btn');
+        if (_fab) _fab.style.display = 'flex';
+        var _cb = document.getElementById('compose-bar');
+        if (_cb && _activeConv) _cb.classList.remove('hidden');
+        // Enable send button if visible
+        var _sb = document.getElementById('send-btn');
+        if (_sb) _sb.disabled = false;
         logChat('CLIENT','Authenticated as '+d.callsign,'text-green-500');
         // Server may forward stored offline messages now - refresh profile
         // after a short delay so badge reflects delivered state
@@ -4002,7 +4007,20 @@ function connectWS() {
               headers: { 'X-Member-Token': _memberSession.token }
             }).then(function(r){ return r.ok ? r.json() : null; })
               .then(function(d) {
-                if (d) { _memberSession.unread = d.unread_messages || 0; updateMemberBtn(); }
+                if (d) { _memberSession.unread = d.unread_messages || 0; updateMemberBtn();
+  // Sync messages panel auth UI with member session callsign
+  if (_memberSession && _memberSession.callsign) {
+    var _as = document.getElementById('auth-section');
+    var _ls = document.getElementById('logged-in-section');
+    var _ac = document.getElementById('active-call');
+    if (_as) _as.classList.add('hidden');
+    if (_ls) _ls.classList.remove('hidden');
+    if (_ac) _ac.innerText = _memberSession.callsign;
+    if (!myCallsign) myCallsign = _memberSession.callsign;
+    var _fab = document.getElementById('new-msg-btn');
+    if (_fab) _fab.style.display = 'flex';
+  }
+}
               }).catch(function(){});
           }, 2000);
         }
@@ -4437,10 +4455,21 @@ function doLogout() {
   myCallsign='';
   document.getElementById('auth-section').classList.remove('hidden');
   document.getElementById('logged-in-section').classList.add('hidden');
-  const c=document.getElementById('compose-section');
-  c.classList.add('opacity-50','pointer-events-none');
-  ['destCall','msgText'].forEach(id=>document.getElementById(id).disabled=true);
-  c.querySelector('button').disabled=true;
+  // Reset messages panel to unauthenticated state
+  var _fab2 = document.getElementById('new-msg-btn');
+  if (_fab2) _fab2.style.display = 'none';
+  var _cb2 = document.getElementById('compose-bar');
+  if (_cb2) _cb2.classList.add('hidden');
+  var _th2 = document.getElementById('thread-header');
+  if (_th2) _th2.style.display = 'none';
+  var _te2 = document.getElementById('thread-empty');
+  if (_te2) _te2.style.display = 'flex';
+  var _mt2 = document.getElementById('message-thread');
+  if (_mt2) _mt2.innerHTML = '';
+  _activeConv = null;
+  var _ta = document.getElementById('msgText');
+  if (_ta) _ta.value = '';
+  apUpdateNotifSection();
 }
 function sendMsg() {
   if (demoBlock("messaging is disabled")) return;
@@ -10354,12 +10383,15 @@ function pickFromMapClick() {
     + 'background:#166534;color:#fff;padding:12px 24px;border-radius:10px;'
     + 'z-index:300000;font-size:13px;font-weight:bold;cursor:pointer;'
     + 'box-shadow:0 4px 20px rgba(0,0,0,.6);text-align:center;min-width:280px;';
-  banner.onclick = function() { cancelGfPick(savedType); };
+  banner.onclick = function() { cancelGfPick(savedType, _gfPickHandler); };
   document.body.appendChild(banner);
+  map.on('click', _gfPickHandler);
 
   // 4. Register a one-shot Leaflet click handler
-  map.once('click', function(e) {
+  var _gfPickHandler = null;
+  _gfPickHandler = function(e) {
     if (!_pickingForGeoFence) return;
+    map.off('click', _gfPickHandler);  // remove only this handler
     var pickedLat = e.latlng.lat.toFixed(5);
     var pickedLon = e.latlng.lng.toFixed(5);
 
@@ -10385,11 +10417,11 @@ function pickFromMapClick() {
   });
 }
 
-function cancelGfPick(savedType) {
+function cancelGfPick(savedType, _handler) {
   // If the user cancels, go back to the Alerts panel and reopen the modal
   if (_pickingForGeoFence) {
     _pickingForGeoFence = false;
-    map.off('click'); // remove any pending one-shot handler
+    if (_handler) map.off('click', _handler); // remove only the geo-fence picker handler
     togglePanel('alerts');
     setTimeout(function() {
       document.getElementById('alert-rule-modal').classList.remove('hidden');
