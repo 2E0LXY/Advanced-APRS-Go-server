@@ -10766,6 +10766,7 @@ function autoFillAPRSCredentials() {
         var spanCall = loggedS.querySelector('span.font-bold');
         if (spanCall) spanCall.innerText = _memberSession.callsign;
       }
+      var compose = document.getElementById('compose-bar');
       if (compose) {
         compose.classList.remove('opacity-50','pointer-events-none');
         ['destCall','msgText'].forEach(function(id){
@@ -11365,12 +11366,26 @@ function loadWxSettings() {
     for (var i = 1; i <= 15; i++) {
       var opt = document.createElement('option');
       opt.value = i;
-      opt.textContent = '-' + i + (i === 13 ? ' (WX convention)' : '');
+      var ssidLabels = {
+        1:'generic',2:'generic',3:'generic',4:'generic',
+        5:'other networks (D-Star / Echolink / WIRES)',
+        6:'balloon / experimental',
+        7:'handheld HT / GPS tracker',
+        8:'boat / RV / second mobile',
+        9:'primary mobile (car / bicycle)',
+        10:'internet iGate / Winlink',
+        11:'aircraft / balloon',
+        12:'APRStt / IoT / RFID',
+        13:'weather station ← APRS convention',
+        14:'trucker / long-distance',
+        15:'generic'
+      };
+      opt.textContent = '-' + i + (ssidLabels[i] ? '  (' + ssidLabels[i] + ')' : '');
       if (i === 13) opt.selected = true;
       ssidSel.appendChild(opt);
     }
   }
-  var p = (memberSession && memberSession.preferences) ? memberSession.preferences : {};
+  var p = (_memberSession && _memberSession.preferences) ? _memberSession.preferences : {};
   var el = function(id) { return document.getElementById(id); };
   if (el('wx-enabled'))   el('wx-enabled').checked   = !!p.wx_enabled;
   if (el('wx-app-key')  && p.wx_app_key)  el('wx-app-key').value  = p.wx_app_key;
@@ -11388,10 +11403,10 @@ function loadWxSettings() {
 }
 
 function saveWxSettings() {
-  var token = memberSession && memberSession.token;
+  var token = _memberSession && _memberSession.token;
   if (!token) { showWxStatus('Not signed in', false); return; }
   var el = function(id) { return document.getElementById(id); };
-  var prefs = (memberSession && memberSession.preferences) ? Object.assign({}, memberSession.preferences) : {};
+  var prefs = (_memberSession && _memberSession.preferences) ? Object.assign({}, _memberSession.preferences) : {};
   prefs.wx_enabled   = el('wx-enabled')  ? el('wx-enabled').checked  : false;
   prefs.wx_app_key   = el('wx-app-key')  ? el('wx-app-key').value.trim()  : '';
   prefs.wx_api_key   = el('wx-api-key')  ? el('wx-api-key').value.trim()  : '';
@@ -11412,7 +11427,7 @@ function saveWxSettings() {
     body: JSON.stringify(prefs)
   }).then(function(r) { return r.json(); }).then(function(d) {
     if (d.ok) {
-      if (memberSession) memberSession.preferences = prefs;
+      if (_memberSession) _memberSession.preferences = prefs;
       showWxStatus('✓ Weather settings saved', true);
     } else {
       showWxStatus('Error: ' + (d.error || 'unknown'), false);
@@ -11427,7 +11442,7 @@ function testWxConnection() {
   var mac    = el('wx-mac')     ? el('wx-mac').value.trim()     : '';
   if (!appKey || !apiKey || !mac) { showWxStatus('Fill Application Key, API Key and MAC first', false); return; }
   showWxStatus('Testing connection…', null);
-  var token = memberSession && memberSession.token;
+  var token = _memberSession && _memberSession.token;
   fetch('/api/member/wx_test', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Member-Token': token || '' },
@@ -12149,27 +12164,20 @@ async function fetchLoRaData() {
           }
         });
         _loraLatest = Object.values(byCall).map(function(r) {
-          return {
-            callsign:    r.tx_callsign,
-            igate:       r.rx_callsign,
-            rssi:        r.signal_strength,
-            snr:         r.signal_quality,
-            distance:    r.distance,
-            elevation:   r.elevation,
-            lat:         parseFloat(r.latitude)  || 0,
-            lon:         parseFloat(r.longitude) || 0,
-            path:        r.path,
-            destination: r.destination,
-            battery:     r.battery,
-            received_at: r.received_at,
-            // classify type from destination TOCALL
+          // Preserve ALL original API fields so renderLoRaList/renderLoRaData/
+          // loraShowP2P can access tx_callsign, rx_callsign, signal_quality,
+          // signal_strength, elevation, received_at etc. directly.
+          return Object.assign({}, r, {
+            // Normalised aliases (for map rendering code that uses these names)
+            latitude:  r.latitude  || '0',
+            longitude: r.longitude || '0',
+            // Computed extras
             type: /APLRG/.test(r.destination) ? 'igate'
                 : /APLRT|APTT4/.test(r.destination) ? 'tracker'
                 : /APLRD/.test(r.destination) ? 'digi'
                 : 'tracker',
-            // path contains digipeated '*' flag
             digipeated: (r.path||'').includes('*') || (r.destination||'').includes('*')
-          };
+          });
         });
         renderLoRaData(_loraLatest);
         return;
@@ -12181,30 +12189,52 @@ async function fetchLoRaData() {
 }
 
 async function _fetchLoRaDataAprsIs() {
+  // True fallback: use LoRa stations already in the APRS-IS station map
+  // (populated from live WebSocket + history) so the table has data even when
+  // the Link9 API is unavailable (503 / rate-limited / offline).
   try {
-    var allResults = [];
-    var pages = 10;
-    var promises = [];
-    for (var p = 1; p <= pages; p++) {
-      promises.push(
-        fetch('https://lora.link9.net/api/messages?limit=100&page=' + p)
-          .then(function(r) { return r.ok ? r.json() : null; })
-          .catch(function() { return null; })
-      );
+    var synth = [];
+    if (typeof stations !== 'undefined') {
+      Object.values(stations).forEach(function(s) {
+        if (s.type !== 'lora') return;
+        // Build a synthetic record using APRS-IS field names that
+        // renderLoRaList and renderLoRaData expect.
+        var sig = s.loraSignal || {};
+        synth.push({
+          tx_callsign:    s.callsign,
+          rx_callsign:    sig.rxCall || '',
+          signal_quality: sig.snr    !== undefined ? String(sig.snr)  : '',
+          signal_strength:sig.rssi   !== undefined ? String(sig.rssi) : '',
+          distance:       sig.dist   !== undefined ? String(sig.dist) : '',
+          elevation:      s.altitude || '0',
+          latitude:       String(s.lat || 0),
+          longitude:      String(s.lon || 0),
+          received_at:    s.lastHeard ? new Date(s.lastHeard * 1000).toISOString()
+                                      : new Date().toISOString(),
+          destination:    s.dest || '',
+          path:           s.path || '',
+          battery:        '',
+          digipeated:     sig.digipeated || false,
+          type:           'tracker'  // classified from APRS-IS TOCALL
+        });
+      });
     }
-    var responses = await Promise.all(promises);
-    responses.forEach(function(d) {
-      if (d && d.results) allResults = allResults.concat(d.results);
-    });
-    if (!allResults.length) return;
-    _loraLatest = allResults;
-    if (_loraEnabled) renderLoRaData(allResults);
-    // Also refresh the stations table if user is on the LoRa tab
+    if (!synth.length) {
+      console.info('LoRa: Link9 API unavailable; no APRS-IS LoRa stations in local cache yet.');
+      var empty = document.getElementById('lora-list-empty');
+      if (empty) {
+        empty.textContent = 'Link9 API unavailable. LoRa stations heard via APRS-IS will appear here once received.';
+        empty.classList.remove('hidden');
+      }
+      return;
+    }
+    _loraLatest = synth;
+    if (_loraEnabled) renderLoRaData(synth);
     if (!document.getElementById('stations-lora').classList.contains('hidden')) {
       renderLoRaList();
     }
   } catch(e) {
-    console.warn('LoRa fetch error:', e);
+    console.warn('LoRa APRS-IS fallback error:', e);
   }
 }
 
