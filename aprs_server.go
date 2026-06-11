@@ -3021,6 +3021,7 @@ type StoredMessage struct {
 	Ts        int64  `json:"ts"`
 	Read      bool   `json:"read"`
 	Raw       string `json:"raw,omitempty"`
+	Direction string `json:"direction,omitempty"` // "in" (default/absent) | "out"
 }
 
 type MemberSession struct {
@@ -3584,6 +3585,10 @@ func handleMemberMessageSend(w http.ResponseWriter, r *http.Request) {
 	}
 	clientsMu.Unlock()
 
+	// Store for both recipient (direction="in") and sender (direction="out").
+	// storeMessageForMember also pushes the packet to sender's other sessions.
+	go storeMessageForMember(req.To, m.Callsign, req.Text, rawPacket, time.Now().Unix())
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"ok":        true,
@@ -3611,32 +3616,72 @@ func formatAPRSPosition(lat, lon float64) (string, string) {
 }
 
 
+// storeMessageForMember stores an incoming APRS message for a registered member
+// and a "sent" copy for the sender if they are also a registered member.
+// Calling this once handles both parties.
 func storeMessageForMember(to, from, text, raw string, ts int64) {
-	toUpper := strings.ToUpper(strings.TrimSpace(to))
+	toUpper   := strings.ToUpper(strings.TrimSpace(to))
+	fromUpper := strings.ToUpper(strings.TrimSpace(from))
 	memberStoreMu.Lock()
 	defer memberStoreMu.Unlock()
-	// Find member with this callsign (check all owned callsigns)
-	var targetCall string
-	for _, m := range memberStore.Members {
-		for _, c := range m.Callsigns {
-			if strings.ToUpper(c) == toUpper || strings.ToUpper(strings.SplitN(c,"-",2)[0]) == strings.ToUpper(strings.SplitN(toUpper,"-",2)[0]) {
-				targetCall = strings.ToUpper(m.Callsign)
-				break
+
+	findMemberCall := func(search string) string {
+		base := search
+		if i := strings.Index(search, "-"); i > 0 { base = search[:i] }
+		for _, m := range memberStore.Members {
+			for _, c := range m.Callsigns {
+				cu := strings.ToUpper(c)
+				if cu == search || strings.ToUpper(strings.SplitN(cu,"-",2)[0]) == base {
+					return strings.ToUpper(m.Callsign)
+				}
 			}
 		}
-		if targetCall != "" { break }
+		return ""
 	}
-	if targetCall == "" { return }
-	msg := StoredMessage{
-		ID: generateID(), From: from, To: to,
-		Text: text, Ts: ts, Read: false, Raw: raw,
+
+	appendMsg := func(bucket, direction string, read bool) {
+		if bucket == "" { return }
+		msg := StoredMessage{
+			ID: generateID(), From: from, To: to,
+			Text: text, Ts: ts, Read: read, Raw: raw,
+			Direction: direction,
+		}
+		memberStore.Messages[bucket] = append(memberStore.Messages[bucket], msg)
+		if len(memberStore.Messages[bucket]) > 500 {
+			memberStore.Messages[bucket] = memberStore.Messages[bucket][len(memberStore.Messages[bucket])-500:]
+		}
 	}
-	memberStore.Messages[targetCall] = append(memberStore.Messages[targetCall], msg)
-	// Keep last 500 messages per member
-	if len(memberStore.Messages[targetCall]) > 500 {
-		memberStore.Messages[targetCall] = memberStore.Messages[targetCall][len(memberStore.Messages[targetCall])-500:]
+
+	// Recipient bucket (direction="in", unread)
+	recipientCall := findMemberCall(toUpper)
+	appendMsg(recipientCall, "in", false)
+
+	// Sender bucket (direction="out", pre-read)
+	senderCall := findMemberCall(fromUpper)
+	if senderCall != "" && senderCall != recipientCall {
+		appendMsg(senderCall, "out", true)
 	}
+
 	saveMemberStore()
+
+	// Push a real-time WS copy to all of the SENDER's other connected sessions
+	// so that other devices (web, desktop) see the sent message immediately.
+	if senderCall != "" {
+		pkt := wsMessage{Type: "rx", Packet: raw}
+		data, _ := json.Marshal(pkt)
+		go func() {
+			clientsMu.Lock()
+			defer clientsMu.Unlock()
+			for c := range clients {
+				if c.authenticated && strings.ToUpper(c.callsign) == senderCall {
+					select {
+					case c.send <- data:
+					default:
+					}
+				}
+			}
+		}()
+	}
 }
 
 
