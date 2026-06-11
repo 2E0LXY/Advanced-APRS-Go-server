@@ -3544,16 +3544,23 @@ function logMsgHistory(m) {
 }
 
 function logChat(sender, message, colorClass) {
-  // Route incoming APRS messages to conversations store (Android-style)
+  // Route incoming APRS messages to conversations store (personal messages only)
   var _lc_m2 = String(sender).match(/^([A-Z0-9\-]+)\s*[→>]\s*([A-Z0-9\-]+)$/i);
   if (_lc_m2 && _lc_m2[1] !== (myCallsign||'')) {
-    var _from2 = _lc_m2[1].toUpperCase();
-    if (!_conversations[_from2]) _conversations[_from2] = [];
-    _conversations[_from2].push({from:_from2, to:(_lc_m2[2]||'').toUpperCase(),
-      text:String(message), ts:Date.now(), out:false,
-      read:(_activeConv===_from2), state:MSG_STATE.ACKED});
-    renderConversationList();
-    if (_activeConv === _from2) renderThread(_from2);
+    var _msgTxt = String(message);
+    // Skip APRS telemetry definitions — not personal messages
+    var _isTelemetry = /^(BITS|EQNS|UNIT|PARM)\./i.test(_msgTxt)
+      || /^(ack|rej)\d+$/i.test(_msgTxt)          // skip ACK/REJ packets
+      || _msgTxt.length < 2;                        // skip empty/trivial
+    if (!_isTelemetry) {
+      var _from2 = _lc_m2[1].toUpperCase();
+      if (!_conversations[_from2]) _conversations[_from2] = [];
+      _conversations[_from2].push({from:_from2, to:(_lc_m2[2]||'').toUpperCase(),
+        text:_msgTxt, ts:Date.now(), out:false,
+        read:(_activeConv===_from2), state:MSG_STATE.ACKED});
+      renderConversationList();
+      if (_activeConv === _from2) renderThread(_from2);
+    }
   }
   const log = document.getElementById('chat-log'); if (!log) return;
   while (log.children.length >= 100) log.removeChild(log.firstChild);
@@ -4914,6 +4921,9 @@ function openMsgFromModal() {
   if (!_modalTarget) return;
   document.getElementById('msg-target-display').innerText=_modalTarget;
   if (myCallsign) document.getElementById('msg-auth-call').value=myCallsign;
+  var passEl = document.getElementById('msg-auth-pass');
+  var srcPass = document.getElementById('myPass');
+  if (passEl && srcPass && srcPass.value) passEl.value = srcPass.value;
   document.getElementById('msg-auth-modal').classList.remove('hidden');
 }
 function closeMsgAuthModal() { var m=document.getElementById('msg-auth-modal'); m.classList.add('hidden'); m.style.zIndex=''; }
@@ -11982,6 +11992,54 @@ function stopLoRaUpdates() {
 }
 
 async function fetchLoRaData() {
+  // Primary: fetch real LoRa packet data from the Link9 network API
+  try {
+    const res = await fetch('https://lora.link9.net/api/messages?limit=100');
+    if (res.ok) {
+      const d = await res.json();
+      if (d.results && d.results.length) {
+        // Merge into _loraLatest keyed by tx_callsign
+        var byCall = {};
+        (d.results || []).forEach(function(r) {
+          var call = (r.tx_callsign || '').toUpperCase();
+          if (!call || call === (r.rx_callsign||'').toUpperCase()) return; // skip self-heard
+          if (!byCall[call] || new Date(r.received_at) > new Date(byCall[call].received_at)) {
+            byCall[call] = r;
+          }
+        });
+        _loraLatest = Object.values(byCall).map(function(r) {
+          return {
+            callsign:    r.tx_callsign,
+            igate:       r.rx_callsign,
+            rssi:        r.signal_strength,
+            snr:         r.signal_quality,
+            distance:    r.distance,
+            elevation:   r.elevation,
+            lat:         parseFloat(r.latitude)  || 0,
+            lon:         parseFloat(r.longitude) || 0,
+            path:        r.path,
+            destination: r.destination,
+            battery:     r.battery,
+            received_at: r.received_at,
+            // classify type from destination TOCALL
+            type: /APLRG/.test(r.destination) ? 'igate'
+                : /APLRT|APTT4/.test(r.destination) ? 'tracker'
+                : /APLRD/.test(r.destination) ? 'digi'
+                : 'tracker',
+            // path contains digipeated '*' flag
+            digipeated: (r.path||'').includes('*') || (r.destination||'').includes('*')
+          };
+        });
+        renderLoRaData(_loraLatest);
+        return;
+      }
+    }
+  } catch(e) { /* fall through to APRS-IS */ }
+  // Fallback: existing APRS-IS based LoRa fetch
+  return _fetchLoRaDataAprsIs();
+}
+
+async function _fetchLoRaDataAprsIs() {
   try {
     var allResults = [];
     var pages = 10;
@@ -12385,12 +12443,16 @@ function apUpdateNotifSection() {
 
 function apRequestNotif() {
   var token = localStorage.getItem('aprs-member-token');
-  if (!token) { alert('Sign in to your member account first.'); return; }
-  if (typeof Notification === 'undefined') return;
+  // Accept either member token OR APRS-IS WS auth
+  if (!token && !myCallsign) { alert('Please sign in first using the Messages tab.'); return; }
+  if (typeof Notification === 'undefined') { alert('Notifications not supported in this browser.'); return; }
   Notification.requestPermission().then(function(perm) {
     apUpdateNotifSection();
     if (perm === 'granted') {
-      new Notification('APRS Net', {body: 'Geo-fence notifications enabled!', icon: '/favicon.ico'});
+      new Notification('APRS Net Alerts', {
+        body: 'Geo-fence notifications enabled for ' + (myCallsign || 'your account') + '!',
+        icon: '/favicon.ico'
+      });
     }
   });
 }
