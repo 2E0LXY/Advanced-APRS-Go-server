@@ -4048,8 +4048,28 @@ function connectWS() {
       var lbl = document.getElementById('replay-label');
       if (lbl) lbl.innerText = 'Loaded ' + _replayPackets + ' packets ✓';
       finishReplay();
+    } else if (d.type==='member_sync') {
+      // Another device saved preferences — apply them here without a reload.
+      if (d.data && typeof d.data === 'object') {
+        applyMemberPrefsFromServer(d.data);
+      }
     }
   };
+}
+
+// Apply a preferences object from the server to the current UI state.
+// Called both from loadMemberPreferences() and from the member_sync WS event.
+function applyMemberPrefsFromServer(p) {
+  if (!p) return;
+  if (_memberSession) _memberSession.prefs = Object.assign(_memberSession.prefs || {}, p);
+  var box = function(id, key) {
+    var el = document.getElementById(id);
+    if (el && p[key] !== undefined) el.checked = !!p[key];
+  };
+  box('mp-drop-pistar', 'drop_pistar');
+  box('mp-drop-dstar',  'drop_dstar');
+  box('mp-drop-apdesk', 'drop_apdesk');
+  if (typeof redrawMap === 'function') redrawMap();
 }
 
 async function loadHistory() {
@@ -8225,16 +8245,7 @@ async function loadMemberPreferences() {
     });
     if (!r.ok) return;
     var p = await r.json();
-    _memberSession.prefs = p || {};
-    var box = function(id, key) {
-      var el = document.getElementById(id);
-      if (el) el.checked = !!_memberSession.prefs[key];
-    };
-    box('mp-drop-pistar',  'drop_pistar');
-    box('mp-drop-dstar',   'drop_dstar');
-    box('mp-drop-apdesk',  'drop_apdesk');
-    // Re-draw to apply the loaded filters
-    if (typeof redrawMap === 'function') redrawMap();
+    applyMemberPrefsFromServer(p || {});
   } catch(e) { console.warn('loadMemberPreferences:', e); }
 }
 
