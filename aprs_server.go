@@ -139,8 +139,10 @@ var (
 	// for @ and / position reports (used by WX beacons and most trackers).
 	posRegex = regexp.MustCompile(`[!\/=@\*](?:\d{6}[zh\/])?(\d{2})(\d{2}\.\d{2})([NS])(.)(\d{3})(\d{2}\.\d{2})([EW])(.)`)
 	// Compressed position: DTI + sym_table(1) + lat_b91(4) + lon_b91(4) + sym(1) + cs(2) + T(1)
-	// Used by all OE5BPA / LoRa_APRS_Tracker / ESP32 LoRa nodes
-	compPosRegex = regexp.MustCompile(`[!\/=@\*]([\/\\])([\x21-\x7b]{4})([\x21-\x7b]{4})([\x21-\x7b])([\x20-\x7b]{2})([\x21-\x7b])`)
+	// Used by all OE5BPA / LoRa_APRS_Tracker / ESP32 LoRa nodes.
+	// Same optional timestamp as posRegex — @/ DTI compressed reports also
+	// carry a DDHHMMz/DDHHMM//HHMMSSh timestamp before the compressed block.
+	compPosRegex = regexp.MustCompile(`[!\/=@\*](?:\d{6}[zh\/])?([\/\\])([\x21-\x7b]{4})([\x21-\x7b]{4})([\x21-\x7b])([\x20-\x7b]{2})([\x21-\x7b])`)
 	// Object format: ;NAME_____*DDHHMMzDDMM.MMN/DDDMM.MMW symbol comment
 	objRegex = regexp.MustCompile(`;([^\*]{9})[\*_](\d{6}[z\/])(\d{2})(\d{2}\.\d{2})([NS])(.)(\d{3})(\d{2}\.\d{2})([EW])(.)`)
 	// Item format: )NAME!DDMM.MMN/DDDMM.MMW symbol comment
