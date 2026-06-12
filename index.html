@@ -318,22 +318,23 @@ body { background: var(--bg-base); color: var(--text-base); }
       onclick="stopTracking()" title="Click to stop tracking">📡 <span id="tracking-call"></span> ✕</span>
     <span id="rx-count" class="text-xs text-gray-400 font-mono">RX: 0</span>
     <span id="station-count" class="text-xs text-gray-500 font-mono">STN: 0</span>
-    <!-- Propagation Meters -->
-    <div id="prop-meters" class="hidden md:flex items-center gap-3 ml-2 pl-3 border-l border-blue-800">
-      <div class="flex items-center gap-1.5" title="Network activity - packets per minute arriving in the last 10 minutes">
-        <span class="text-[10px] text-gray-400 uppercase font-bold">Activity</span>
-        <div class="w-16 h-2.5 bg-gray-800 rounded-full overflow-hidden">
-          <div id="prop-local-bar" class="h-full rounded-full transition-all duration-700" style="width:0%;background:#6b7280"></div>
-        </div>
-        <span id="prop-local-val" class="text-[10px] font-mono text-gray-400 w-6">–</span>
+    <!-- Propagation Range: 10 distance bands (mi) from your station, coloured
+         by how many stations are currently heard in each band. -->
+    <div id="prop-meters" class="hidden md:flex items-center gap-2 ml-2 pl-3 border-l border-blue-800" title="Propagation range">
+      <span class="text-[10px] text-gray-400 uppercase font-bold">Range</span>
+      <div id="prop-range-bar" class="flex items-center gap-px h-2.5">
+        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#374151"></div>
+        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#374151"></div>
+        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#374151"></div>
+        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#374151"></div>
+        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#374151"></div>
+        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#374151"></div>
+        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#374151"></div>
+        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#374151"></div>
+        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#374151"></div>
+        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#374151"></div>
       </div>
-      <div class="flex items-center gap-1.5" title="Geographic coverage - how wide an area active stations span">
-        <span class="text-[10px] text-gray-400 uppercase font-bold">Coverage</span>
-        <div class="w-16 h-2.5 bg-gray-800 rounded-full overflow-hidden">
-          <div id="prop-region-bar" class="h-full rounded-full transition-all duration-700" style="width:0%;background:#6b7280"></div>
-        </div>
-        <span id="prop-region-val" class="text-[10px] font-mono text-gray-400 w-6">–</span>
-      </div>
+      <span id="prop-range-label" class="text-[10px] font-mono font-bold text-gray-400 w-9 text-center">–</span>
     </div>
   </div>
   <!-- ── Primary navigation ─────────────────────────────────────────────── -->
@@ -11772,6 +11773,89 @@ function _propColor(score) {
   return '#ef4444';                     // red - very poor
 }
 
+// ─── Propagation Range bar ─────────────────────────────────────────────────
+// 10 distance bands (miles) from your own station. For each band, counts how
+// many currently-heard stations fall within it. Stations with invalid/null
+// coordinates (0,0, |lat|>90, |lon|>180) are excluded as erroneous fixes, as
+// is your own callsign. Overall LOW/MED/HIGH reflects the furthest band that
+// has at least 2 stations (falling back to 1 if nothing reaches that).
+var PROP_BANDS_MI    = [5, 10, 20, 40, 80, 160, 200, 500, 1000, Infinity];
+var PROP_BAND_LABELS = ['0-5', '5-10', '10-20', '20-40', '40-80', '80-160', '160-200', '200-500', '500-1000', '1000+'];
+
+function _propSegColor(count) {
+  if (count === 0) return '#374151';   // grey  - none heard
+  if (count === 1) return '#3b82f6';   // blue  - one station
+  if (count <= 3)  return '#22c55e';   // green - a few
+  if (count <= 7)  return '#eab308';   // yellow - several
+  return '#f97316';                     // orange - many
+}
+
+function computePropRange() {
+  if (_ourLat === null || _ourLon === null) return;
+  var now = Date.now() / 1000;
+  var staleWindow = 60 * 60; // ignore stations not heard in the last hour
+  var counts = new Array(10).fill(0);
+  var myBase = (myCallsign || '').split('-')[0].toUpperCase();
+
+  for (var call in stations) {
+    var s = stations[call];
+    if (!s || !s.positions || !s.positions.length) continue;
+    if ((now - (s.lastHeard || 0)) > staleWindow) continue;
+    if (call.split('-')[0].toUpperCase() === myBase) continue; // skip ourselves
+
+    var p = s.positions[s.positions.length - 1];
+    if (!p || isNaN(p.lat) || isNaN(p.lon)) continue;
+    // Filter erroneous fixes: null-island and out-of-range coordinates
+    if (Math.abs(p.lat) > 90 || Math.abs(p.lon) > 180) continue;
+    if (p.lat === 0 && p.lon === 0) continue;
+
+    var km = haversineKm(_ourLat, _ourLon, p.lat, p.lon);
+    if (isNaN(km) || km < 0) continue;
+    var mi = km * 0.621371;
+
+    for (var b = 0; b < PROP_BANDS_MI.length; b++) {
+      if (mi <= PROP_BANDS_MI[b]) { counts[b]++; break; }
+    }
+  }
+
+  // Overall rating: furthest band with >=2 stations, falling back to >=1.
+  var maxBand = -1;
+  for (var b = 9; b >= 0; b--) { if (counts[b] >= 2) { maxBand = b; break; } }
+  if (maxBand === -1) {
+    for (var b = 9; b >= 0; b--) { if (counts[b] >= 1) { maxBand = b; break; } }
+  }
+
+  var rating, color;
+  if (maxBand < 0)     { rating = '–';    color = '#6b7280'; }
+  else if (maxBand <= 3) { rating = 'LOW';  color = '#ef4444'; }
+  else if (maxBand <= 6) { rating = 'MED';  color = '#eab308'; }
+  else                   { rating = 'HIGH'; color = '#22c55e'; }
+
+  updatePropRangeBar(counts, rating, color);
+}
+
+function updatePropRangeBar(counts, rating, color) {
+  var bar = document.getElementById('prop-range-bar');
+  var lbl = document.getElementById('prop-range-label');
+  if (bar) {
+    var segs = bar.children;
+    for (var i = 0; i < segs.length && i < counts.length; i++) {
+      segs[i].style.background = _propSegColor(counts[i]);
+      segs[i].title = PROP_BAND_LABELS[i] + ' mi: ' + counts[i] + ' station' + (counts[i] === 1 ? '' : 's');
+    }
+  }
+  if (lbl) { lbl.innerText = rating; lbl.style.color = color; }
+  var wrap = document.getElementById('prop-meters');
+  if (wrap) {
+    wrap.title = 'Propagation range: ' + rating + '. Each bar = a distance band '
+      + 'from your station in miles (' + PROP_BAND_LABELS.join(', ') + '). '
+      + 'Bar colour = stations currently heard in that band '
+      + '(grey=0, blue=1, green=2-3, yellow=4-7, orange=8+). '
+      + 'HIGH = stations heard 200mi+, MED = 40-200mi, LOW = under 40mi.';
+  }
+}
+setInterval(computePropRange, 60000);
+
 function updatePropMeters(activity, coverage, ppm, activeStations, coverageStations, diagKm) {
   var lBar = document.getElementById('prop-local-bar');
   var lVal = document.getElementById('prop-local-val');
@@ -11863,6 +11947,7 @@ function schedulePropUpdate() {
   _propTimer = setTimeout(computePropagation, 2000);
 }
 setInterval(computePropagation, 60000);
+setTimeout(computePropRange, 2000);
 
 
 // ─── Phase 3: Distance-Coloured Animated Path Lines ───────────────────────────
