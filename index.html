@@ -520,7 +520,7 @@ body { background: var(--bg-base); color: var(--text-base); }
         <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="show-phg" onchange="redrawMap()"><span>PHG Circles</span></label>
         <label class="flex items-center space-x-2 cursor-pointer" title="Map auto-zooms to fit all visible stations. Pan or zoom manually to disable."><input type="checkbox" id="autoFit" class="w-4 h-4" onchange="toggleAutoFit(this.checked)"><span>🔍 Auto-Fit Zoom</span></label>
         <label class="flex items-center space-x-2 cursor-pointer" title="Fade stations that haven't been heard recently (30+ minutes)"><input type="checkbox" id="ghostOld" class="w-4 h-4" onchange="toggleGhosting(this.checked)" checked><span>👻 Ghost Stale Stations</span></label>
-        <label class="flex items-center space-x-2 cursor-pointer" title="Draw distance-coloured propagation lines from stations toward your location"><input type="checkbox" id="propLines" class="w-4 h-4" onchange="togglePropLines(this.checked)"><span>📡 Propagation Lines</span></label>
+        <label class="flex items-center space-x-2 cursor-pointer" title="Draw lines from recently-heard stations to YOUR station, coloured by distance (green=local, purple=DX). Shows your gateway&#39;s reach, not station-to-station RF paths."><input type="checkbox" id="propLines" class="w-4 h-4" onchange="togglePropLines(this.checked)"><span>📡 Range Lines (to you)</span></label>
         <label class="flex items-center space-x-2 cursor-pointer" title="Animated rain radar overlay from RainViewer"><input type="checkbox" id="wxRadar" class="w-4 h-4" onchange="toggleWxRadar(this.checked)"><span>🌧 Weather Radar</span></label>
         <div class="flex items-center justify-between cursor-pointer">
           <span class="text-xs text-purple-400" id="path-viz-label">No path shown</span>
@@ -11967,31 +11967,48 @@ function togglePropLines(on) {
   }
 }
 
-function _distColor(km) {
-  if (km <= 50)  return '#22c55e';   // green  - close
-  if (km <= 150) return '#84cc16';   // lime
-  if (km <= 300) return '#f97316';   // orange - far
-  return '#a855f7';                   // purple - very far (band opening territory)
+// Colour-codes a line by its distance band (miles) - shares the same 10-band
+// scheme as the header Propagation Range bar, collapsed to 5 visual tiers.
+function _distColor(mi) {
+  if (mi <= 10)   return '#22c55e';   // green  - local  (0-10 mi)
+  if (mi <= 40)   return '#84cc16';   // lime   - nearby (10-40 mi)
+  if (mi <= 160)  return '#eab308';   // yellow - regional (40-160 mi)
+  if (mi <= 500)  return '#f97316';   // orange - distant (160-500 mi)
+  return '#a855f7';                    // purple - DX (500+ mi)
 }
 
+// Draws a line from each recently-heard station to YOUR station (the
+// location configured in Settings / passed in the connect form), coloured by
+// distance band. This shows how far your gateway is currently "reaching" -
+// it does NOT show RF paths between other stations, since this server is fed
+// via APRS-IS (internet) and has no way to know who heard whom over the air.
 function drawPropLines() {
   if (!_propLinesEnabled || _ourLat === null || !_propLineLayer) return;
   _propLineLayer.clearLayers();
   var now = Date.now() / 1000;
   var windowSec = 30 * 60;
+  var myBase = (myCallsign || '').split('-')[0].toUpperCase();
   for (var call in stations) {
     var s = stations[call];
     if (!s || !s.positions || !s.positions.length) continue;
     if ((now - (s.lastHeard || 0)) > windowSec) continue;
+    if (call.split('-')[0].toUpperCase() === myBase) continue; // skip ourselves
+
     var p = s.positions[s.positions.length - 1];
-    var dist = haversineKm(_ourLat, _ourLon, p.lat, p.lon);
-    if (isNaN(dist) || dist < 1) continue;
-    var color = _distColor(dist);
+    if (!p || isNaN(p.lat) || isNaN(p.lon)) continue;
+    // Filter erroneous fixes: null-island and out-of-range coordinates
+    if (Math.abs(p.lat) > 90 || Math.abs(p.lon) > 180) continue;
+    if (p.lat === 0 && p.lon === 0) continue;
+
+    var distKm = haversineKm(_ourLat, _ourLon, p.lat, p.lon);
+    if (isNaN(distKm) || distKm < 1) continue;
+    var distMi = distKm * 0.621371;
+    var color = _distColor(distMi);
     var line = L.polyline([[p.lat, p.lon], [_ourLat, _ourLon]], {
       color: color, weight: 1.5, opacity: 0.55,
       dashArray: '6,8', className: 'prop-flow-line'
     });
-    line.bindTooltip(call + ' — ' + Math.round(dist) + ' km', { sticky: true });
+    line.bindTooltip(call + ' \u2014 ' + Math.round(distMi) + ' mi (' + Math.round(distKm) + ' km) from your station', { sticky: true });
     _propLineLayer.addLayer(line);
   }
 }
