@@ -3547,6 +3547,23 @@ function logMsgHistory(m) {
   log.scrollTop = log.scrollHeight;
 }
 
+// Returns true if `to` (an APRS message addressee, e.g. "2E0LXY-9") is one
+// of this user's own callsigns/SSIDs — matched by exact string OR by base
+// callsign (ignoring SSID), same convention used by checkLiveMessageForMember.
+function _msgAddresseeIsMe(to) {
+  if (!to || !myCallsign) return false;
+  var toU = String(to).toUpperCase().trim();
+  var toBase = toU.split('-')[0];
+  var owned = [String(myCallsign).toUpperCase()];
+  if (_memberSession && _memberSession.callsigns) {
+    _memberSession.callsigns.forEach(function(c){ owned.push(String(c).toUpperCase()); });
+  }
+  return owned.some(function(own) {
+    var ownBase = own.split('-')[0];
+    return own === toU || ownBase === toBase;
+  });
+}
+
 function logChat(sender, message, colorClass) {
   // Route incoming APRS messages to conversations store (personal messages only)
   var _lc_m2 = String(sender).match(/^([A-Z0-9\-]+)\s*[→>]\s*([A-Z0-9\-]+)$/i);
@@ -3556,7 +3573,13 @@ function logChat(sender, message, colorClass) {
     var _isTelemetry = /^(BITS|EQNS|UNIT|PARM)\./i.test(_msgTxt)
       || /^(ack|rej)\d+$/i.test(_msgTxt)          // skip ACK/REJ packets
       || _msgTxt.length < 2;                        // skip empty/trivial
-    if (!_isTelemetry) {
+    // Only route into the Messages Centre if the message is actually
+    // addressed to one of OUR callsigns. The gateway broadcasts every
+    // message-type packet it hears (regardless of recipient), so without
+    // this check conversations would fill up with traffic between other
+    // stations that merely happened to be visible on the network.
+    var _isForMe = _msgAddresseeIsMe(_lc_m2[2]);
+    if (!_isTelemetry && _isForMe) {
       var _from2 = _lc_m2[1].toUpperCase();
       if (!_conversations[_from2]) _conversations[_from2] = [];
       _conversations[_from2].push({from:_from2, to:(_lc_m2[2]||'').toUpperCase(),
