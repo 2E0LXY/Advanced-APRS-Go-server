@@ -4838,7 +4838,7 @@ func weatherBeaconLoop() {
 	defer ticker.Stop()
 	for range ticker.C {
 		memberStoreMu.RLock()
-		members := make([]Member, 0, len(memberStore.Members))
+		members := make([]*Member, 0, len(memberStore.Members))
 		for _, m := range memberStore.Members {
 			members = append(members, m)
 		}
