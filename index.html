@@ -12844,19 +12844,19 @@ document.addEventListener('keydown', function(e) {
   <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl lg:max-w-5xl max-h-[90vh] flex flex-col">
 
     <!-- Header -->
-    <div class="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
-      <div class="flex items-center space-x-3">
-        <span class="text-2xl">👤</span>
+    <div class="flex items-center justify-between p-2 border-b border-gray-700 flex-shrink-0">
+      <div class="flex items-center space-x-2">
+        <span class="text-xl">👤</span>
         <div>
-          <h2 id="mm-title" class="text-lg font-bold text-cyan-400">Member Login</h2>
-          <p id="mm-subtitle" class="text-xs text-gray-400">Access your APRS account</p>
+          <h2 id="mm-title" class="text-base font-bold text-cyan-400">Member Login</h2>
+          <p id="mm-subtitle" class="text-[11px] text-gray-400">Access your APRS account</p>
         </div>
       </div>
-      <button onclick="closeMemberModal()" class="text-gray-400 hover:text-white text-xl">✕</button>
+      <button onclick="closeMemberModal()" class="text-gray-400 hover:text-white text-lg">✕</button>
     </div>
 
     <!-- Content -->
-    <div class="flex-1 overflow-y-auto p-4 min-h-0">
+    <div class="flex-1 overflow-y-auto p-3 min-h-0">
 
       <!-- LOGIN FORM -->
       <div id="mm-login" class="space-y-3">
@@ -12998,142 +12998,142 @@ document.addEventListener('keydown', function(e) {
         </div>
 
         <!-- Settings tab -->
-        <div id="mm-tab-settings" class="hidden space-y-3">
-          <div class="grid grid-cols-2 gap-3">
+        <div id="mm-tab-settings" class="hidden space-y-2">
+          <div class="grid grid-cols-2 gap-2">
             <div>
-              <label class="text-xs text-gray-400 block mb-1">Display Name</label>
-              <input type="text" id="mm-set-name" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white text-sm outline-none focus:border-cyan-500">
+              <label class="text-[11px] text-gray-400 block mb-1">Display Name</label>
+              <input type="text" id="mm-set-name" class="w-full bg-gray-800 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500">
             </div>
             <div>
-              <label class="text-xs text-gray-400 block mb-1">Email</label>
-              <input type="email" id="mm-set-email" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white text-sm outline-none focus:border-cyan-500">
+              <label class="text-[11px] text-gray-400 block mb-1">Email</label>
+              <input type="email" id="mm-set-email" class="w-full bg-gray-800 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500">
             </div>
           </div>
 
           <!-- Two-column layout on large screens: left = Quiet Hours + Map Filters,
                right = Weather Station. Stacks to a single column on mobile. -->
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
-          <div class="space-y-3">
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-2 items-start">
+          <div class="space-y-2">
 
           <!-- Quiet Hours -->
-          <div class="bg-gray-800 border border-gray-700 rounded p-3">
-            <p class="text-xs text-cyan-400 font-bold uppercase mb-2">🌙 Quiet Hours</p>
-            <p class="text-xs text-gray-400 mb-2">Suppress notification toasts &amp; beeps during this window. Badges still update silently.</p>
-            <div class="grid grid-cols-2 gap-2 mb-2">
+          <div class="bg-gray-800 border border-gray-700 rounded p-2">
+            <p class="text-[11px] text-cyan-400 font-bold uppercase mb-1.5">🌙 Quiet Hours</p>
+            <p class="text-[11px] text-gray-400 mb-1.5">Suppress notification toasts &amp; beeps during this window. Badges still update silently.</p>
+            <div class="grid grid-cols-2 gap-1.5 mb-1.5">
               <div>
-                <label class="text-xs text-gray-500 block mb-1">Start (HH:MM)</label>
-                <input type="time" id="qh-start" value="22:00" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white text-sm outline-none focus:border-cyan-500">
+                <label class="text-[11px] text-gray-500 block mb-1">Start (HH:MM)</label>
+                <input type="time" id="qh-start" value="22:00" class="w-full bg-gray-800 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500">
               </div>
               <div>
-                <label class="text-xs text-gray-500 block mb-1">End (HH:MM)</label>
-                <input type="time" id="qh-end" value="07:00" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white text-sm outline-none focus:border-cyan-500">
+                <label class="text-[11px] text-gray-500 block mb-1">End (HH:MM)</label>
+                <input type="time" id="qh-end" value="07:00" class="w-full bg-gray-800 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500">
               </div>
             </div>
-            <label class="flex items-center gap-2 cursor-pointer text-xs">
-              <input type="checkbox" id="qh-enabled" class="w-4 h-4">
+            <label class="flex items-center gap-1.5 cursor-pointer text-[11px]">
+              <input type="checkbox" id="qh-enabled" class="w-3.5 h-3.5">
               <span class="text-gray-300">Enable quiet hours</span>
             </label>
-            <button onclick="saveQuietHours()" class="mt-2 bg-cyan-700 hover:bg-cyan-600 px-3 py-1.5 rounded text-xs text-white font-bold">Save Quiet Hours</button>
-            <p id="qh-status" class="text-xs mt-2 hidden"></p>
+            <button onclick="saveQuietHours()" class="mt-1.5 bg-cyan-700 hover:bg-cyan-600 px-3 py-1 rounded text-[11px] text-white font-bold">Save Quiet Hours</button>
+            <p id="qh-status" class="text-[11px] mt-1.5 hidden"></p>
           </div>
 
           <!-- Map Filter Preferences (synced to Android app on login) -->
-          <div class="bg-gray-800 border border-gray-700 rounded p-3">
-            <p class="text-xs text-cyan-400 font-bold uppercase mb-2">Map Filter Preferences</p>
-            <p class="text-xs text-gray-400 mb-3">Hide categories of traffic on the map. These preferences sync to the Android app whenever you sign in there with the same account.</p>
-            <div class="space-y-2 mb-2">
-              <label class="flex items-start gap-2 cursor-pointer text-xs">
-                <input type="checkbox" id="mp-drop-pistar" class="w-4 h-4 mt-0.5" onchange="saveMemberPreferences()">
+          <div class="bg-gray-800 border border-gray-700 rounded p-2">
+            <p class="text-[11px] text-cyan-400 font-bold uppercase mb-1.5">Map Filter Preferences</p>
+            <p class="text-[11px] text-gray-400 mb-2">Hide categories of traffic on the map. These preferences sync to the Android app whenever you sign in there with the same account.</p>
+            <div class="space-y-1.5 mb-1.5">
+              <label class="flex items-start gap-1.5 cursor-pointer text-[11px]">
+                <input type="checkbox" id="mp-drop-pistar" class="w-3.5 h-3.5 mt-0.5" onchange="saveMemberPreferences()">
                 <span class="text-gray-300">
                   <span class="font-bold text-gray-200">Hide digital-voice gateway beacons</span><br>
-                  <span class="text-gray-500 text-[11px]">Pi-Star &middot; MMDVM &middot; APDPRS &middot; DMRGateway &middot; ircDDB</span>
+                  <span class="text-gray-500 text-[10px]">Pi-Star &middot; MMDVM &middot; APDPRS &middot; DMRGateway &middot; ircDDB</span>
                 </span>
               </label>
-              <label class="flex items-start gap-2 cursor-pointer text-xs">
-                <input type="checkbox" id="mp-drop-dstar" class="w-4 h-4 mt-0.5" onchange="saveMemberPreferences()">
+              <label class="flex items-start gap-1.5 cursor-pointer text-[11px]">
+                <input type="checkbox" id="mp-drop-dstar" class="w-3.5 h-3.5 mt-0.5" onchange="saveMemberPreferences()">
                 <span class="text-gray-300">
                   <span class="font-bold text-gray-200">Hide D-STAR routes</span><br>
-                  <span class="text-gray-500 text-[11px]">D-STAR repeater forwarding traffic</span>
+                  <span class="text-gray-500 text-[10px]">D-STAR repeater forwarding traffic</span>
                 </span>
               </label>
-              <label class="flex items-start gap-2 cursor-pointer text-xs">
-                <input type="checkbox" id="mp-drop-apdesk" class="w-4 h-4 mt-0.5" onchange="saveMemberPreferences()">
+              <label class="flex items-start gap-1.5 cursor-pointer text-[11px]">
+                <input type="checkbox" id="mp-drop-apdesk" class="w-3.5 h-3.5 mt-0.5" onchange="saveMemberPreferences()">
                 <span class="text-gray-300">
                   <span class="font-bold text-gray-200">Hide APDESK status</span><br>
-                  <span class="text-gray-500 text-[11px]">UI-View desktop client beacons</span>
+                  <span class="text-gray-500 text-[10px]">UI-View desktop client beacons</span>
                 </span>
               </label>
             </div>
-            <p id="mp-status" class="text-[11px] text-gray-500"></p>
+            <p id="mp-status" class="text-[10px] text-gray-500"></p>
           </div>
 
           </div><!-- end left column -->
 
           <!-- ── Weather Station (right column) ─────────────────────────── -->
-          <div class="bg-gray-800 border border-gray-700 rounded p-3">
+          <div class="bg-gray-800 border border-gray-700 rounded p-2">
             <div class="flex items-center justify-between mb-1">
-              <p class="text-xs text-cyan-400 font-bold uppercase">🌤 Weather Station (Ecowitt)</p>
-              <label class="flex items-center gap-1.5 cursor-pointer text-xs">
-                <input type="checkbox" id="wx-enabled" class="w-4 h-4">
+              <p class="text-[11px] text-cyan-400 font-bold uppercase">🌤 Weather Station (Ecowitt)</p>
+              <label class="flex items-center gap-1 cursor-pointer text-[11px]">
+                <input type="checkbox" id="wx-enabled" class="w-3.5 h-3.5">
                 <span class="text-gray-300">Enable</span>
               </label>
             </div>
-            <p class="text-[11px] text-gray-500 mb-3">Polls your Ecowitt station and beacons APRS WX packets on your chosen schedule. Beaconing is handled server-side — no app needs to stay open.</p>
+            <p class="text-[10px] text-gray-500 mb-2">Polls your Ecowitt station and beacons APRS WX packets on your chosen schedule. Beaconing is handled server-side — no app needs to stay open.</p>
 
             <!-- API Credentials -->
-            <div class="space-y-2 mb-3">
+            <div class="space-y-1.5 mb-2">
               <div>
-                <label class="text-xs text-gray-500 block mb-1">Application Key</label>
+                <label class="text-[11px] text-gray-500 block mb-1">Application Key</label>
                 <input type="text" id="wx-app-key" placeholder="DA7AE0CAB…" autocomplete="off" spellcheck="false"
-                  class="w-full bg-gray-900 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500 font-mono">
+                  class="w-full bg-gray-900 border border-gray-700 rounded p-1 text-white text-[11px] outline-none focus:border-cyan-500 font-mono">
               </div>
               <div>
-                <label class="text-xs text-gray-500 block mb-1">API Key</label>
+                <label class="text-[11px] text-gray-500 block mb-1">API Key</label>
                 <input type="text" id="wx-api-key" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off" spellcheck="false"
-                  class="w-full bg-gray-900 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500 font-mono">
+                  class="w-full bg-gray-900 border border-gray-700 rounded p-1 text-white text-[11px] outline-none focus:border-cyan-500 font-mono">
               </div>
               <div>
-                <label class="text-xs text-gray-500 block mb-1">Station MAC Address</label>
+                <label class="text-[11px] text-gray-500 block mb-1">Station MAC Address</label>
                 <input type="text" id="wx-mac" placeholder="9C:9E:6E:31:48:E4"
-                  class="w-full bg-gray-900 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500 font-mono uppercase"
+                  class="w-full bg-gray-900 border border-gray-700 rounded p-1 text-white text-[11px] outline-none focus:border-cyan-500 font-mono uppercase"
                   oninput="this.value=this.value.toUpperCase()">
               </div>
             </div>
 
             <!-- Station Position -->
-            <div class="grid grid-cols-2 gap-2 mb-3">
+            <div class="grid grid-cols-2 gap-1.5 mb-2">
               <div>
-                <label class="text-xs text-gray-500 block mb-1">Station Latitude</label>
+                <label class="text-[11px] text-gray-500 block mb-1">Station Latitude</label>
                 <input type="number" id="wx-lat" placeholder="53.7000" step="0.0001"
-                  class="w-full bg-gray-900 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500">
+                  class="w-full bg-gray-900 border border-gray-700 rounded p-1 text-white text-[11px] outline-none focus:border-cyan-500">
               </div>
               <div>
-                <label class="text-xs text-gray-500 block mb-1">Station Longitude</label>
+                <label class="text-[11px] text-gray-500 block mb-1">Station Longitude</label>
                 <input type="number" id="wx-lon" placeholder="-1.5000" step="0.0001"
-                  class="w-full bg-gray-900 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500">
+                  class="w-full bg-gray-900 border border-gray-700 rounded p-1 text-white text-[11px] outline-none focus:border-cyan-500">
               </div>
             </div>
 
             <!-- Beacon Interval -->
-            <div class="mb-3">
-              <label class="text-xs text-gray-500 block mb-1">Beacon Interval</label>
+            <div class="mb-2">
+              <label class="text-[11px] text-gray-500 block mb-1">Beacon Interval</label>
               <div class="grid grid-cols-4 gap-1">
-                <button type="button" onclick="setWxInterval(30)"  id="wx-int-30"  class="wx-int-btn py-1.5 rounded text-xs bg-gray-700 text-gray-300 hover:bg-cyan-800">30 min</button>
-                <button type="button" onclick="setWxInterval(60)"  id="wx-int-60"  class="wx-int-btn py-1.5 rounded text-xs bg-gray-700 text-gray-300 hover:bg-cyan-800">60 min</button>
-                <button type="button" onclick="setWxInterval(90)"  id="wx-int-90"  class="wx-int-btn py-1.5 rounded text-xs bg-gray-700 text-gray-300 hover:bg-cyan-800">90 min</button>
-                <button type="button" onclick="setWxInterval(120)" id="wx-int-120" class="wx-int-btn py-1.5 rounded text-xs bg-gray-700 text-gray-300 hover:bg-cyan-800">2 hrs</button>
+                <button type="button" onclick="setWxInterval(30)"  id="wx-int-30"  class="wx-int-btn py-1 rounded text-[11px] bg-gray-700 text-gray-300 hover:bg-cyan-800">30 min</button>
+                <button type="button" onclick="setWxInterval(60)"  id="wx-int-60"  class="wx-int-btn py-1 rounded text-[11px] bg-gray-700 text-gray-300 hover:bg-cyan-800">60 min</button>
+                <button type="button" onclick="setWxInterval(90)"  id="wx-int-90"  class="wx-int-btn py-1 rounded text-[11px] bg-gray-700 text-gray-300 hover:bg-cyan-800">90 min</button>
+                <button type="button" onclick="setWxInterval(120)" id="wx-int-120" class="wx-int-btn py-1 rounded text-[11px] bg-gray-700 text-gray-300 hover:bg-cyan-800">2 hrs</button>
               </div>
             </div>
 
             <!-- SSID + Pressure -->
-            <div class="grid grid-cols-2 gap-2 mb-3">
+            <div class="grid grid-cols-2 gap-1.5 mb-2">
               <div>
-                <label class="text-xs text-gray-500 block mb-1">WX SSID <span class="text-gray-600 font-normal">(-13 = convention)</span></label>
-                <select id="wx-ssid" class="w-full bg-gray-900 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500"></select>
+                <label class="text-[11px] text-gray-500 block mb-1">WX SSID <span class="text-gray-600 font-normal">(-13 = convention)</span></label>
+                <select id="wx-ssid" class="w-full bg-gray-900 border border-gray-700 rounded p-1 text-white text-[11px] outline-none focus:border-cyan-500"></select>
               </div>
               <div>
-                <label class="text-xs text-gray-500 block mb-1">Pressure Source</label>
-                <select id="wx-pressure" class="w-full bg-gray-900 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500">
+                <label class="text-[11px] text-gray-500 block mb-1">Pressure Source</label>
+                <select id="wx-pressure" class="w-full bg-gray-900 border border-gray-700 rounded p-1 text-white text-[11px] outline-none focus:border-cyan-500">
                   <option value="relative">Relative (sea-level)</option>
                   <option value="absolute">Absolute (station)</option>
                 </select>
@@ -13141,52 +13141,52 @@ document.addEventListener('keydown', function(e) {
             </div>
 
             <!-- Optional comment fields -->
-            <div class="space-y-1.5 mb-3">
+            <div class="space-y-1 mb-2">
               <p class="text-[10px] text-gray-500 uppercase font-bold tracking-wide">Optional comment fields</p>
-              <label class="flex items-center gap-2 cursor-pointer text-xs">
-                <input type="checkbox" id="wx-solar" class="w-4 h-4">
+              <label class="flex items-center gap-1.5 cursor-pointer text-[11px]">
+                <input type="checkbox" id="wx-solar" class="w-3.5 h-3.5">
                 <span class="text-gray-300">Solar radiation (W/m²)</span>
               </label>
-              <label class="flex items-center gap-2 cursor-pointer text-xs">
-                <input type="checkbox" id="wx-uv" class="w-4 h-4">
+              <label class="flex items-center gap-1.5 cursor-pointer text-[11px]">
+                <input type="checkbox" id="wx-uv" class="w-3.5 h-3.5">
                 <span class="text-gray-300">UV index</span>
               </label>
-              <label class="flex items-center gap-2 cursor-pointer text-xs">
-                <input type="checkbox" id="wx-lightning" class="w-4 h-4">
+              <label class="flex items-center gap-1.5 cursor-pointer text-[11px]">
+                <input type="checkbox" id="wx-lightning" class="w-3.5 h-3.5">
                 <span class="text-gray-300">Lightning strike count</span>
               </label>
             </div>
 
             <!-- Comment -->
-            <div class="mb-3">
-              <label class="text-xs text-gray-500 block mb-1">Packet Comment</label>
+            <div class="mb-2">
+              <label class="text-[11px] text-gray-500 block mb-1">Packet Comment</label>
               <input type="text" id="wx-comment" value="Ecowitt WS3900A"
-                class="w-full bg-gray-900 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500">
+                class="w-full bg-gray-900 border border-gray-700 rounded p-1 text-white text-[11px] outline-none focus:border-cyan-500">
             </div>
 
             <!-- Actions -->
-            <div class="flex items-center gap-2 flex-wrap">
+            <div class="flex items-center gap-1.5 flex-wrap">
               <button type="button" onclick="testWxConnection()"
-                class="bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded text-xs text-white">Test Connection</button>
+                class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-[11px] text-white">Test Connection</button>
               <button type="button" onclick="saveWxSettings()"
-                class="bg-cyan-700 hover:bg-cyan-600 px-3 py-1.5 rounded text-xs text-white font-bold">Save Weather Settings</button>
+                class="bg-cyan-700 hover:bg-cyan-600 px-3 py-1 rounded text-[11px] text-white font-bold">Save Weather Settings</button>
             </div>
-            <p id="wx-status" class="text-xs mt-2 hidden"></p>
+            <p id="wx-status" class="text-[11px] mt-1.5 hidden"></p>
           </div>
 
           </div><!-- end right column -->
           </div><!-- end 2-col grid -->
 
-          <button onclick="saveMemberSettings()" class="bg-cyan-700 hover:bg-cyan-600 px-4 py-2 rounded text-sm text-white font-bold">Save Changes</button>
+          <button onclick="saveMemberSettings()" class="bg-cyan-700 hover:bg-cyan-600 px-3 py-1.5 rounded text-xs text-white font-bold">Save Changes</button>
           <hr class="border-gray-700">
           <div>
-            <label class="text-xs text-gray-400 block mb-1">Current Password</label>
-            <input type="password" id="mm-old-pass" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white text-sm outline-none focus:border-cyan-500 mb-2">
-            <label class="text-xs text-gray-400 block mb-1">New Password</label>
-            <input type="password" id="mm-new-pass" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white text-sm outline-none focus:border-cyan-500">
+            <label class="text-[11px] text-gray-400 block mb-1">Current Password</label>
+            <input type="password" id="mm-old-pass" class="w-full bg-gray-800 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500 mb-1.5">
+            <label class="text-[11px] text-gray-400 block mb-1">New Password</label>
+            <input type="password" id="mm-new-pass" class="w-full bg-gray-800 border border-gray-700 rounded p-1.5 text-white text-xs outline-none focus:border-cyan-500">
           </div>
-          <div id="mm-settings-msg" class="hidden text-xs rounded p-2"></div>
-          <button onclick="changeMemberPassword()" class="bg-orange-700 hover:bg-orange-600 px-4 py-2 rounded text-sm text-white font-bold">Change Password</button>
+          <div id="mm-settings-msg" class="hidden text-[11px] rounded p-1.5"></div>
+          <button onclick="changeMemberPassword()" class="bg-orange-700 hover:bg-orange-600 px-3 py-1.5 rounded text-xs text-white font-bold">Change Password</button>
         </div>
 
       </div><!-- end dashboard -->
