@@ -4943,11 +4943,36 @@ function parseAPRSWX(raw) {
   const wsm=pay.match(/s(\d{1,3})/); if(wsm) wx.WindSpd=Math.round(+wsm[1]*1.609)+'km/h';
   return Object.keys(wx).length ? wx : null;
 }
+// Extracts the free-text comment from an uncompressed APRS position report.
+// Walks the fixed-width fields: DTI, optional 7-char timestamp (@ and / only),
+// then DDMM.mmN/DDDMM.mmW + symbol code (19 chars). Anything after that is
+// "extension data" + comment. If it begins with a standard APRS weather data
+// block (CCC/SSSgGGGtTTTrRRRpPPPPhHHbBBBBB), that block is stripped so only
+// the station's actual comment text remains (WX fields are already shown in
+// the Weather Data section).
+// Returns '' for compressed positions, Mic-E, status reports, or malformed
+// packets — same as the previous (effectively non-functional) implementation,
+// so this is a strict improvement with no new failure modes.
 function parseComment(raw) {
   if (!raw) return '';
-  const c=raw.indexOf(':'); if(c<0) return '';
-  const pay=raw.slice(c+1);
-  const m=pay.match(/[NS].[EW].(.+)$/); return m ? m[1].trim() : '';
+  const c = raw.indexOf(':'); if (c < 0) return '';
+  const pay = raw.slice(c + 1);
+  if (!pay) return '';
+  const dti = pay[0];
+  if (!'!=@/'.includes(dti)) return '';
+  let idx = 1;
+  // Timestamped DTIs (@ and /) carry a 7-char DDHHMM[zh/] timestamp first.
+  if ((dti === '@' || dti === '/') && /^\d{6}[zh\/]/.test(pay.slice(idx))) {
+    idx += 7;
+  }
+  // Uncompressed position: DDMM.mmN/DDDMM.mmW + symbol code = 8+1+9+1 = 19 chars
+  const posPart = pay.slice(idx, idx + 19);
+  if (!/^\d{2}\d{2}\.\d{2}[NS].\d{3}\d{2}\.\d{2}[EW]./.test(posPart)) return '';
+  idx += 19;
+  let rest = pay.slice(idx).trim();
+  // Strip a leading APRS weather data block, e.g. "315/002g007t061r000p017P002h87b09995 "
+  rest = rest.replace(/^\d{3}\/\d{3}(g\d{3})?t-?\d{1,3}(r\d{3})?(p\d{3})?(P\d{3})?(h\d{2})?(b\d{5})?\s*/, '');
+  return rest.trim();
 }
 function showStationPopup(call, st, latest) {
   _modalTarget=call;
