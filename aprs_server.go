@@ -135,7 +135,9 @@ var (
 )
 
 var (
-	posRegex = regexp.MustCompile(`[!\/=@\*](\d{2})(\d{2}\.\d{2})([NS])(.)(\d{3})(\d{2}\.\d{2})([EW])(.)`)
+	// Optional 7-char timestamp (DDHHMMz / DDHHMM/ / HHMMSSh) follows the DTI
+	// for @ and / position reports (used by WX beacons and most trackers).
+	posRegex = regexp.MustCompile(`[!\/=@\*](?:\d{6}[zh\/])?(\d{2})(\d{2}\.\d{2})([NS])(.)(\d{3})(\d{2}\.\d{2})([EW])(.)`)
 	// Compressed position: DTI + sym_table(1) + lat_b91(4) + lon_b91(4) + sym(1) + cs(2) + T(1)
 	// Used by all OE5BPA / LoRa_APRS_Tracker / ESP32 LoRa nodes
 	compPosRegex = regexp.MustCompile(`[!\/=@\*]([\/\\])([\x21-\x7b]{4})([\x21-\x7b]{4})([\x21-\x7b])([\x20-\x7b]{2})([\x21-\x7b])`)
