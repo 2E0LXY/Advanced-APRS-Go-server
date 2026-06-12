@@ -269,6 +269,50 @@ body { background: var(--bg-base); color: var(--text-base); }
    the modal grows to fit its content instead of scrolling. */
 #member-modal > div { overflow: hidden; }
 
+/* ── Message thread backgrounds (mirrors Android MessageBackground.kt) ──
+   7 selectable styles, applied via msg-bg-N class on #message-thread.
+   Approximated in CSS as layered gradients - same colour palette as the
+   Compose Canvas originals so the web matches whatever the Android app
+   has selected via the synced msg_background preference. */
+#message-thread.msg-bg-0 {
+  background:
+    radial-gradient(circle at 62% 28%, rgba(58,176,184,0.35) 0%, transparent 55%),
+    linear-gradient(180deg, #0A3B43 0%, #03191E 100%);
+}
+#message-thread.msg-bg-1 {
+  background:
+    radial-gradient(circle at 35% 30%, rgba(102,215,226,0.40) 0%, transparent 55%),
+    linear-gradient(180deg, #14555E 0%, #062931 100%);
+}
+#message-thread.msg-bg-2 {
+  background:
+    repeating-linear-gradient(45deg, rgba(0,0,0,0.20) 0 1px, transparent 1px 18px),
+    repeating-linear-gradient(-45deg, rgba(0,0,0,0.20) 0 1px, transparent 1px 18px),
+    radial-gradient(circle at 50% 50%, rgba(34,160,85,0.27) 0%, transparent 50%),
+    linear-gradient(180deg, #0A4A22 0%, #02160A 100%);
+}
+#message-thread.msg-bg-3 {
+  background:
+    radial-gradient(circle at 45% 35%, rgba(30,122,42,0.80) 0%, transparent 55%),
+    #000000;
+}
+#message-thread.msg-bg-4 {
+  background:
+    linear-gradient(135deg, rgba(255,32,48,0.50) 0%, rgba(128,0,16,0.20) 35%, transparent 60%),
+    linear-gradient(315deg, #B81020 0%, #2A0408 60%, #0A0203 100%);
+}
+#message-thread.msg-bg-5 {
+  background:
+    repeating-linear-gradient(-28deg,
+      #FF6A1A 0%, #FF6A1A 8%,
+      #0A0503 8%, #0A0503 18%,
+      #CC4810 18%, #CC4810 26%,
+      #0A0503 26%, #0A0503 36%);
+}
+#message-thread.msg-bg-6 {
+  background: linear-gradient(135deg, #FFB020 0%, #FF6F10 35%, #A02208 70%, #400804 100%);
+}
+
 /* MOTD banner stays above content but below modals */
 #motd-banner { z-index: 90 !important; }
 
@@ -906,7 +950,7 @@ body { background: var(--bg-base); color: var(--text-base); }
 
           <!-- Bubbles area -->
           <div id="message-thread"
-            class="flex-1 overflow-y-auto px-4 py-3"
+            class="flex-1 overflow-y-auto px-4 py-3 msg-bg-0"
             style="display:none;flex-direction:column;gap:4px;"></div>
 
           <!-- Empty thread state -->
@@ -4090,6 +4134,18 @@ function connectWS() {
 
 // Apply a preferences object from the server to the current UI state.
 // Called both from loadMemberPreferences() and from the member_sync WS event.
+// Applies one of the 7 message-thread background styles (msg-bg-0..6),
+// matching whatever is selected in the Android app's Settings > Appearance
+// > Messages background. Synced via the msg_background preference.
+function applyMessageBackground(id) {
+  var el = document.getElementById('message-thread');
+  if (!el) return;
+  var n = parseInt(id, 10);
+  if (isNaN(n) || n < 0 || n > 6) n = 0;
+  for (var i = 0; i <= 6; i++) el.classList.remove('msg-bg-' + i);
+  el.classList.add('msg-bg-' + n);
+}
+
 function applyMemberPrefsFromServer(p) {
   if (!p) return;
   if (_memberSession) _memberSession.prefs = Object.assign(_memberSession.prefs || {}, p);
@@ -4100,6 +4156,7 @@ function applyMemberPrefsFromServer(p) {
   box('mp-drop-pistar', 'drop_pistar');
   box('mp-drop-dstar',  'drop_dstar');
   box('mp-drop-apdesk', 'drop_apdesk');
+  if (p.msg_background !== undefined) applyMessageBackground(p.msg_background);
   if (typeof redrawMap === 'function') redrawMap();
 }
 
