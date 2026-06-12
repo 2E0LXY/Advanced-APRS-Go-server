@@ -803,6 +803,7 @@ func main() {
 	http.HandleFunc("/demo", serveDemo)
 	http.HandleFunc("/mobile", serveMobile)
 	http.HandleFunc("/mobile-app.js", serveMobileJS)
+	http.HandleFunc("/privacy", servePrivacy)
 	http.HandleFunc("/", serveIndex)
 	http.HandleFunc("/setup", handleSetup)
 	http.HandleFunc("/ws", handleWS)
@@ -863,6 +864,12 @@ func main() {
 // serveMobile serves the touch-optimised mobile companion page.
 func serveMobile(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "mobile.html")
+}
+
+// servePrivacy serves the privacy policy (required for Play Store /
+// App Store listings and general transparency).
+func servePrivacy(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "privacy.html")
 }
 
 // serveMobileJS serves the mobile companion page's JavaScript.
