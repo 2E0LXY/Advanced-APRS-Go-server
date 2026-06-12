@@ -1800,37 +1800,39 @@ body { background: var(--bg-base); color: var(--text-base); }
       <h3 class="text-lg font-bold text-indigo-400 mb-3">🚀 Enhanced Features Guide</h3>
       <p class="text-sm text-gray-400 mb-4">A detailed guide to the advanced monitoring, analytics and notification features. Each explains <b>what it does</b>, <b>where to find it</b>, and <b>how to read it</b>.</p>
 
-      <!-- Activity & Coverage Meters -->
+      <!-- Propagation Range bar -->
       <div class="bg-gray-900 rounded p-3 mb-3 border-l-4 border-blue-600">
-        <h4 class="font-bold text-blue-300 mb-2">📊 Activity &amp; Coverage Meters</h4>
+        <h4 class="font-bold text-blue-300 mb-2">📶 Propagation Range</h4>
         <p class="text-xs text-gray-300 mb-2"><b>Where:</b> Top header bar, next to the station count (hidden on narrow mobile screens — use the Mobile site there).</p>
-        <p class="text-xs text-gray-400 mb-2">Two live 0–100 bar gauges. <b class="text-amber-300">Important:</b> this server is internet-connected (APRS-IS), not radio-connected, so it cannot measure true radio propagation. Instead these meters measure <b>network situational awareness</b>:</p>
+        <p class="text-xs text-gray-400 mb-2">A 10-segment bar showing how many stations are currently heard at each distance from <b>your own station</b> (the location set in Settings / the connect form). Each segment is one distance band in miles:</p>
+        <p class="text-xs text-gray-500 mb-2 font-mono">0-5 &nbsp; 5-10 &nbsp; 10-20 &nbsp; 20-40 &nbsp; 40-80 &nbsp; 80-160 &nbsp; 160-200 &nbsp; 200-500 &nbsp; 500-1000 &nbsp; 1000+</p>
         <ul class="text-xs text-gray-400 space-y-1 list-disc list-inside ml-1">
-          <li><b class="text-white">ACTIVITY</b> — how busy the APRS network is right now. Calculated from packets-per-minute over the last 10 minutes, on a logarithmic scale. Near 0 = very quiet, 100 = extremely busy. A high value means lots of stations are transmitting (a contest, a net, an event, or simply good band conditions feeding more stations into APRS-IS).</li>
-          <li><b class="text-white">COVERAGE</b> — how geographically widespread the active stations are. Calculated from the diagonal distance across the bounding box of every station heard in the last 30 minutes. 0 = all stations clustered tightly, 100 = stations spread across 800 km or more.</li>
+          <li><b class="text-white">Segment colour</b> = stations heard in that band right now: <span class="text-gray-400">grey = none</span>, <span class="text-blue-400">blue = 1</span>, <span class="text-green-400">green = 2-3</span>, <span class="text-yellow-400">yellow = 4-7</span>, <span class="text-orange-400">orange = 8+</span>.</li>
+          <li><b class="text-white">LOW / MED / HIGH label</b> = the furthest band with at least two stations heard. <span class="text-red-400">LOW</span> = nothing meaningful beyond 40 mi, <span class="text-yellow-400">MED</span> = 40-200 mi, <span class="text-green-400">HIGH</span> = 200 mi or further.</li>
         </ul>
-        <p class="text-xs text-gray-400 mt-2"><b>How to read it:</b> hover (or long-press) either meter for the exact figures — packets/min, station counts and the area span. Colours: <span class="text-green-400">green</span> high, <span class="text-lime-400">lime</span> good, <span class="text-yellow-400">yellow</span> fair, <span class="text-orange-400">orange</span> low, <span class="text-red-400">red</span> very low.</p>
+        <p class="text-xs text-gray-400 mt-2"><b class="text-amber-300">Note:</b> this server is internet-connected (APRS-IS), so "stations heard" includes traffic gated in from elsewhere — it shows your effective visibility radius on the network, not literal RF propagation. Stations with invalid (0,0 or out-of-range) coordinates are excluded. Hover the bar for a per-band breakdown.</p>
       </div>
 
       <!-- High Activity Alert -->
       <div class="bg-gray-900 rounded p-3 mb-3 border-l-4 border-emerald-600">
         <h4 class="font-bold text-emerald-300 mb-2">📡 High Activity Alert</h4>
         <p class="text-xs text-gray-300 mb-2"><b>Where:</b> A green banner that slides down from the very top of the page.</p>
-        <p class="text-xs text-gray-400">Fires automatically when the ACTIVITY meter climbs above 80 — meaning an unusually busy traffic period. Useful as a heads-up that something is happening on the network worth looking at. It auto-hides after 30 seconds, can be dismissed with the ✕, has a 30-minute cooldown so it never spams, and is silenced (banner still shows, but no beep) during your Quiet Hours.</p>
+        <p class="text-xs text-gray-400">Fires automatically when network traffic spikes to an unusually busy level (an internal activity score above 80/100, based on packets-per-minute over the last 10 minutes) — a heads-up that something is happening on the network worth looking at. It auto-hides after 30 seconds, can be dismissed with the ✕, has a 30-minute cooldown so it never spams, and is silenced (banner still shows, but no beep) during your Quiet Hours.</p>
       </div>
 
-      <!-- Propagation Lines -->
+      <!-- Range Lines -->
       <div class="bg-gray-900 rounded p-3 mb-3 border-l-4 border-purple-600">
-        <h4 class="font-bold text-purple-300 mb-2">📡 Propagation Lines</h4>
+        <h4 class="font-bold text-purple-300 mb-2">📡 Range Lines (to you)</h4>
         <p class="text-xs text-gray-300 mb-2"><b>Where:</b> Sidebar checkbox (left panel, under the station filters).</p>
-        <p class="text-xs text-gray-400 mb-2">When enabled, draws an animated dashed line from every recently-heard station toward the server's own location. The flowing animation shows the direction of travel toward the gateway. Lines are colour-coded by distance:</p>
+        <p class="text-xs text-gray-400 mb-2">When enabled, draws a dashed line from every recently-heard station to <b>your own station</b> (the location set in Settings / the connect form) — showing how far your gateway's effective reach currently extends. <b class="text-amber-300">This does not show RF paths between other stations</b> — over an internet-fed APRS-IS connection there is no way to know who heard whom over the air. Lines are colour-coded by distance:</p>
         <ul class="text-xs text-gray-400 space-y-0.5 list-disc list-inside ml-1">
-          <li><span class="text-green-400 font-bold">Green</span> — within 50 km (close)</li>
-          <li><span class="text-lime-400 font-bold">Lime</span> — 50–150 km</li>
-          <li><span class="text-orange-400 font-bold">Orange</span> — 150–300 km (far)</li>
-          <li><span class="text-purple-400 font-bold">Purple</span> — over 300 km (DX / long distance)</li>
+          <li><span class="text-green-400 font-bold">Green</span> — within 10 mi (local)</li>
+          <li><span class="text-lime-400 font-bold">Lime</span> — 10-40 mi (nearby)</li>
+          <li><span class="text-yellow-400 font-bold">Yellow</span> — 40-160 mi (regional)</li>
+          <li><span class="text-orange-400 font-bold">Orange</span> — 160-500 mi (distant)</li>
+          <li><span class="text-purple-400 font-bold">Purple</span> — over 500 mi (DX / long distance)</li>
         </ul>
-        <p class="text-xs text-gray-400 mt-2">Hover any line to see the callsign and exact distance. Lines refresh automatically as stations update.</p>
+        <p class="text-xs text-gray-400 mt-2">Hover any line to see the callsign and exact distance in miles/km. Stations with invalid (0,0 or out-of-range) coordinates are excluded. Lines refresh automatically every 30 seconds.</p>
       </div>
 
       <!-- Propagation Analytics -->
