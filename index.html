@@ -264,6 +264,11 @@ body { background: var(--bg-base); color: var(--text-base); }
   z-index: 100000 !important;
 }
 
+/* Member modal: hard-clip container so the inner overflow-y-auto
+   actually scrolls. Without this, max-h-[90vh] is advisory only and
+   the modal grows to fit its content instead of scrolling. */
+#member-modal > div { overflow: hidden; }
+
 /* MOTD banner stays above content but below modals */
 #motd-banner { z-index: 90 !important; }
 
@@ -12813,7 +12818,7 @@ document.addEventListener('keydown', function(e) {
 
 <!-- Member Login/Register/Dashboard Modal -->
 <div id="member-modal" class="hidden fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black bg-opacity-70" onclick="if(event.target===this)closeMemberModal()">
-  <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+  <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl lg:max-w-5xl max-h-[90vh] flex flex-col">
 
     <!-- Header -->
     <div class="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
@@ -12982,6 +12987,11 @@ document.addEventListener('keydown', function(e) {
             </div>
           </div>
 
+          <!-- Two-column layout on large screens: left = Quiet Hours + Map Filters,
+               right = Weather Station. Stacks to a single column on mobile. -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+          <div class="space-y-3">
+
           <!-- Quiet Hours -->
           <div class="bg-gray-800 border border-gray-700 rounded p-3">
             <p class="text-xs text-cyan-400 font-bold uppercase mb-2">🌙 Quiet Hours</p>
@@ -13034,7 +13044,9 @@ document.addEventListener('keydown', function(e) {
             <p id="mp-status" class="text-[11px] text-gray-500"></p>
           </div>
 
-          <!-- ── Weather Station ───────────────────────────────────────── -->
+          </div><!-- end left column -->
+
+          <!-- ── Weather Station (right column) ─────────────────────────── -->
           <div class="bg-gray-800 border border-gray-700 rounded p-3">
             <div class="flex items-center justify-between mb-1">
               <p class="text-xs text-cyan-400 font-bold uppercase">🌤 Weather Station (Ecowitt)</p>
@@ -13138,6 +13150,9 @@ document.addEventListener('keydown', function(e) {
             </div>
             <p id="wx-status" class="text-xs mt-2 hidden"></p>
           </div>
+
+          </div><!-- end right column -->
+          </div><!-- end 2-col grid -->
 
           <button onclick="saveMemberSettings()" class="bg-cyan-700 hover:bg-cyan-600 px-4 py-2 rounded text-sm text-white font-bold">Save Changes</button>
           <hr class="border-gray-700">
