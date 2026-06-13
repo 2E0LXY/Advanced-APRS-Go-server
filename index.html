@@ -1105,8 +1105,12 @@ body { background: var(--bg-base); color: var(--text-base); }
               + Add Rule
             </button>
           </div>
-          <div id="server-gf-signin" class="text-xs text-gray-500 py-2">
-            Sign in to your aprsnet.uk member account (Messages tab) to manage server-side geo-fence rules.
+          <div id="server-gf-signin" class="text-xs text-gray-500 py-2 flex items-center justify-between gap-3">
+            <span>Not signed in — sign in to sync geo-fence rules to your Android/iOS apps too.</span>
+            <button onclick="openMemberPanel()"
+              class="text-xs bg-orange-700 hover:bg-orange-600 px-3 py-1.5 rounded font-bold whitespace-nowrap">
+              Sign in
+            </button>
           </div>
           <div id="server-gf-list" class="space-y-2 hidden"></div>
         </div>
@@ -1138,7 +1142,7 @@ body { background: var(--bg-base); color: var(--text-base); }
             <span id="ap-notif-status" class="text-xs text-gray-400"></span>
             <button onclick="apRequestNotif()" id="ap-notif-btn"
               class="text-xs bg-amber-800 hover:bg-amber-700 px-3 py-1.5 rounded font-medium">
-              Enable Notifications
+              Enable Browser Alerts
             </button>
           </div>
         </div>
@@ -1154,22 +1158,18 @@ body { background: var(--bg-base); color: var(--text-base); }
             <span id="notif-status" class="text-xs text-gray-500"></span>
             <button onclick="requestNotifPermission()" id="notif-btn"
               class="text-xs bg-amber-800 hover:bg-amber-700 px-3 py-1 rounded">
-              🔔 Enable Notifications
+              🔔 Enable Browser Alerts
             </button>
           </div>
         </div>
 
-        <!-- Smart Alert Rules -->
-        <div class="bg-gray-800 p-4 rounded border border-amber-900 mb-3">
-          <div class="flex items-center justify-between mb-2">
-            <h3 class="text-sm font-bold text-amber-400">⚡ Smart Alerts</h3>
-            <button onclick="addAlertRule()" class="text-xs bg-amber-700 hover:bg-amber-600 px-2 py-1 rounded">+ Add Rule</button>
-          </div>
-          <p class="text-xs text-gray-500 mb-2">Trigger notifications based on conditions. Rules run in your browser - no server required. They check on every received packet.</p>
-          <div id="alert-rules-list" class="space-y-1 text-xs"></div>
-        </div>
-
-        
+        <!-- Smart Alert Rules now live in the Geo-fence & Alerts panel -->
+        <button onclick="togglePanel('alerts')"
+          class="w-full bg-gray-800 hover:bg-gray-700 p-3 rounded border border-amber-900 mb-3
+                 flex items-center justify-between text-left transition-colors">
+          <span class="text-sm font-bold text-amber-400">⚡ Manage Smart Alerts</span>
+          <span class="text-xs text-gray-500">Geo-fence &amp; Alerts →</span>
+        </button>
 
         <div class="bg-gray-800 p-4 rounded border border-gray-700">
           <p class="text-xs text-gray-400 mb-3">
@@ -5321,7 +5321,7 @@ function requestNotifPermission() {
     var btn = document.getElementById('notif-btn');
     var st  = document.getElementById('notif-status');
     if (perm === 'granted') {
-      btn.innerText = '✓ Notifications enabled';
+      btn.innerText = '✓ Browser alerts enabled';
       btn.classList.replace('bg-amber-800','bg-green-800');
       st.innerText = 'You will be notified when watched stations are heard';
     } else {
@@ -5395,7 +5395,7 @@ function updateNotifBtn() {
   }
   if (Notification.permission === 'granted') {
     notifGranted = true;
-    btn.innerText = '✓ Notifications enabled';
+    btn.innerText = '✓ Browser alerts enabled';
     btn.classList.replace('bg-amber-800','bg-green-800');
   } else if (Notification.permission === 'denied') {
     st.innerText = 'Notifications blocked — enable in browser settings';
@@ -10401,15 +10401,13 @@ function saveAlertRulesStorage() {
   // the REST API at /api/member/alert-rules.
 }
 function renderAlertRules() {
-  var el = document.getElementById('alert-rules-list');
   var el2 = document.getElementById('ap-alert-rules-list');
-  if (!el) return;
+  if (!el2) return;
   if (!_alertRules.length) {
-    if (el) el.innerHTML = '<p class="text-gray-600 text-center py-3">No alert rules - click "+ Add Rule" to create one</p>';
-  if (el2) el2.innerHTML = el ? el.innerHTML : '';
+    el2.innerHTML = '<p class="text-gray-600 text-center py-3">No alert rules - click "+ Add Rule" to create one</p>';
     return;
   }
-  el.innerHTML = _alertRules.map(function(r, i) {
+  el2.innerHTML = _alertRules.map(function(r, i) {
     var desc = describeRule(r);
     return '<div class="bg-gray-900 rounded p-2 flex items-center justify-between">'
       + '<div class="flex-1 min-w-0">'
@@ -10422,8 +10420,6 @@ function renderAlertRules() {
       + '</div>'
       + '</div>';
   }).join('');
-  // Also update the Alerts panel list
-  if (el2) el2.innerHTML = el.innerHTML;
 }
 function describeRule(r) {
   switch(r.type) {
@@ -11836,10 +11832,13 @@ function _propColor(score) {
 
 // ─── Propagation Range bar ─────────────────────────────────────────────────
 // 10 distance bands (miles) from your own station. For each band, counts how
-// many currently-heard stations fall within it. Stations with invalid/null
-// coordinates (0,0, |lat|>90, |lon|>180) are excluded as erroneous fixes, as
-// is your own callsign. Overall LOW/MED/HIGH reflects the furthest band that
-// has at least 2 stations (falling back to 1 if nothing reaches that).
+// many currently-heard RF stations fall within it. Stations heard purely via
+// internet injection (TCPIP/TCPIP* path) are excluded, since those reflect
+// APRS-IS's global reach rather than your own RF range. Stations with
+// invalid/null coordinates (0,0, |lat|>90, |lon|>180) are excluded as
+// erroneous fixes, as is your own callsign. Overall LOW/MED/HIGH reflects the
+// furthest band that has at least 2 stations (falling back to 1 if nothing
+// reaches that).
 var PROP_BANDS_MI    = [5, 10, 20, 40, 80, 160, 200, 500, 1000, Infinity];
 var PROP_BAND_LABELS = ['0-5', '5-10', '10-20', '20-40', '40-80', '80-160', '160-200', '200-500', '500-1000', '1000+'];
 
@@ -11849,6 +11848,18 @@ function _propSegColor(count) {
   if (count <= 3)  return '#22c55e';   // green - a few
   if (count <= 7)  return '#eab308';   // yellow - several
   return '#f97316';                     // orange - many
+}
+
+// A station is treated as "RF heard" if its path does not show a direct
+// internet injection (TCPIP/TCPIP*). Stations gated from RF via an iGate
+// (e.g. "WIDE1-1,WIDE2-1,qAR,IGATE") still count - only the originating
+// hop matters for propagation purposes.
+function isRFHeard(path) {
+  if (!path) return false;
+  return path.split(',').every(function (hop) {
+    var clean = hop.trim().replace('*', '');
+    return clean !== 'TCPIP';
+  });
 }
 
 function computePropRange() {
@@ -11863,6 +11874,7 @@ function computePropRange() {
     if (!s || !s.positions || !s.positions.length) continue;
     if ((now - (s.lastHeard || 0)) > staleWindow) continue;
     if (call.split('-')[0].toUpperCase() === myBase) continue; // skip ourselves
+    if (!isRFHeard(s.path)) continue; // ignore internet-injected stations
 
     var p = s.positions[s.positions.length - 1];
     if (!p || isNaN(p.lat) || isNaN(p.lon)) continue;
@@ -11910,8 +11922,9 @@ function updatePropRangeBar(counts, rating, color) {
   if (wrap) {
     wrap.title = 'Propagation range: ' + rating + '. Each bar = a distance band '
       + 'from your station in miles (' + PROP_BAND_LABELS.join(', ') + '). '
-      + 'Bar colour = stations currently heard in that band '
-      + '(grey=0, blue=1, green=2-3, yellow=4-7, orange=8+). '
+      + 'Bar colour = RF-heard stations currently in that band '
+      + '(grey=0, blue=1, green=2-3, yellow=4-7, orange=8+; internet-injected '
+      + 'stations are excluded). '
       + 'HIGH = stations heard 200mi+, MED = 40-200mi, LOW = under 40mi.';
   }
 }
@@ -12813,7 +12826,7 @@ function apUpdateNotifSection() {
     controls.classList.remove('hidden');
     if (typeof Notification !== 'undefined') {
       if (Notification.permission === 'granted') {
-        if (statusEl) statusEl.innerText = '✓ Notifications enabled';
+        if (statusEl) statusEl.innerText = '✓ Browser alerts enabled';
         if (btn) { btn.innerText = '✓ Enabled'; btn.classList.add('bg-green-800'); btn.classList.remove('bg-amber-800'); }
       } else if (Notification.permission === 'denied') {
         if (statusEl) statusEl.innerText = 'Blocked — enable in browser settings';
