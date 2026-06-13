@@ -1595,7 +1595,7 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 				log.Printf("WS TX rejected (source %q != auth callsign %q): %q", src, client.callsign, in.Packet)
 				continue
 			}
-			if time.Since(client.lastTx) < time.Second {
+			if time.Since(client.lastTx) < 5*time.Second {
 				log.Printf("WS TX rate-limited from %s", client.callsign)
 				continue
 			}
@@ -1605,12 +1605,17 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			metrics.BytesRx += uint64(len(in.Packet))
 			metrics.Unlock()
 			routed := injectQConstruct(in.Packet, "qAC")
-			if isAllowed(routed) && !isDuplicate(routed) {
+			if isAllowed(routed) {
+				// Authenticated WS clients are rate-limited to 1/s above.
+				// isDuplicate() uses a 5-minute window which wrongly blocks
+				// stationary beacons (same packet string every interval).
+				// Skip dedup here — the rate-limit is the right gate for
+				// WS TX; dedup exists for IGate-injected packets.
 				log.Printf("WS TX %s: %s", client.callsign, routed)
 				broadcast <- routed
 				upstreamOut <- routed
 			} else {
-				log.Printf("WS TX dropped by isAllowed/duplicate filter (%s): %s", client.callsign, routed)
+				log.Printf("WS TX dropped by isAllowed filter (%s): %s", client.callsign, routed)
 				metrics.Lock()
 				metrics.PktsDropped++
 				metrics.Unlock()
