@@ -11833,7 +11833,7 @@ function _propColor(score) {
 // ─── Propagation Range bar ─────────────────────────────────────────────────
 // 10 distance bands (miles) from your own station. For each band, counts how
 // many currently-heard RF stations fall within it. Stations heard purely via
-// internet injection (TCPIP/TCPIP* path) are excluded, since those reflect
+// internet injection (TCPIP*/TCPXX* path) are excluded, since those reflect
 // APRS-IS's global reach rather than your own RF range. Stations with
 // invalid/null coordinates (0,0, |lat|>90, |lon|>180) are excluded as
 // erroneous fixes, as is your own callsign. Overall LOW/MED/HIGH reflects the
@@ -11851,14 +11851,16 @@ function _propSegColor(count) {
 }
 
 // A station is treated as "RF heard" if its path does not show a direct
-// internet injection (TCPIP/TCPIP*). Stations gated from RF via an iGate
-// (e.g. "WIDE1-1,WIDE2-1,qAR,IGATE") still count - only the originating
-// hop matters for propagation purposes.
+// internet injection (TCPIP/TCPIP* for verified logins, TCPXX/TCPXX* for
+// unverified ones - both mean the packet entered via the internet side of
+// APRS-IS, not RF). Stations gated from RF via an iGate (e.g.
+// "WIDE1-1,WIDE2-1,qAR,IGATE") still count - only the originating hop
+// matters for propagation purposes.
 function isRFHeard(path) {
   if (!path) return false;
   return path.split(',').every(function (hop) {
     var clean = hop.trim().replace('*', '');
-    return clean !== 'TCPIP';
+    return clean !== 'TCPIP' && clean !== 'TCPXX';
   });
 }
 
