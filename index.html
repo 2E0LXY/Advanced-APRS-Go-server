@@ -367,16 +367,16 @@ body { background: var(--bg-base); color: var(--text-base); }
     <div id="prop-meters" class="hidden md:flex items-center gap-2 ml-2 pl-3 border-l border-blue-800" title="Propagation range">
       <span class="text-[10px] text-gray-400 uppercase font-bold">Range</span>
       <div id="prop-range-bar" class="flex items-center gap-px h-2.5">
-        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#374151"></div>
-        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#374151"></div>
-        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#374151"></div>
-        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#374151"></div>
-        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#374151"></div>
-        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#374151"></div>
-        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#374151"></div>
-        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#374151"></div>
-        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#374151"></div>
-        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#374151"></div>
+        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#0B1D3A33"></div>
+        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#1D4ED833"></div>
+        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#3B82F633"></div>
+        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#60A5FA33"></div>
+        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#93C5FD33"></div>
+        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#FDBA7433"></div>
+        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#F9731633"></div>
+        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#EA580C33"></div>
+        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#DC262633"></div>
+        <div class="prop-seg w-2.5 h-full rounded-sm" style="background:#7F1D1D33"></div>
       </div>
       <span id="prop-range-label" class="text-[10px] font-mono font-bold text-gray-400 w-9 text-center">–</span>
     </div>
@@ -11842,12 +11842,18 @@ function _propColor(score) {
 var PROP_BANDS_MI    = [5, 10, 20, 40, 80, 160, 200, 500, 1000, Infinity];
 var PROP_BAND_LABELS = ['0-5', '5-10', '10-20', '20-40', '40-80', '80-160', '160-200', '200-500', '500-1000', '1000+'];
 
-function _propSegColor(count) {
-  if (count === 0) return '#374151';   // grey  - none heard
-  if (count === 1) return '#3b82f6';   // blue  - one station
-  if (count <= 3)  return '#22c55e';   // green - a few
-  if (count <= 7)  return '#eab308';   // yellow - several
-  return '#f97316';                     // orange - many
+// Low (near, cold) -> High (far, hot) distance gradient, one colour per band.
+var PROP_BAND_COLORS = [
+  '#0B1D3A', '#1D4ED8', '#3B82F6', '#60A5FA', '#93C5FD',
+  '#FDBA74', '#F97316', '#EA580C', '#DC2626', '#7F1D1D'
+];
+
+// Segment colour for distance band `bandIndex`: the band's fixed gradient
+// colour (near=cold/navy -> far=hot/red), at low opacity if no RF stations
+// are currently heard in that band, full opacity otherwise.
+function _propSegColor(bandIndex, count) {
+  var base = PROP_BAND_COLORS[bandIndex] || '#374151';
+  return count > 0 ? base : (base + '33'); // '33' hex alpha = ~20% opacity
 }
 
 // A station is treated as "RF heard" if its path does not show a direct
@@ -11915,7 +11921,7 @@ function updatePropRangeBar(counts, rating, color) {
   if (bar) {
     var segs = bar.children;
     for (var i = 0; i < segs.length && i < counts.length; i++) {
-      segs[i].style.background = _propSegColor(counts[i]);
+      segs[i].style.background = _propSegColor(i, counts[i]);
       segs[i].title = PROP_BAND_LABELS[i] + ' mi: ' + counts[i] + ' station' + (counts[i] === 1 ? '' : 's');
     }
   }
@@ -11923,10 +11929,10 @@ function updatePropRangeBar(counts, rating, color) {
   var wrap = document.getElementById('prop-meters');
   if (wrap) {
     wrap.title = 'Propagation range: ' + rating + '. Each bar = a distance band '
-      + 'from your station in miles (' + PROP_BAND_LABELS.join(', ') + '). '
-      + 'Bar colour = RF-heard stations currently in that band '
-      + '(grey=0, blue=1, green=2-3, yellow=4-7, orange=8+; internet-injected '
-      + 'stations are excluded). '
+      + 'from your station in miles (' + PROP_BAND_LABELS.join(', ') + '), '
+      + 'coloured on a near (navy) -> far (red) gradient. A segment is lit '
+      + 'when an RF-heard station is currently in that band (internet-injected '
+      + 'stations are excluded), dim otherwise. '
       + 'HIGH = stations heard 200mi+, MED = 40-200mi, LOW = under 40mi.';
   }
 }
