@@ -965,6 +965,18 @@ body { background: var(--bg-base); color: var(--text-base); }
           <div id="compose-area" class="flex-shrink-0 hidden"
             style="background:rgba(11,21,38,0.97);border-top:1px solid #1e3a5f;">
 
+            <!-- Unjoin banner: shown when ANSRVR ACK detected after CQ -->
+            <div id="unjoin-banner" class="hidden flex items-center justify-between px-4 py-2 gap-3"
+              style="background:#14291a;border-bottom:1px solid #166534;">
+              <span id="unjoin-text" class="text-xs" style="color:#86efac;flex:1;"></span>
+              <button id="unjoin-btn" onclick="sendUnjoin()"
+                class="text-xs px-3 py-1 rounded-lg font-bold flex-shrink-0"
+                style="background:#166534;color:#86efac;border:none;cursor:pointer;"></button>
+              <button onclick="dismissUnjoin()"
+                class="text-xs px-2 py-1 flex-shrink-0"
+                style="color:#64748b;background:none;border:none;cursor:pointer;">✕</button>
+            </div>
+
             <!-- Route selector chips (shown when both parties are members) -->
             <div id="route-selector" class="hidden flex items-center gap-2 px-4 pt-2">
               <span class="text-xs" style="color:#64748b;">Route:</span>
@@ -979,6 +991,10 @@ body { background: var(--bg-base); color: var(--text-base); }
 
             <!-- Compose row -->
             <div class="flex items-end gap-2 px-3 py-2">
+              <!-- Nets quick-compose button -->
+              <button onclick="toggleNetsDropdown()" id="nets-btn" title="Net quick check-in"
+                class="flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-base transition-colors"
+                style="background:#0d2137;border:1px solid #1e3a5f;color:#38bdf8;cursor:pointer;">📡</button>
               <textarea id="msgText"
                 placeholder="Message (max 67 chars)…"
                 maxlength="67" rows="1"
@@ -993,6 +1009,16 @@ body { background: var(--bg-base); color: var(--text-base); }
                 style="background:#0ea5e9;color:#fff;min-width:40px;">
                 &#10148;
               </button>
+            </div>
+
+            <!-- Nets dropdown -->
+            <div id="nets-dropdown" class="hidden px-3 pb-2">
+              <div class="rounded-xl overflow-hidden" style="background:#0b1e35;border:1px solid #1e3a5f;">
+                <div class="px-3 py-2 text-xs font-bold" style="color:#38bdf8;border-bottom:1px solid #1e3a5f;">
+                  📡 Net Quick Check-in — tap to pre-fill
+                </div>
+                <div id="nets-list"></div>
+              </div>
             </div>
 
             <!-- Char counter -->
@@ -3636,6 +3662,8 @@ function logChat(sender, message, colorClass) {
         read:(_activeConv===_from2), state:MSG_STATE.ACKED});
       renderConversationList();
       if (_activeConv === _from2) renderThread(_from2);
+      // Offer one-tap unjoin when ANSRVR ACKs a CQ check-in
+      checkForUnjoinOpportunity(_from2);
     }
   }
   const log = document.getElementById('chat-log'); if (!log) return;
@@ -4618,7 +4646,7 @@ function sendMsg() {
   } else {
     // Send via APRS-IS WS
     const id = String(msgCounter).padStart(2,'0');
-    ws.send(JSON.stringify({type:'tx', packet:`${myCallsign}>APRS,TCPIP*::${to.padEnd(9,' ')}:${text}{${id}`}));
+    ws.send(JSON.stringify({type:'tx', packet:`${myCallsign}>APNA,TCPIP*::${to.padEnd(9,' ')}:${text}{${id}`}));
     logChat(`${myCallsign}→${to}`, text, 'text-white');
     msgCounter = (msgCounter % 99) + 1;
     // Auto-fail after 90s if no ACK
@@ -4636,7 +4664,107 @@ function sendMsg() {
 }
 function sendAck(to,id) {
   if (!myCallsign) return;
-  ws.send(JSON.stringify({type:'tx',packet:`${myCallsign}>APRS,TCPIP*::${to.padEnd(9,' ')}:ack${id}`}));
+  ws.send(JSON.stringify({type:'tx',packet:`${myCallsign}>APNA,TCPIP*::${to.padEnd(9,' ')}:ack${id}`}));
+}
+
+// ── Net quick check-in ────────────────────────────────────────────────────────
+var KNOWN_NETS = [
+  { name:'APRS Thursday (HOTG)', schedule:'Every Thursday 00:00–23:59 UTC',
+    destination:'ANSRVR', bodyPrefix:'CQ HOTG ', ansrvrGroup:'HOTG' },
+  { name:'APRSPH Thursday',      schedule:'Every Thursday 00:00–23:59 UTC',
+    destination:'APRSPH', bodyPrefix:'HOTG ', ansrvrGroup:null },
+  { name:'Hamfinity Sunday',     schedule:'Every Sunday 00:00–23:59 UTC',
+    destination:'9M4GKS', bodyPrefix:'CQ Hamfinity ', ansrvrGroup:null },
+  { name:'ANSRVR CQ',            schedule:'Any time',
+    destination:'ANSRVR', bodyPrefix:'CQ ', ansrvrGroup:null }
+];
+
+var _netsDropdownOpen = false;
+var _pendingUnjoinGroup = null;
+
+function buildNetsDropdown() {
+  var list = document.getElementById('nets-list');
+  if (!list) return;
+  list.innerHTML = KNOWN_NETS.map(function(n, i) {
+    return '<div class="px-3 py-2 cursor-pointer hover:bg-opacity-50 text-sm"' +
+      ' style="border-top:1px solid #1e3a5f;"' +
+      ' onclick="applyNetTemplate(' + i + ')">' +
+        '<div class="flex items-center justify-between">' +
+          '<span style="color:#38bdf8;font-weight:700;">' + n.name + '</span>' +
+          '<span style="color:#f59e0b;font-size:11px;font-weight:700;">→ ' + n.destination + '</span>' +
+        '</div>' +
+        '<div style="color:#64748b;font-size:10px;">' + n.schedule + '</div>' +
+        '<div style="color:#86efac;font-size:11px;margin-top:2px;">"' + n.bodyPrefix + '…"</div>' +
+        (n.ansrvrGroup ? '<div style="color:#475569;font-size:10px;">Auto-unjoin prompt after ACK</div>' : '') +
+      '</div>';
+  }).join('');
+}
+
+function toggleNetsDropdown() {
+  var dd = document.getElementById('nets-dropdown');
+  if (!dd) return;
+  _netsDropdownOpen = !_netsDropdownOpen;
+  if (_netsDropdownOpen) { buildNetsDropdown(); dd.classList.remove('hidden'); }
+  else dd.classList.add('hidden');
+}
+
+function applyNetTemplate(idx) {
+  var net = KNOWN_NETS[idx];
+  if (!net) return;
+  // Switch conversation to the net's destination
+  openConversation(net.destination);
+  // Pre-fill the compose field
+  setTimeout(function() {
+    var ta = document.getElementById('msgText');
+    if (ta) { ta.value = net.bodyPrefix; msgAutoResize(ta); msgCharCount(); ta.focus(); }
+  }, 100);
+  // Close the dropdown
+  var dd = document.getElementById('nets-dropdown');
+  if (dd) dd.classList.add('hidden');
+  _netsDropdownOpen = false;
+}
+
+// Called after an incoming message from ANSRVR is received and we
+// detect the last outgoing message was a CQ <GROUP> command.
+function checkForUnjoinOpportunity(from) {
+  if (from.trim().toUpperCase() !== 'ANSRVR') return;
+  var conv = _conversations['ANSRVR'] || [];
+  // Find the last outgoing message in this conversation
+  var lastOut = null;
+  for (var i = conv.length - 1; i >= 0; i--) {
+    if (conv[i].out) { lastOut = conv[i]; break; }
+  }
+  if (!lastOut) return;
+  var m = /^CQ\s+(\S+)/i.exec((lastOut.text || '').trim());
+  if (m && !_pendingUnjoinGroup) {
+    _pendingUnjoinGroup = m[1].toUpperCase();
+    showUnjoinBanner(_pendingUnjoinGroup);
+  }
+}
+
+function showUnjoinBanner(group) {
+  var banner = document.getElementById('unjoin-banner');
+  var text   = document.getElementById('unjoin-text');
+  var btn    = document.getElementById('unjoin-btn');
+  if (!banner || !text || !btn) return;
+  text.textContent = '✅ Checked in to ' + group + ' — unjoin when done?';
+  btn.textContent  = 'U ' + group;
+  banner.classList.remove('hidden');
+}
+
+function sendUnjoin() {
+  if (!_pendingUnjoinGroup) return;
+  openConversation('ANSRVR');
+  var ta = document.getElementById('msgText');
+  if (ta) { ta.value = 'U ' + _pendingUnjoinGroup; }
+  sendMsg();
+  dismissUnjoin();
+}
+
+function dismissUnjoin() {
+  _pendingUnjoinGroup = null;
+  var banner = document.getElementById('unjoin-banner');
+  if (banner) banner.classList.add('hidden');
 }
 
 // ─── Admin ────────────────────────────────────────────────────────────────────
@@ -5103,7 +5231,7 @@ async function sendMsgFromModal() {
     await new Promise(r=>setTimeout(r,900));
     if (!myCallsign) { err.innerText='Auth failed'; err.classList.remove('hidden'); myCallsign=''; return; }
   }
-  ws.send(JSON.stringify({type:'tx',packet:myCallsign+'>APRS,TCPIP*::'+_modalTarget.padEnd(9,' ')+':'+text+'{'+String(msgCounter).padStart(2,'0')}));
+  ws.send(JSON.stringify({type:'tx',packet:myCallsign+'>APNA,TCPIP*::'+_modalTarget.padEnd(9,' ')+':'+text+'{'+String(msgCounter).padStart(2,'0')}));
   msgCounter=(msgCounter%99)+1;
   err.className='text-green-400 text-xs bg-green-900/30 border border-green-800 rounded p-2 mb-3';
   err.innerText='Sent to '+_modalTarget+'!'; err.classList.remove('hidden');
