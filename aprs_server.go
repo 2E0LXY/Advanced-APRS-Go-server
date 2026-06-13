@@ -4323,6 +4323,9 @@ func handleAlertRules(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(rule)
+		// Push the updated rule list to all other sessions for this member
+		// so Android, iOS, and other web tabs refresh immediately.
+		go broadcastGeoFenceSync(mem.Callsign)
 		return
 	}
 	http.Error(w, "method not allowed", 405)
@@ -4349,6 +4352,42 @@ func handleAlertRuleDelete(w http.ResponseWriter, r *http.Request) {
 	saveMemberStore()
 	memberStoreMu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
+	// Push updated list to all other sessions for this member
+	go broadcastGeoFenceSync(mem.Callsign)
+}
+
+// broadcastGeoFenceSync pushes the current alert-rule list for [callsign] to
+// every other authenticated WS session for that member, so Android, iOS, and
+// other web tabs refresh their geo-fence lists immediately without polling.
+func broadcastGeoFenceSync(callsign string) {
+	memberStoreMu.RLock()
+	var rules []MemberAlertRule
+	for _, mem := range memberStore.Members {
+		if strings.EqualFold(mem.Callsign, callsign) {
+			rules = mem.AlertRules
+			break
+		}
+	}
+	if rules == nil {
+		rules = []MemberAlertRule{}
+	}
+	memberStoreMu.RUnlock()
+
+	msg := wsMessage{Type: "geo_fence_sync", Data: rules}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return
+	}
+	clientsMu.Lock()
+	defer clientsMu.Unlock()
+	for c := range clients {
+		if c.authenticated && strings.EqualFold(c.callsign, callsign) {
+			select {
+			case c.send <- data:
+			default:
+			}
+		}
+	}
 }
 
 // haversineKm returns the great-circle distance in kilometres between two

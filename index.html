@@ -4104,6 +4104,9 @@ function connectWS() {
         var _sb = document.getElementById('send-btn');
         if (_sb) _sb.disabled = false;
         logChat('CLIENT','Authenticated as '+d.callsign,'text-green-500');
+        // Pre-fetch geo-fence rules so they're ready the moment the Alerts
+        // panel is opened, rather than waiting for the user to open it.
+        setTimeout(function() { loadServerGfRules(); }, 500);
         // Server may forward stored offline messages now - refresh profile
         // after a short delay so badge reflects delivered state
         if (_memberSession) {
@@ -4157,6 +4160,13 @@ function connectWS() {
       // Another device saved preferences — apply them here without a reload.
       if (d.data && typeof d.data === 'object') {
         applyMemberPrefsFromServer(d.data);
+      }
+    } else if (d.type==='geo_fence_sync') {
+      // Another device created or deleted a geo-fence rule. The server pushes
+      // the full updated rule list — refresh the panel immediately if open.
+      if (Array.isArray(d.data)) {
+        _serverGfRules = d.data;
+        renderServerGfRules();
       }
     }
   };
