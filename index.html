@@ -925,6 +925,39 @@ body { background: var(--bg-base); color: var(--text-base); }
 
           <!-- Conversations list -->
           <div id="conversations-list" class="flex-1 overflow-y-auto hidden"></div>
+
+          <!-- Nets quick check-in shortcuts (always visible in sidebar) -->
+          <div class="flex-shrink-0 border-t" style="border-color:#1e3a5f;">
+            <div class="px-3 py-2">
+              <div class="text-xs font-bold uppercase tracking-widest mb-2" style="color:#64748b;">📡 Net Check-in</div>
+              <div class="space-y-1">
+                <button onclick="applyNetTemplate(0)"
+                  class="w-full text-left px-2 py-1.5 rounded text-xs transition-colors"
+                  style="background:#0d2137;color:#38bdf8;"
+                  onmouseover="this.style.background='#1e3a5f'"
+                  onmouseout="this.style.background='#0d2137'">
+                  <span class="font-bold">APRS Thursday</span>
+                  <span style="color:#64748b;float:right;">ANSRVR</span>
+                </button>
+                <button onclick="applyNetTemplate(1)"
+                  class="w-full text-left px-2 py-1.5 rounded text-xs transition-colors"
+                  style="background:#0d2137;color:#38bdf8;"
+                  onmouseover="this.style.background='#1e3a5f'"
+                  onmouseout="this.style.background='#0d2137'">
+                  <span class="font-bold">APRSPH Thursday</span>
+                  <span style="color:#64748b;float:right;">APRSPH</span>
+                </button>
+                <button onclick="applyNetTemplate(2)"
+                  class="w-full text-left px-2 py-1.5 rounded text-xs transition-colors"
+                  style="background:#0d2137;color:#38bdf8;"
+                  onmouseover="this.style.background='#1e3a5f'"
+                  onmouseout="this.style.background='#0d2137'">
+                  <span class="font-bold">Hamfinity Sunday</span>
+                  <span style="color:#64748b;float:right;">9M4GKS</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Thread area -->
@@ -955,9 +988,23 @@ body { background: var(--bg-base); color: var(--text-base); }
 
           <!-- Empty thread state -->
           <div id="thread-empty" class="flex-1 flex items-center justify-center" style="display:flex">
-            <div class="text-center" style="color:#1e3a5f;">
+            <div class="text-center" style="color:#1e3a5f;max-width:320px;">
               <div style="font-size:52px;margin-bottom:12px;opacity:0.6;">💬</div>
-              <div class="text-sm">Select a conversation or tap ✏ to start a new one</div>
+              <div class="text-sm mb-6">Select a conversation or tap ✏ to start a new one</div>
+              <div class="text-left" style="background:#0b1e35;border:1px solid #1e3a5f;border-radius:12px;padding:12px;">
+                <div class="text-xs font-bold mb-2" style="color:#38bdf8;">📡 Quick Net Check-in</div>
+                <div class="space-y-1">
+                  <button onclick="applyNetTemplate(0)" class="w-full text-left px-3 py-2 rounded text-xs" style="background:#0d2137;color:#38bdf8;" onmouseover="this.style.background='#1e3a5f'" onmouseout="this.style.background='#0d2137'">
+                    <span class="font-bold">APRS Thursday (HOTG)</span><br><span style="color:#64748b;">→ ANSRVR · CQ HOTG …</span>
+                  </button>
+                  <button onclick="applyNetTemplate(1)" class="w-full text-left px-3 py-2 rounded text-xs" style="background:#0d2137;color:#38bdf8;" onmouseover="this.style.background='#1e3a5f'" onmouseout="this.style.background='#0d2137'">
+                    <span class="font-bold">APRSPH Thursday</span><br><span style="color:#64748b;">→ APRSPH · HOTG …</span>
+                  </button>
+                  <button onclick="applyNetTemplate(2)" class="w-full text-left px-3 py-2 rounded text-xs" style="background:#0d2137;color:#38bdf8;" onmouseover="this.style.background='#1e3a5f'" onmouseout="this.style.background='#0d2137'">
+                    <span class="font-bold">Hamfinity Sunday</span><br><span style="color:#64748b;">→ 9M4GKS · CQ Hamfinity …</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
