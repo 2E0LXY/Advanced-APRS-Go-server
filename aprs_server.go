@@ -81,7 +81,7 @@ var (
 	}
 
 	upstreamConnected int32
-	upstreamTx        = make(chan string, 100)
+	upstreamTx        = make(chan string, 5000)
 
 	metrics = struct {
 		StartTime   time.Time
