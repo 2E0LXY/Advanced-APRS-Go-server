@@ -403,7 +403,6 @@ body { background: var(--bg-base); color: var(--text-base); }
 
 </head>
 <body class="bg-gray-900 h-screen flex flex-col text-white font-sans overflow-hidden">
-<main id="aprs-main" aria-label="APRS Net dashboard">
 
 <!-- Band Opening Alert Banner -->
 <div id="band-alert" class="hidden fixed top-0 left-0 right-0 z-[60] text-center py-2 px-4 font-bold text-sm"
@@ -696,7 +695,7 @@ body { background: var(--bg-base); color: var(--text-base); }
   </div>
 
   <!-- PANELS -->
-  <div class="flex-1 relative">
+  <div class="flex-1 relative" role="main" aria-label="APRS Net dashboard">
 
     <!-- MAP -->
     <div id="map-panel" class="absolute inset-0 z-10">
@@ -2928,7 +2927,6 @@ ws.onmessage = (ev) => {
 
   </div><!-- end panels -->
 </div><!-- end main -->
-</main>
 
 <!-- Footer -->
 <div class="flex-none bg-gray-900 border-t border-gray-800 px-4 py-1.5 flex items-center justify-between text-xs text-gray-600">
