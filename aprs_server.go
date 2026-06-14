@@ -887,6 +887,16 @@ func serveMobileJS(w http.ResponseWriter, r *http.Request) {
 
 // serveIndex redirects to /setup if no credentials have been configured yet.
 func serveIndex(w http.ResponseWriter, r *http.Request) {
+	// Serve Google Search Console HTML verification files transparently.
+	// Drop the file (e.g. google1a2b3c4d.html) in /opt/aprs-gateway/ and
+	// it will be accessible at https://www.aprsnet.uk/google1a2b3c4d.html
+	// without rebuilding or restarting the server.
+	if path := r.URL.Path; len(path) > 7 &&
+		strings.HasPrefix(path, "/google") &&
+		strings.HasSuffix(path, ".html") {
+		http.ServeFile(w, r, path[1:]) // strip leading /
+		return
+	}
 	if !credsConfigured() {
 		http.Redirect(w, r, "/setup", http.StatusFound)
 		return
