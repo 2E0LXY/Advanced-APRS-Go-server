@@ -800,6 +800,13 @@ func main() {
 	go weatherBeaconLoop()
 
 	http.HandleFunc("/symbols/", http.StripPrefix("/symbols/", http.FileServer(http.Dir("symbols"))).ServeHTTP)
+	http.HandleFunc("/favicon.ico",          func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "favicon.ico") })
+	http.HandleFunc("/favicon.svg",          func(w http.ResponseWriter, r *http.Request) { w.Header().Set("Content-Type","image/svg+xml"); http.ServeFile(w, r, "favicon.svg") })
+	http.HandleFunc("/apple-touch-icon.png", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "apple-touch-icon.png") })
+	http.HandleFunc("/favicon-32.png",       func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "favicon-32.png") })
+	http.HandleFunc("/og-image.png",         func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "og-image.png") })
+	http.HandleFunc("/robots.txt",           func(w http.ResponseWriter, r *http.Request) { w.Header().Set("Content-Type","text/plain"); http.ServeFile(w, r, "robots.txt") })
+	http.HandleFunc("/sitemap.xml",          func(w http.ResponseWriter, r *http.Request) { w.Header().Set("Content-Type","application/xml"); http.ServeFile(w, r, "sitemap.xml") })
 	http.HandleFunc("/demo", serveDemo)
 	http.HandleFunc("/mobile", serveMobile)
 	http.HandleFunc("/mobile-app.js", serveMobileJS)
