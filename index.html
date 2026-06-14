@@ -501,7 +501,7 @@ body { background: var(--bg-base); color: var(--text-base); }
     <button onclick="togglePanel('admin')"
       class="nav-btn px-3 py-1.5 bg-red-900 rounded-lg hover:bg-red-700 transition-colors font-semibold">Admin</button>
 
-    <!-- Update available (hidden until update detected) -->
+    <!-- Update available — only shown to authenticated admins when an update is detected -->
     <button id="update-btn" onclick="triggerUpdateFromHeader()"
       class="hidden px-3 py-1.5 bg-yellow-600 hover:bg-yellow-500 rounded-lg font-bold animate-pulse"
       title="">⬆ Update</button>
@@ -3657,6 +3657,21 @@ async function doAdminLogin() {
     document.getElementById('admin-login-gate').classList.add('hidden');
     document.getElementById('admin-content').classList.remove('hidden');
     populateAdmin(await cfgRes.json());
+
+    // If an update was already detected before login, reveal the header button
+    // and scroll the admin panel to the update section now.
+    if (_latestVersion && semverGt(_latestVersion, _runningVersion)) {
+      const btn = document.getElementById('update-btn');
+      if (btn) {
+        btn.title = 'Update available: v' + _latestVersion + ' — click to install';
+        btn.classList.remove('hidden');
+      }
+      showUpdateBanner();
+      setTimeout(function() {
+        var sec = document.getElementById('update-section');
+        if (sec) sec.scrollIntoView({ behavior: 'smooth' });
+      }, 350);
+    }
   } catch(e) {
     err.innerText = 'Connection error — try again';
     err.classList.remove('hidden');
@@ -3666,6 +3681,9 @@ async function doAdminLogin() {
 function doAdminLogout() {
   adminAuth = null;
   _adminCreds = null;
+  // Hide the update button — non-admins shouldn't see it
+  var btn = document.getElementById('update-btn');
+  if (btn) btn.classList.add('hidden');
   document.getElementById('admin-login-gate').classList.remove('hidden');
   document.getElementById('admin-content').classList.add('hidden');
   document.getElementById('adminLoginUser').value = '';
@@ -5164,13 +5182,11 @@ async function checkForUpdates() {
     console.log('Version check: running=' + _runningVersion + ' latest=' + _latestVersion);
 
     if (_latestVersion && semverGt(_latestVersion, _runningVersion)) {
-      // Header button
+      // Header button — only show if admin is already authenticated
       const btn = document.getElementById('update-btn');
-      if (btn) {
+      if (btn && adminAuth) {
         btn.title = 'Update available: v' + _latestVersion + ' (running v' + _runningVersion + ') — click to install';
         btn.classList.remove('hidden');
-        btn.href = '#';
-        btn.onclick = (e) => { e.preventDefault(); togglePanel('admin'); return false; };
       }
       // Status panel badge
       if (badge) badge.innerHTML = 'v' + _runningVersion
@@ -5702,19 +5718,18 @@ function centerOnStation(call) {
 
 
 function triggerUpdateFromHeader() {
-  // Open admin panel and trigger update directly
   togglePanel('admin');
-  // If already authenticated, go straight to update
+  // Whether or not already authenticated, scroll to the update section
+  // once the admin panel content is visible. If the login gate is showing
+  // first, doAdminLogin() will handle the scroll after a successful login.
   if (adminAuth) {
     showUpdateBanner();
-    // Scroll to update section
     setTimeout(function() {
       var sec = document.getElementById('update-section');
       if (sec) sec.scrollIntoView({ behavior: 'smooth' });
-    }, 300);
+    }, 250);
   }
-  // If not authenticated, admin login gate will show first
-  // then user can scroll to update section after logging in
+  // If not authenticated yet: doAdminLogin() picks up after login.
 }
 
 
