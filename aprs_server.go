@@ -28,7 +28,7 @@ import (
 )
 
 // AppVersion is the running server version, compared against GitHub releases.
-const AppVersion = "1.4.0"
+const AppVersion = "2.0.0"
 
 type AppConfig struct {
 	ServerName     string  `json:"server_name"`

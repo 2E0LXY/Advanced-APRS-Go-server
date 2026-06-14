@@ -64,10 +64,18 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+<!-- Preload critical CSS so it doesn't block first paint -->
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"></noscript>
+<link rel="preload" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"></noscript>
+<link rel="preload" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"></noscript>
+<link rel="preload" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"></noscript>
+<!-- Preload JS so downloads start immediately but execution is non-blocking -->
+<link rel="preload" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" as="script">
+<link rel="preload" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" as="script">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="https://unpkg.com/@joergdietrich/leaflet.terminator@1.0.0/L.Terminator.js"></script>
@@ -395,6 +403,7 @@ body { background: var(--bg-base); color: var(--text-base); }
 
 </head>
 <body class="bg-gray-900 h-screen flex flex-col text-white font-sans overflow-hidden">
+<main id="aprs-main" aria-label="APRS Net dashboard">
 
 <!-- Band Opening Alert Banner -->
 <div id="band-alert" class="hidden fixed top-0 left-0 right-0 z-[60] text-center py-2 px-4 font-bold text-sm"
@@ -2919,6 +2928,7 @@ ws.onmessage = (ev) => {
 
   </div><!-- end panels -->
 </div><!-- end main -->
+</main>
 
 <!-- Footer -->
 <div class="flex-none bg-gray-900 border-t border-gray-800 px-4 py-1.5 flex items-center justify-between text-xs text-gray-600">
@@ -3470,6 +3480,9 @@ function getSymbolInfo(sym) {
 }
 
 // ─── Map Init ────────────────────────────────────────────────────────────────
+// Leaflet is loaded with `defer` so L is guaranteed available when this
+// inline script runs (all deferred scripts execute after DOM parsing completes,
+// in source order, before DOMContentLoaded fires).
 const map = L.map('map', {maxZoom: 19}).setView([53.7, -1.5], 9);
 // Defensive: ensure map-panel is visible (in case any panel logic accidentally hid it)
 (function() {
