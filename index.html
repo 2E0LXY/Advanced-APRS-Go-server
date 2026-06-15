@@ -4237,7 +4237,7 @@ function pollUpstreamStatus() {
 }
 
 function connectWS() {
-  ws = new WebSocket((location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/ws');
+  ws = window.ws = new WebSocket((location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/ws');
   ws.onopen = () => {
     _wsReconnectAttempt = 0;  // reset backoff on success
     const dot = document.getElementById('conn-status');
