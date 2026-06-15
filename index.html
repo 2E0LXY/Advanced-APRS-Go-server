@@ -3519,6 +3519,27 @@ if (typeof L.markerClusterGroup === 'function') {
     }
   });
   map.addLayer(clusterGroup);
+  clusterGroup.on('clusterclick', function(a) {
+    var children = a.layer.getAllChildMarkers();
+    var html = '<div style="font-size:13px;min-width:140px;max-height:220px;overflow-y:auto">';
+    children.forEach(function(m) {
+      var c = m._aprsCall || '';
+      if (!c) return;
+      html += '<div onclick="if(window._cpTimer)clearTimeout(window._cpTimer);map.closePopup();openDetail(\'' + c + '\')" '
+        + 'style="padding:4px 8px;cursor:pointer;border-radius:3px;color:#60a5fa;white-space:nowrap" '
+        + 'onmouseover="this.style.background=\'rgba(255,255,255,0.1)\'" '
+        + 'onmouseout="this.style.background=\'\'">'
+        + c + '</div>';
+    });
+    html += '</div>';
+    L.popup({ closeButton: false, autoClose: false, closeOnClick: false })
+      .setLatLng(a.layer.getLatLng())
+      .setContent(html)
+      .openOn(map);
+    if (window._cpTimer) clearTimeout(window._cpTimer);
+    window._cpTimer = setTimeout(function() { map.closePopup(); }, 2000);
+    L.DomEvent.stopPropagation(a);
+  });
 } else {
   console.warn('MarkerCluster plugin not loaded - clustering disabled');
   clusterGroup = { addLayer: function(m){ m.addTo(map); }, removeLayer: function(m){ map.removeLayer(m); }, clearLayers: function(){} };
@@ -4646,6 +4667,7 @@ function redrawMap() {
       st.marker = L.marker([latest.lat,latest.lon],{icon})
         .bindTooltip(tip,{direction:'top',offset:[0,-12],permanent:false});
       addMarkerToMap(st.marker);
+      st.marker._aprsCall = call;
       st.marker.on('click',function(){openDetail(call);});
     } else {
       st.marker.setLatLng([latest.lat,latest.lon]);
