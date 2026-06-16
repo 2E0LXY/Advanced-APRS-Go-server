@@ -3659,6 +3659,7 @@ function toggleOverlay(type) {
 
 
 function togglePanel(panel) {
+  _activePanel = panel;
   ['map','search','messages','status','help','admin','iss','watch','wx','utils','leaderboard','objects','mesh','alerts'].forEach(function(p) {
     var el = document.getElementById(p+'-panel');
     if (el) el.classList.add('hidden');
@@ -3895,7 +3896,8 @@ function logChat(sender, message, colorClass) {
 /* ── Data store ───────────────────────────────────────────────────────────── */
 var _conversations = {};  // callsign → [{id,from,to,text,ts,out,state,read}]
 var _activeConv    = null;
-var _deliveryRoute = 'aprs'; // 'aprs' | 'direct'
+var _deliveryRoute = 'aprs';
+var _activePanel   = 'map';   // tracks which nav panel is currently open // 'aprs' | 'direct'
 var _msgIdCounter  = 0;
 
 // Message states matching Android
@@ -4096,15 +4098,22 @@ var _memberCallsigns = new Set();
 function updateRouteSelector(call) {
   var rs = document.getElementById('route-selector');
   if (!rs) return;
+  // Show the route selector whenever the user is authenticated (APRS-IS or member)
+  if (!myCallsign) { rs.classList.add('hidden'); _deliveryRoute = 'aprs'; return; }
+  rs.classList.remove('hidden');
   var token = localStorage.getItem('aprs-member-token');
-  var recipientIsMember = _memberCallsigns.has && _memberCallsigns.has(call.toUpperCase());
-  if (token && recipientIsMember) {
-    rs.classList.remove('hidden');
-    setDeliveryRoute(_deliveryRoute);
-  } else {
-    rs.classList.add('hidden');
-    _deliveryRoute = 'aprs';
+  var recipientIsMember = _memberCallsigns && _memberCallsigns.has && _memberCallsigns.has(call.toUpperCase());
+  var canDirect = !!(token && recipientIsMember);
+  var cd = document.getElementById('chip-direct');
+  if (cd) {
+    cd.disabled = !canDirect;
+    cd.style.opacity = canDirect ? '1' : '0.4';
+    cd.title = canDirect
+      ? 'Send via APRS Net server — instant, no RF path required'
+      : 'Both parties must be APRS Net members to use direct messaging';
+    if (!canDirect && _deliveryRoute === 'direct') _deliveryRoute = 'aprs';
   }
+  setDeliveryRoute(_deliveryRoute);
 }
 
 function setDeliveryRoute(route) {
@@ -4781,7 +4790,7 @@ function renderList() {
       tr.innerHTML=`
         <td class="p-2 text-center">${(function(){var t=st.sym&&st.sym.length>=2?st.sym[0]:"/",c=st.sym&&st.sym.length>=2?st.sym[1]:"-",sp=getSymbolSprite(t,c);if(sp)return '<div style="width:24px;height:24px;overflow:hidden;image-rendering:pixelated;border-radius:2px;display:inline-block"><div style="width:24px;height:24px;background:url('+sp.sheet+') -'+sp.px+'px -'+sp.py+'px;background-size:'+sp.sheetW+'px '+sp.sheetH+'px;background-repeat:no-repeat"></div></div>';return '<div style="width:24px;height:24px;background:#374151;border-radius:2px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:#fff">'+c+'</div>';})()} </td>
         <td class="p-2 font-bold">
-          <a href="#" onclick="openDetail('${call}');return false;" class="hover:underline text-blue-400 cursor-pointer">${call}</a>
+          <a href="#" onclick="_activePanel==='messages'?openConversation('${call}'):openDetail('${call}');return false;" class="hover:underline text-blue-400 cursor-pointer">${call}</a>
         </td>
         <td class="p-2">${deviceChip(extractTocall(st.raw))}</td>
         <td class="p-2 font-mono text-gray-500 truncate max-w-[100px]">${st.path||''}</td>
@@ -5436,9 +5445,20 @@ function showStationPopup(call, st, latest) {
 }
 function closeStationModal() { document.getElementById('station-modal').classList.add('hidden'); _modalTarget=null; }
 function openMsgFromModal() {
-  if (!_modalTarget) return;
-  document.getElementById('msg-target-display').innerText=_modalTarget;
-  if (myCallsign) document.getElementById('msg-auth-call').value=myCallsign;
+  var target = _modalTarget || _detailCall;
+  if (!target) return;
+  // If user is authenticated, route through the modern messaging panel
+  if (myCallsign) {
+    // Close whichever station modal is open
+    var sm = document.getElementById('station-modal'); if (sm) sm.classList.add('hidden');
+    closeDetail();
+    if (!_conversations[target]) _conversations[target] = [];
+    togglePanel('messages');
+    openConversation(target);
+    return;
+  }
+  // Unauthenticated fallback — old auth dialog
+  document.getElementById('msg-target-display').innerText = target;
   var passEl = document.getElementById('msg-auth-pass');
   var srcPass = document.getElementById('myPass');
   if (passEl && srcPass && srcPass.value) passEl.value = srcPass.value;
