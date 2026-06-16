@@ -1079,6 +1079,20 @@ body { background: var(--bg-base); color: var(--text-base); }
                   </button>
                 </div>
               </div>
+              <!-- Inline compose: message any callsign directly -->
+              <div style="margin-top:14px;">
+                <div style="font-size:11px;color:#334155;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em;">Or message a callsign</div>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  <input id="thread-empty-compose" type="text" placeholder="Callsign…"
+                    style="flex:1;background:#0b1e35;border:1px solid #1e3a5f;border-radius:8px;
+                           padding:7px 10px;color:#e2e8f0;font-size:13px;outline:none;text-transform:uppercase;"
+                    oninput="this.value=this.value.toUpperCase()"
+                    onkeydown="if(event.key==='Enter'){var v=this.value.trim();if(v){openConversation(v);this.value='';document.getElementById('thread-empty-compose').blur();}}">
+                  <button onclick="var v=document.getElementById('thread-empty-compose').value.trim();if(v){openConversation(v);document.getElementById('thread-empty-compose').value='';}" 
+                    style="background:#0ea5e9;border:none;border-radius:8px;padding:7px 14px;
+                           color:#fff;font-size:14px;cursor:pointer;flex-shrink:0;font-weight:700;">✉</button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -4114,6 +4128,11 @@ function setDeliveryRoute(route) {
 
 /* ── Open new message prompt ──────────────────────────────────────────────── */
 function openNewMessage() {
+  // Prefer the inline compose input in the thread-empty panel
+  var emp = document.getElementById('thread-empty');
+  var inp = document.getElementById('thread-empty-compose');
+  if (emp && emp.style.display !== 'none' && inp) { inp.focus(); return; }
+  // Fallback when thread-empty is hidden (a thread is already open)
   var to = prompt('Send message to callsign:');
   if (!to) return;
   to = to.toUpperCase().trim();
@@ -4771,6 +4790,17 @@ function renderList() {
         <td class="p-2 font-mono text-gray-600 truncate max-w-[200px] text-[10px]">${st.raw||''}</td>`;
       tbody.appendChild(tr);
     });
+  // When filter is set but no stations match, show a helpful hint
+  var trimFilter = filter.trim();
+  if (trimFilter && tbody.children.length === 0 && /^[A-Z0-9]{1,7}(-\d{1,2})?$/.test(trimFilter)) {
+    var hint = document.createElement('tr');
+    hint.innerHTML = '<td colspan="7" class="p-6 text-center">'
+      + '<div style="color:#475569;font-size:13px;">' + trimFilter + ' has no position heard this session.</div>'
+      + (myCallsign ? '<div style="margin-top:8px;"><a href="#" onclick="openConversation(\'' + trimFilter + '\');return false;" '
+      + 'style="color:#38bdf8;text-decoration:underline;font-size:13px;">Message ' + trimFilter + ' →</a></div>' : '')
+      + '</td>';
+    tbody.appendChild(hint);
+  }
 }
 
 
