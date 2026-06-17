@@ -1053,6 +1053,31 @@ body { background: var(--bg-base); color: var(--text-base); }
               style="color:#ef4444;background:rgba(239,68,68,0.08);"
               onmouseover="this.style.background='rgba(239,68,68,0.18)'"
               onmouseout="this.style.background='rgba(239,68,68,0.08)'">🗑 Delete</button>
+            <!-- Background picker swatches -->
+            <div id="bg-picker" style="display:flex;align-items:center;gap:4px;margin-left:8px;" title="Message background">
+              <span style="font-size:10px;color:#475569;margin-right:2px;">BG</span>
+              <button onclick="saveMsgBackground(0)" data-bg="0" title="Dark Teal"
+                style="width:18px;height:18px;border-radius:50%;border:2px solid transparent;cursor:pointer;
+                       background:linear-gradient(135deg,#0A3B43,#03191E);flex-shrink:0;"></button>
+              <button onclick="saveMsgBackground(1)" data-bg="1" title="Bright Teal"
+                style="width:18px;height:18px;border-radius:50%;border:2px solid transparent;cursor:pointer;
+                       background:linear-gradient(135deg,#14555E,#062931);flex-shrink:0;"></button>
+              <button onclick="saveMsgBackground(2)" data-bg="2" title="Green Grid"
+                style="width:18px;height:18px;border-radius:50%;border:2px solid transparent;cursor:pointer;
+                       background:linear-gradient(135deg,#0A4A22,#02160A);flex-shrink:0;"></button>
+              <button onclick="saveMsgBackground(3)" data-bg="3" title="Green Spotlight"
+                style="width:18px;height:18px;border-radius:50%;border:2px solid transparent;cursor:pointer;
+                       background:linear-gradient(135deg,#1e7a2a,#071a09);flex-shrink:0;"></button>
+              <button onclick="saveMsgBackground(4)" data-bg="4" title="Red Flow"
+                style="width:18px;height:18px;border-radius:50%;border:2px solid transparent;cursor:pointer;
+                       background:linear-gradient(135deg,#B81020,#2A0408);flex-shrink:0;"></button>
+              <button onclick="saveMsgBackground(5)" data-bg="5" title="Orange Stripes"
+                style="width:18px;height:18px;border-radius:50%;border:2px solid transparent;cursor:pointer;
+                       background:linear-gradient(135deg,#c45c00,#2a1200);flex-shrink:0;"></button>
+              <button onclick="saveMsgBackground(6)" data-bg="6" title="Sunset Gradient"
+                style="width:18px;height:18px;border-radius:50%;border:2px solid transparent;cursor:pointer;
+                       background:linear-gradient(135deg,#FFB020,#400804);flex-shrink:0;"></button>
+            </div>
           </div>
 
           <!-- Bubbles area -->
@@ -4399,6 +4424,30 @@ function applyMessageBackground(id) {
   if (isNaN(n) || n < 0 || n > 6) n = 0;
   for (var i = 0; i <= 6; i++) el.classList.remove('msg-bg-' + i);
   el.classList.add('msg-bg-' + n);
+  // Highlight active swatch in bg-picker
+  var swatches = document.querySelectorAll('#bg-picker button[data-bg]');
+  swatches.forEach(function(btn) {
+    btn.style.border = btn.getAttribute('data-bg') == String(n)
+      ? '2px solid #e2e8f0'
+      : '2px solid transparent';
+    btn.style.transform = btn.getAttribute('data-bg') == String(n) ? 'scale(1.25)' : '';
+  });
+}
+
+// Save msg_background to server (merges with existing prefs — does not wipe wx or other keys).
+// Also syncs to Android/iOS via member_sync WS push.
+async function saveMsgBackground(n) {
+  applyMessageBackground(n);
+  if (!_memberSession) return;
+  try {
+    await fetch(location.origin + '/api/member/preferences', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Member-Token': _memberSession.token },
+      body: JSON.stringify({ msg_background: n })
+    });
+    if (_memberSession.prefs) _memberSession.prefs.msg_background = n;
+    else _memberSession.prefs = { msg_background: n };
+  } catch(e) { console.warn('saveMsgBackground:', e); }
 }
 
 function applyMemberPrefsFromServer(p) {
