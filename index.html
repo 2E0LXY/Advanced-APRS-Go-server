@@ -3964,11 +3964,32 @@ function tickMark(state) {
 }
 
 /* ── Bubble gradient for message state ───────────────────────────────────── */
+// Matches Android BUBBLE_PALETTES in AppearancePalette.kt (top, bottom hex)
+var _BUBBLE_PALETTES = [
+  ['#06B6D4','#0E7490'], // 0 Cyan (default)
+  ['#F59E0B','#B45309'], // 1 Amber
+  ['#84CC16','#4D7C0F'], // 2 Lime
+  ['#A855F7','#6B21A8'], // 3 Purple
+  ['#EC4899','#9F1239'], // 4 Rose
+  ['#3B82F6','#1E3A8A']  // 5 Blue
+];
 function bubbleStyle(out, state) {
-  if (!out) return 'background:linear-gradient(180deg,#1e3a5f,#162032);color:#e2e8f0;';
+  if (!out) {
+    var inId = (_memberSession && _memberSession.prefs && _memberSession.prefs.incoming_bubble_colour != null)
+               ? parseInt(_memberSession.prefs.incoming_bubble_colour, 10) : -1;
+    if (inId >= 0 && inId < _BUBBLE_PALETTES.length) {
+      return 'background:linear-gradient(180deg,'+_BUBBLE_PALETTES[inId][0]+','+_BUBBLE_PALETTES[inId][1]+');color:#fff;';
+    }
+    return 'background:linear-gradient(180deg,#1e3a5f,#162032);color:#e2e8f0;';
+  }
   if (state === MSG_STATE.ACKED)       return 'background:linear-gradient(180deg,#86efac,#16a34a);color:#052e16;';
   if (state === MSG_STATE.FAILED)      return 'background:#7f1d1d;color:#fca5a5;';
   if (state === MSG_STATE.SERVER_SENT) return 'background:linear-gradient(180deg,#f59e0b,#d97706);color:#1c1400;';
+  var outId = (_memberSession && _memberSession.prefs && _memberSession.prefs.bubble_colour != null)
+              ? parseInt(_memberSession.prefs.bubble_colour, 10) : -1;
+  if (outId >= 0 && outId < _BUBBLE_PALETTES.length) {
+    return 'background:linear-gradient(180deg,'+_BUBBLE_PALETTES[outId][0]+','+_BUBBLE_PALETTES[outId][1]+');color:#fff;';
+  }
   return 'background:linear-gradient(180deg,#2563eb,#1d4ed8);color:#eff6ff;';
 }
 function bubbleShape(out) {
@@ -4461,6 +4482,10 @@ function applyMemberPrefsFromServer(p) {
   box('mp-drop-dstar',  'drop_dstar');
   box('mp-drop-apdesk', 'drop_apdesk');
   if (p.msg_background !== undefined) applyMessageBackground(p.msg_background);
+  // Bubble colours: store in prefs then re-render the open thread if any
+  if (p.bubble_colour !== undefined || p.incoming_bubble_colour !== undefined) {
+    if (typeof renderThread === 'function' && _activeConv) renderThread(_activeConv);
+  }
   if (typeof redrawMap === 'function') redrawMap();
 }
 
