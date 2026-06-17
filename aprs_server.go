@@ -3517,18 +3517,31 @@ func handleMemberPreferences(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodPut {
-		var prefs map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&prefs); err != nil {
+		var incoming map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&incoming); err != nil {
 			w.WriteHeader(400)
 			json.NewEncoder(w).Encode(map[string]string{"error": "invalid json"})
 			return
 		}
-		if prefs == nil {
-			prefs = map[string]interface{}{}
+		if incoming == nil {
+			incoming = map[string]interface{}{}
 		}
 		memberStoreMu.Lock()
 		if mem, ok := memberStore.Members[m.ID]; ok {
-			mem.Preferences = prefs
+			// Merge incoming keys over existing prefs rather than replacing wholesale.
+			// This prevents a partial update (e.g. Android pushing only UI prefs)
+			// from wiping keys owned by other subsystems (e.g. WX station settings).
+			if mem.Preferences == nil {
+				mem.Preferences = make(map[string]interface{})
+			}
+			for k, v := range incoming {
+				mem.Preferences[k] = v
+			}
+		}
+		// Snapshot the merged prefs for the real-time push below.
+		var prefs map[string]interface{}
+		if mem, ok := memberStore.Members[m.ID]; ok {
+			prefs = mem.Preferences
 		}
 		saveMemberStore()
 		memberStoreMu.Unlock()
