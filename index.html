@@ -6848,6 +6848,10 @@ function openMsgToStation() {
   closeDetail();
   document.getElementById('msg-target-display').innerText = _modalTarget;
   if (myCallsign) document.getElementById('msg-auth-call').value = myCallsign;
+  var passEl = document.getElementById('msg-auth-pass');
+  if (passEl && !passEl.value && _memberSession && _memberSession.passcode) {
+    passEl.value = _memberSession.passcode;
+  }
   // Bump z-index to ensure it's above everything
   var m = document.getElementById('msg-auth-modal');
   m.style.zIndex = '9999';
