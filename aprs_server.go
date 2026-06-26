@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -835,6 +836,10 @@ func main() {
 	http.HandleFunc("/api/member/alert-rules",    handleAlertRules)
 	http.HandleFunc("/api/member/alert-rules/",   handleAlertRuleDelete)
 	http.HandleFunc("/api/member/wx_test",     handleWxTest)
+
+	// Server federation registry
+	http.HandleFunc("/api/server/register", handleServerRegister)
+	http.HandleFunc("/api/admin/servers",   basicAuth(handleAdminServers))
 	// Public MOTD
 	http.HandleFunc("/api/motd", handlePublicMOTD)
 	// Admin features
@@ -3063,10 +3068,23 @@ type MemberSession struct {
 	Expires  int64  `json:"expires"`
 }
 
+// RegisteredServer records a remote APRS Net gateway that has phoned home.
+type RegisteredServer struct {
+	IP           string `json:"ip"`
+	Domain       string `json:"domain,omitempty"`
+	Callsign     string `json:"callsign,omitempty"`
+	ServerName   string `json:"server_name,omitempty"`
+	Version      string `json:"version,omitempty"`
+	StationCount int    `json:"station_count,omitempty"`
+	RegisteredAt int64  `json:"registered_at"`
+	LastSeenAt   int64  `json:"last_seen"`
+}
+
 type MemberStore struct {
-	Members  map[string]*Member   `json:"members"`   // id -> member
-	Sessions map[string]*MemberSession `json:"sessions"` // token -> session
-	Messages map[string][]StoredMessage `json:"messages"` // callsign -> []msgs
+	Members      map[string]*Member              `json:"members"`
+	Sessions     map[string]*MemberSession       `json:"sessions"`
+	Messages     map[string][]StoredMessage      `json:"messages"`
+	KnownServers map[string]*RegisteredServer    `json:"known_servers,omitempty"`
 }
 
 var (
@@ -3080,20 +3098,23 @@ func loadMemberStore() {
 	memberStoreMu.Lock()
 	defer memberStoreMu.Unlock()
 	memberStore = &MemberStore{
-		Members:  make(map[string]*Member),
-		Sessions: make(map[string]*MemberSession),
-		Messages: make(map[string][]StoredMessage),
+		Members:      make(map[string]*Member),
+		Sessions:     make(map[string]*MemberSession),
+		Messages:     make(map[string][]StoredMessage),
+		KnownServers: make(map[string]*RegisteredServer),
 	}
 	data, err := os.ReadFile(membersFile)
 	if err != nil { return }
 	if err := json.Unmarshal(data, memberStore); err != nil {
 		log.Printf("Warning: could not parse members.json: %v", err)
 		memberStore = &MemberStore{
-			Members:  make(map[string]*Member),
-			Sessions: make(map[string]*MemberSession),
-			Messages: make(map[string][]StoredMessage),
+			Members:      make(map[string]*Member),
+			Sessions:     make(map[string]*MemberSession),
+			Messages:     make(map[string][]StoredMessage),
+			KnownServers: make(map[string]*RegisteredServer),
 		}
 	}
+	if memberStore.KnownServers == nil { memberStore.KnownServers = make(map[string]*RegisteredServer) }
 	log.Printf("Loaded %d members", len(memberStore.Members))
 }
 
@@ -3348,6 +3369,29 @@ func handleMemberMessages(w http.ResponseWriter, r *http.Request) {
 		for i := range memberStore.Messages[call] {
 			memberStore.Messages[call][i].Read = true
 		}
+		saveMemberStore()
+		memberStoreMu.Unlock()
+		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+		return
+	}
+	if r.Method == http.MethodDelete {
+		remote := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("callsign")))
+		if remote == "" { http.Error(w, "callsign required", 400); return }
+		memberStoreMu.Lock()
+		var kept []StoredMessage
+		for _, msg := range memberStore.Messages[call] {
+			if strings.ToUpper(msg.From) != remote && strings.ToUpper(msg.To) != remote {
+				kept = append(kept, msg)
+			}
+		}
+		if len(kept) == 0 { delete(memberStore.Messages, call) } else { memberStore.Messages[call] = kept }
+		var remoteKept []StoredMessage
+		for _, msg := range memberStore.Messages[remote] {
+			if strings.ToUpper(msg.From) != call && strings.ToUpper(msg.To) != call {
+				remoteKept = append(remoteKept, msg)
+			}
+		}
+		if len(remoteKept) == 0 { delete(memberStore.Messages, remote) } else { memberStore.Messages[remote] = remoteKept }
 		saveMemberStore()
 		memberStoreMu.Unlock()
 		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -4998,6 +5042,60 @@ func weatherBeaconLoop() {
 			lastBeacon[m.ID] = time.Now()
 		}
 	}
+}
+
+// POST /api/server/register — remote APRS Net gateway phones home.
+var (
+	serverRegMu       sync.Mutex
+	serverRegLastSeen = map[string]int64{}
+)
+
+func handleServerRegister(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost { http.Error(w, "POST only", 405); return }
+	w.Header().Set("Content-Type", "application/json")
+	ip  := getClientIP(r)
+	now := time.Now().Unix()
+	serverRegMu.Lock()
+	if now-serverRegLastSeen[ip] < 300 {
+		serverRegMu.Unlock()
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "cached": true})
+		return
+	}
+	serverRegLastSeen[ip] = now
+	serverRegMu.Unlock()
+	var req struct {
+		Domain       string `json:"domain"`
+		Callsign     string `json:"callsign"`
+		ServerName   string `json:"server_name"`
+		Version      string `json:"version"`
+		StationCount int    `json:"station_count"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	memberStoreMu.Lock()
+	registeredAt := now
+	if ex := memberStore.KnownServers[ip]; ex != nil { registeredAt = ex.RegisteredAt }
+	memberStore.KnownServers[ip] = &RegisteredServer{
+		IP: ip, Domain: req.Domain,
+		Callsign: strings.ToUpper(req.Callsign),
+		ServerName: req.ServerName, Version: req.Version,
+		StationCount: req.StationCount,
+		RegisteredAt: registeredAt, LastSeenAt: now,
+	}
+	saveMemberStore()
+	memberStoreMu.Unlock()
+	log.Printf("server.register ip=%s domain=%s call=%s", ip, req.Domain, req.Callsign)
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "ip": ip})
+}
+
+// GET /api/admin/servers — all known APRS Net gateways, newest first.
+func handleAdminServers(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	memberStoreMu.RLock()
+	list := make([]*RegisteredServer, 0, len(memberStore.KnownServers))
+	for _, s := range memberStore.KnownServers { list = append(list, s) }
+	memberStoreMu.RUnlock()
+	sort.Slice(list, func(i, j int) bool { return list[i].LastSeenAt > list[j].LastSeenAt })
+	json.NewEncoder(w).Encode(list)
 }
 
 // handleWxTest is a thin server-side proxy for the Ecowitt test-connection call.
