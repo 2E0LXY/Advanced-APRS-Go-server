@@ -143,7 +143,7 @@ var (
 	// Used by all OE5BPA / LoRa_APRS_Tracker / ESP32 LoRa nodes.
 	// Same optional timestamp as posRegex — @/ DTI compressed reports also
 	// carry a DDHHMMz/DDHHMM//HHMMSSh timestamp before the compressed block.
-	compPosRegex = regexp.MustCompile(`[!\/=@\*](?:\d{6}[zh\/])?([\/\\])([\x21-\x7b]{4})([\x21-\x7b]{4})([\x21-\x7b])([\x20-\x7b]{2})([\x21-\x7b])`)
+	compPosRegex = regexp.MustCompile(`[!\/=@\*](?:\d{6}[zh\/])?([\/\\0-9A-Z])([\x21-\x7b]{4})([\x21-\x7b]{4})([\x21-\x7b])([\x20-\x7b]{2})([\x21-\x7b])`)
 	// Object format: ;NAME_____*DDHHMMzDDMM.MMN/DDDMM.MMW symbol comment
 	objRegex = regexp.MustCompile(`;([^\*]{9})[\*_](\d{6}[z\/])(\d{2})(\d{2}\.\d{2})([NS])(.)(\d{3})(\d{2}\.\d{2})([EW])(.)`)
 	// Item format: )NAME!DDMM.MMN/DDDMM.MMW symbol comment
