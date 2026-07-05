@@ -207,6 +207,8 @@ echo "M0XYZ>APRS,TCPIP*:=5342.10N/00130.50W-Test" | nc -u -w1 YOUR-IP 14580
 | Endpoint | Auth | Description |
 |----------|------|-------------|
 | `GET /api/status` | No | Uptime, packet counts, upstream status, connected clients |
+| `GET /api/messages` | No | Last hour of parsed APRS messages |
+| `GET /api/export/geojson` | No | Latest station/object positions as GeoJSON |
 | `GET /api/history` | API key | Last 10,000 decoded position packets |
 | `GET /api/version` | No | Running server version |
 | `GET /api/analytics` | No | Reliability grades, longest paths, heatmap data |
@@ -224,6 +226,41 @@ echo "M0XYZ>APRS,TCPIP*:=5342.10N/00130.50W-Test" | nc -u -w1 YOUR-IP 14580
 | `POST /api/member/wx_test` | X-Member-Token | Test Ecowitt API credentials; returns current conditions |
 | `GET /api/config` | Basic auth | Full server configuration JSON |
 | `POST /api/config` | Basic auth | Update and hot-reload configuration |
+
+### Standalone APRSNET Client
+
+The repository includes a standalone command-line APRSNET client in
+`cmd/aprsnet-client`. It runs on Windows and Linux, connects to APRSNET over the
+same public REST and WebSocket APIs, and can monitor live packets, authenticate,
+send APRS messages, send position beacons, create objects, and transmit raw APRS
+packets after local validation.
+
+Build examples:
+
+```bash
+go build -o aprsnet-client ./cmd/aprsnet-client
+GOOS=windows GOARCH=amd64 go build -o aprsnet-client.exe ./cmd/aprsnet-client
+GOOS=linux GOARCH=amd64 go build -o aprsnet-client-linux-amd64 ./cmd/aprsnet-client
+```
+
+Release helper scripts:
+
+```bash
+./scripts/build-aprsnet-client.sh
+```
+
+```powershell
+.\scripts\build-aprsnet-client.ps1
+```
+
+Example usage:
+
+```bash
+aprsnet-client -server https://www.aprsnet.uk monitor
+aprsnet-client -call M0XYZ -pass 12345 send-message -to 2E0LXY -text "Hello via APRSNET"
+aprsnet-client -call M0XYZ -pass 12345 beacon -lat 53.4808 -lon -2.2426 -comment "APRSNET CLI"
+aprsnet-client -call M0XYZ -pass 12345 -yes raw -packet "M0XYZ>APRS,TCPIP*:>Status via APRSNET"
+```
 
 ### Preferences Object Keys
 
