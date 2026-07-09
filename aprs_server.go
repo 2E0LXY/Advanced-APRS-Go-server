@@ -151,6 +151,56 @@ var (
 	phgRegex = regexp.MustCompile(`PHG(\d)(\d)(\d)(\d)`)
 )
 
+
+// --- per-IP connection limiting -----------------------------------------
+// Max concurrent WS+TCP connections allowed from a single IP address.
+// Prevents a single host from exhausting server resources.
+const maxConnsPerIP = 10
+
+var (
+	ipConnsMu sync.Mutex
+	ipConns   = make(map[string]int)
+)
+
+func ipConnAllow(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	ipConnsMu.Lock()
+	defer ipConnsMu.Unlock()
+	if ipConns[host] >= maxConnsPerIP {
+		return false
+	}
+	ipConns[host]++
+	return true
+}
+
+func ipConnRelease(addr string) {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	ipConnsMu.Lock()
+	if ipConns[host] > 0 {
+		ipConns[host]--
+	}
+	if ipConns[host] == 0 {
+		delete(ipConns, host)
+	}
+	ipConnsMu.Unlock()
+}
+
+// sanitisePacket strips ASCII control characters (except CR/LF/TAB) from
+// a raw APRS line to prevent injection of null bytes, escape sequences, or
+// other control characters that could corrupt log output or downstream parsing.
+var ctrlRe = regexp.MustCompile(`[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]`)
+
+func sanitisePacket(line string) string {
+	return ctrlRe.ReplaceAllString(line, "")
+}
+// -------------------------------------------------------------------------
+
 // decodeBase91Pos decodes a 4-char Base91 string to an integer value.
 func decodeBase91Pos(s string) int {
 	v := 0
@@ -1488,6 +1538,11 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+	if !ipConnAllow(r.RemoteAddr) {
+		conn.Close()
+		return
+	}
+	defer ipConnRelease(r.RemoteAddr)
 	client := &wsClient{
 		conn:        conn,
 		send:        make(chan []byte, 1024),
@@ -1790,6 +1845,11 @@ func listenTCPClients() {
 
 func handleTCPClient(conn net.Conn) {
 	defer conn.Close()
+	if !ipConnAllow(conn.RemoteAddr().String()) {
+		fmt.Fprintf(conn, "# Too many connections from your address\r\n")
+		return
+	}
+	defer ipConnRelease(conn.RemoteAddr().String())
 	client := &tcpClient{
 		conn:        conn,
 		remoteAddr:  conn.RemoteAddr().String(),
@@ -1820,7 +1880,7 @@ func handleTCPClient(conn net.Conn) {
 	loggedIn := false
 
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+		line := sanitisePacket(strings.TrimSpace(scanner.Text()))
 		if line == "" {
 			continue
 		}
