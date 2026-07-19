@@ -55,6 +55,18 @@ func igateKey(memberID, deviceCall string) string {
 	return memberID + "|" + strings.ToUpper(deviceCall)
 }
 
+func markIGateOffline(key string, closing *mqttConn) bool {
+	igatesMu.Lock()
+	defer igatesMu.Unlock()
+	d, ok := igates[key]
+	if !ok || d.conn != closing {
+		return false
+	}
+	d.Online = false
+	d.conn = nil
+	return true
+}
+
 // ── MQTT Connection State ──────────────────────────────────────────────────
 
 type mqttConn struct {
@@ -407,19 +419,19 @@ func handleMQTTClient(conn net.Conn) {
 
 	defer func() {
 		mc.close()
-		igatesMu.Lock()
-		if d, ok := igates[key]; ok {
-			d.Online = false
-			d.conn = nil
-		}
-		igatesMu.Unlock()
+		// A replacement connection for the same device may already be active.
+		// Only the socket that currently owns the device is allowed to mark it
+		// offline; otherwise a late cleanup races with a successful reconnect.
+		stateChanged := markIGateOffline(key, mc)
 		mqttConnsMu.Lock()
 		if mqttConns[key] == mc {
 			delete(mqttConns, key)
 		}
 		mqttConnsMu.Unlock()
 		log.Printf("MQTT iGate: disconnected %s", deviceCall)
-		broadcastIGateStatus(memberID)
+		if stateChanged {
+			broadcastIGateStatus(memberID)
+		}
 	}()
 
 	// ── Packet loop ──
