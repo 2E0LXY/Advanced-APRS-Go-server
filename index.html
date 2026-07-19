@@ -9628,6 +9628,8 @@ function drawAllConnections() {
 
       // Calculate distance for visual weight
       var d = haversineKm(pos.lat, pos.lon, dp.lat, dp.lon);
+      // Suppress implausibly long APRS-IS path lines (>500 km likely bogus GPS)
+      if (d > 500) return;
       // Recent = brighter, older = dimmer
       var ageMin = (Date.now()/1000 - st.lastHeard) / 60;
       var opacity = ageMin < 5 ? 0.9 : ageMin < 30 ? 0.6 : 0.35;
@@ -13175,6 +13177,12 @@ function renderLoRaData(results) {
     if (rxNode.role === 'digipeater' && !showDigis)    return;
     if (txNode.role === 'tracker'    && !showTrackers) return;
     if (onlyMoving && !txNode.moving) return;
+
+    // Suppress lines longer than 500 km — LoRa RF max is ~200 km in ideal
+    // conditions. Longer lines are almost always incorrect GPS coordinates
+    // from a node reporting a wrong position, not real RF propagation.
+    var linkDistKm = haversineKm(link.from.lat, link.from.lon, link.to.lat, link.to.lon);
+    if (linkDistKm > 500) return;
 
     // P2P focus mode: only show links involving focused callsign
     var inFocus = !_loraP2PFocus || link.rxCall === _loraP2PFocus || link.txCall === _loraP2PFocus;
