@@ -30,29 +30,44 @@ import (
 // ── iGate Device State ─────────────────────────────────────────────────────
 
 type IGateDevice struct {
-	DeviceCall     string              `json:"call"`
-	OwnerCall      string              `json:"owner"`
-	MemberID       string              `json:"-"`
-	Online         bool                `json:"online"`
-	LastSeen       int64               `json:"last_seen"`
-	Uptime         int64               `json:"uptime_sec"`
-	HeapFree       int                 `json:"heap_free"`
-	WifiRSSI       int                 `json:"wifi_rssi"`
-	PacketsRx      int                 `json:"packets_rx"`
-	PacketsTx      int                 `json:"packets_tx"`
-	Battery        float64             `json:"battery_v"`
-	FW             string              `json:"fw"`
-	APRSIP         string              `json:"aprs_server"`
-	Board          string              `json:"board,omitempty"`
-	LocalIP        string              `json:"local_ip,omitempty"`
-	MQTTState      int                 `json:"mqtt_state"`
-	Latitude       float64             `json:"latitude,omitempty"`
-	Longitude      float64             `json:"longitude,omitempty"`
-	PositionSource string              `json:"position_source,omitempty"`
-	UpdateState    string              `json:"update_state,omitempty"`
-	UpdateMessage  string              `json:"update_message,omitempty"`
-	Heard          []IGateHeardSummary `json:"heard_24h"`
-	conn           *mqttConn
+	DeviceCall       string              `json:"call"`
+	OwnerCall        string              `json:"owner"`
+	MemberID         string              `json:"-"`
+	Online           bool                `json:"online"`
+	LastSeen         int64               `json:"last_seen"`
+	Uptime           int64               `json:"uptime_sec"`
+	HeapFree         int                 `json:"heap_free"`
+	WifiRSSI         int                 `json:"wifi_rssi"`
+	PacketsRx        int                 `json:"packets_rx"`
+	PacketsTx        int                 `json:"packets_tx"`
+	Battery          float64             `json:"battery_v"`
+	FW               string              `json:"fw"`
+	APRSIP           string              `json:"aprs_server"`
+	Board            string              `json:"board,omitempty"`
+	LocalIP          string              `json:"local_ip,omitempty"`
+	MQTTState        int                 `json:"mqtt_state"`
+	Latitude         float64             `json:"latitude,omitempty"`
+	Longitude        float64             `json:"longitude,omitempty"`
+	PositionSource   string              `json:"position_source,omitempty"`
+	UpdateState      string              `json:"update_state,omitempty"`
+	UpdateMessage    string              `json:"update_message,omitempty"`
+	RegionProfile    string              `json:"region_profile,omitempty"`
+	ProfileConfirmed bool                `json:"profile_confirmed"`
+	CountryCode      string              `json:"country_code,omitempty"`
+	HardwareBand     string              `json:"hardware_band,omitempty"`
+	Timezone         string              `json:"timezone,omitempty"`
+	DistanceUnit     string              `json:"distance_unit,omitempty"`
+	AltitudeUnit     string              `json:"altitude_unit,omitempty"`
+	SpeedUnit        string              `json:"speed_unit,omitempty"`
+	TemperatureUnit  string              `json:"temperature_unit,omitempty"`
+	RXFrequency      int64               `json:"rx_frequency,omitempty"`
+	TXFrequency      int64               `json:"tx_frequency,omitempty"`
+	SpreadingFactor  int                 `json:"spreading_factor,omitempty"`
+	Bandwidth        int64               `json:"bandwidth,omitempty"`
+	CodingRate       int                 `json:"coding_rate,omitempty"`
+	TXPower          int                 `json:"tx_power,omitempty"`
+	Heard            []IGateHeardSummary `json:"heard_24h"`
+	conn             *mqttConn
 }
 
 var (
@@ -74,6 +89,18 @@ func validMQTTCall(call string) bool {
 		}
 	}
 	return true
+}
+
+func validAPRSStationCall(call string) bool {
+	if len(call) < 1 || len(call) > 20 {
+		return false
+	}
+	for _, r := range call {
+		if (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '-' && r != '/' {
+			return false
+		}
+	}
+	return !strings.HasPrefix(call, "/") && !strings.HasSuffix(call, "/") && !strings.Contains(call, "//")
 }
 
 func boundedTelemetryString(value string, max int) string {
@@ -321,11 +348,13 @@ func broadcastIGateStatus(memberID string) {
 		if d.MemberID == memberID {
 			cp := *d
 			cp.conn = nil
-			cp.Heard = buildIGateHeardSummaries(d.MemberID, d.DeviceCall, d.Latitude, d.Longitude)
 			list = append(list, cp)
 		}
 	}
 	igatesMu.RUnlock()
+	for i := range list {
+		list[i].Heard = buildIGateHeardSummaries(list[i].MemberID, list[i].DeviceCall, list[i].Latitude, list[i].Longitude)
+	}
 
 	if list == nil {
 		list = []IGateDevice{}
@@ -564,21 +593,28 @@ func (mc *mqttConn) mqttHandlePublish(flags byte, body []byte) {
 
 	// Forward to any subscribed device on the same member account (e.g. inter-device)
 	mqttConnsMu.RLock()
+	targets := make([]*mqttConn, 0, len(mqttConns))
 	for k, other := range mqttConns {
 		if k == igateKey(mc.memberID, mc.deviceCall) || other.memberID != mc.memberID {
 			continue
 		}
+		targets = append(targets, other)
+	}
+	mqttConnsMu.RUnlock()
+	for _, other := range targets {
 		other.mu.Lock()
+		matched := false
 		for sub := range other.subs {
 			if mqttTopicMatch(sub, topic) {
-				other.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-				other.conn.Write(mqttBuildPublish(topic, payload))
+				matched = true
 				break
 			}
 		}
 		other.mu.Unlock()
+		if matched {
+			_ = other.send(mqttBuildPublish(topic, payload))
+		}
 	}
-	mqttConnsMu.RUnlock()
 
 	if qos == 1 {
 		mc.send(mqttPuback(pktID))
@@ -650,6 +686,51 @@ func (mc *mqttConn) mqttHandleTelemetry(payload string) {
 	if v, ok := tel["update_message"].(string); ok {
 		d.UpdateMessage = boundedTelemetryString(v, 160)
 	}
+	if v, ok := tel["region_profile"].(string); ok {
+		d.RegionProfile = boundedTelemetryString(v, 24)
+	}
+	if v, ok := tel["profile_confirmed"].(bool); ok {
+		d.ProfileConfirmed = v
+	}
+	if v, ok := tel["country_code"].(string); ok {
+		d.CountryCode = boundedTelemetryString(strings.ToUpper(v), 3)
+	}
+	if v, ok := tel["hardware_band"].(string); ok {
+		d.HardwareBand = boundedTelemetryString(v, 16)
+	}
+	if v, ok := tel["timezone"].(string); ok {
+		d.Timezone = boundedTelemetryString(v, 48)
+	}
+	if v, ok := tel["distance_unit"].(string); ok && (v == "mi" || v == "km") {
+		d.DistanceUnit = v
+	}
+	if v, ok := tel["altitude_unit"].(string); ok && (v == "m" || v == "ft") {
+		d.AltitudeUnit = v
+	}
+	if v, ok := tel["speed_unit"].(string); ok && (v == "kmh" || v == "mph") {
+		d.SpeedUnit = v
+	}
+	if v, ok := tel["temperature_unit"].(string); ok && (v == "c" || v == "f") {
+		d.TemperatureUnit = v
+	}
+	if v, ok := tel["rx_frequency"].(float64); ok {
+		d.RXFrequency = int64(v)
+	}
+	if v, ok := tel["tx_frequency"].(float64); ok {
+		d.TXFrequency = int64(v)
+	}
+	if v, ok := tel["spreading_factor"].(float64); ok {
+		d.SpreadingFactor = int(v)
+	}
+	if v, ok := tel["bandwidth"].(float64); ok {
+		d.Bandwidth = int64(v)
+	}
+	if v, ok := tel["coding_rate"].(float64); ok {
+		d.CodingRate = int(v)
+	}
+	if v, ok := tel["tx_power"].(float64); ok {
+		d.TXPower = int(v)
+	}
 	memberID := d.MemberID
 	deviceCall := d.DeviceCall
 	uptime := d.Uptime
@@ -694,11 +775,13 @@ func handleMemberIGates(w http.ResponseWriter, r *http.Request) {
 		if d.MemberID == m.ID {
 			cp := *d
 			cp.conn = nil
-			cp.Heard = buildIGateHeardSummaries(d.MemberID, d.DeviceCall, d.Latitude, d.Longitude)
 			list = append(list, cp)
 		}
 	}
 	igatesMu.RUnlock()
+	for i := range list {
+		list[i].Heard = buildIGateHeardSummaries(list[i].MemberID, list[i].DeviceCall, list[i].Latitude, list[i].Longitude)
+	}
 	if list == nil {
 		list = []IGateDevice{}
 	}

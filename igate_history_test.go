@@ -19,11 +19,13 @@ func withIGateHistoryTempDir(t *testing.T) {
 		_ = os.Chdir(oldDir)
 		igateHistoryMu.Lock()
 		igateHistory = make(map[string]*IGateHeardState)
+		igateStationCounts = make(map[string]int)
 		lastIGateHistorySave = time.Time{}
 		igateHistoryMu.Unlock()
 	})
 	igateHistoryMu.Lock()
 	igateHistory = make(map[string]*IGateHeardState)
+	igateStationCounts = make(map[string]int)
 	lastIGateHistorySave = time.Time{}
 	igateHistoryMu.Unlock()
 }
@@ -97,6 +99,19 @@ func TestValidMQTTCall(t *testing.T) {
 	for _, call := range []string{"", "bad/call", "CALL<script>", "ABCDEFGHIJKLMNOP"} {
 		if validMQTTCall(call) {
 			t.Errorf("invalid call accepted: %s", call)
+		}
+	}
+}
+
+func TestPortableAPRSStationCall(t *testing.T) {
+	for _, call := range []string{"2E0LXY/M", "M0ABC/P", "F4XYZ-7"} {
+		if !validAPRSStationCall(call) {
+			t.Errorf("valid APRS station call rejected: %s", call)
+		}
+	}
+	for _, call := range []string{"/M0ABC", "M0ABC/", "M0//P", "CALL<script>"} {
+		if validAPRSStationCall(call) {
+			t.Errorf("invalid APRS station call accepted: %s", call)
 		}
 	}
 }
