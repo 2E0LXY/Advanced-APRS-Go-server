@@ -2029,6 +2029,21 @@ body { background: var(--bg-base); color: var(--text-base); }
           <p class="text-xs text-gray-400">"<b class="text-purple-300">LoRa Network</b>" overlay — OFF by default. Adds the lora-aprs.live overlay with iGates (📡 purple), Trackers (🛰 green) and signal-quality lines colour-coded by SNR: <span class="text-green-400">green</span> (>-3dB), <span class="text-yellow-400">yellow</span> (-3 to -12), <span class="text-orange-400">orange</span> (-12 to -18), <span class="text-red-400">red</span> (&lt;-18). Background fetch enriches APRS-IS LoRa stations with SNR/RSSI data when available — click any LoRa station to see signal details. Data from <a href="https://lora-aprs.live" target="_blank" class="text-blue-400 underline">lora-aprs.live</a>.</p>
         </div>
         <div class="bg-gray-900 rounded p-3">
+          <h4 class="font-bold text-white mb-1">&#x1F5A5; My LoRa iGate Devices</h4>
+          <p class="text-xs text-gray-400 mb-2">Member-private remote management for ESP32 LoRa APRS iGate devices running the <b class="text-purple-300">2E0LXY iGate firmware</b>. Found in <b class="text-white">Member Settings &rarr; &#x1F4E1; My LoRa APRS iGate Devices</b>. Devices connect via MQTT on port <b class="text-white">1883</b> using your member credentials.</p>
+          <p class="text-xs text-gray-400 mb-1"><b class="text-white">Device config</b> &mdash; add to igate_conf.json:</p>
+          <div class="bg-gray-800 rounded p-2 mb-2 font-mono text-[10px] text-purple-300">
+            mqtt.active = true<br>
+            mqtt.server = www.aprsnet.uk<br>
+            mqtt.port &nbsp; = 1883<br>
+            mqtt.topic &nbsp;= aprsnet<br>
+            mqtt.username = YOUR_CALLSIGN<br>
+            mqtt.password = YOUR_MEMBER_PASSWORD
+          </div>
+          <p class="text-xs text-gray-400 mb-1"><b class="text-white">Live telemetry</b> (60 s): online/offline &bull; firmware version &bull; WiFi RSSI &bull; free heap &bull; RX/TX packets &bull; uptime.</p>
+          <p class="text-xs text-gray-400"><b class="text-white">Remote commands:</b> <b>&#x27F3; Restart</b> &mdash; instant reboot &bull; <b>&#x1F4E1; Force Beacon</b> &mdash; immediate APRS position &bull; <b>&#x21BA; Status</b> &mdash; request telemetry snapshot. Strictly private to your account.</p>
+        </div>
+        <div class="bg-gray-900 rounded p-3">
           <h4 class="font-bold text-white mb-1">🌙 / ☀ Theme Toggle</h4>
           <p class="text-xs text-gray-400">Switch between dark and light mode (top right). Map tiles always stay daylight regardless of theme. Preference saved across sessions.</p>
         </div>
