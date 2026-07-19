@@ -4431,6 +4431,9 @@ function connectWS() {
       if (d.data && typeof d.data === 'object') {
         applyMemberPrefsFromServer(d.data);
       }
+    } else if (d.type==='igate_status') {
+      // Server pushed updated iGate device list for this member
+      if (typeof renderIGates === 'function' && Array.isArray(d.data)) renderIGates(d.data);
     } else if (d.type==='geo_fence_sync') {
       // Another device created or deleted a geo-fence rule. The server pushes
       // the full updated rule list — refresh the panel immediately if open.
@@ -13231,6 +13234,107 @@ console.log('APRS Net JS loaded - build cache-bust-16 (documentation)');
 initTheme();
 initMemberSession();
 loadMOTDBanner();
+// ─── iGate Device Panel ───────────────────────────────────────────────────────
+// Loads the member's registered ESP32 iGate devices from the server and renders
+// a live status card for each. Real-time updates arrive via the igate_status WS
+// message whenever a device connects, disconnects, or sends telemetry.
+
+function loadIGates() {
+  if (!_memberSession) return;
+  fetch(location.origin + '/api/member/igates', {
+    headers: { 'X-Member-Token': _memberSession.token }
+  }).then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(d) { if (d && d.igates) renderIGates(d.igates); })
+    .catch(function() {});
+}
+
+function renderIGates(list) {
+  var el = document.getElementById('igate-list');
+  if (!el) return;
+  if (!list || list.length === 0) {
+    el.innerHTML = '<p class="text-[11px] text-gray-600 text-center py-3">No iGates connected yet — configure your device to connect via MQTT.</p>';
+    return;
+  }
+  el.innerHTML = list.map(function(d) {
+    var online = d.online;
+    var dot    = online ? 'bg-green-400' : 'bg-gray-600';
+    var badge  = online ? 'text-green-400' : 'text-gray-500';
+    var state  = online ? 'Online' : 'Offline';
+    var ago    = d.last_seen ? Math.floor(Date.now()/1000 - d.last_seen) : null;
+    var agoStr = ago === null ? '—' : ago < 60 ? ago + 's ago'
+                   : ago < 3600 ? Math.floor(ago/60) + 'm ago'
+                   : Math.floor(ago/3600) + 'h ago';
+    var heap   = d.heap_free  ? (d.heap_free/1024).toFixed(0)+'k' : '—';
+    var rssi   = d.wifi_rssi  ? d.wifi_rssi+'dBm' : '—';
+    var batt   = d.battery_v  ? d.battery_v.toFixed(2)+'V' : '—';
+    var fw     = d.fw         || '—';
+    var rx     = d.packets_rx !== undefined ? d.packets_rx : '—';
+    var tx     = d.packets_tx !== undefined ? d.packets_tx : '—';
+    var uptime = d.uptime_sec ? (d.uptime_sec < 3600 ? Math.floor(d.uptime_sec/60)+'m'
+                               : Math.floor(d.uptime_sec/3600)+'h '+Math.floor((d.uptime_sec%3600)/60)+'m') : '—';
+    return [
+      '<div class="bg-gray-900 border border-gray-700 rounded p-2">',
+        '<div class="flex items-center justify-between mb-1">',
+          '<div class="flex items-center gap-1.5">',
+            '<span class="w-2 h-2 rounded-full '+dot+'"></span>',
+            '<span class="text-[12px] font-bold text-white font-mono">'+d.call+'</span>',
+            '<span class="text-[10px] '+badge+'">'+state+'</span>',
+            (fw !== '—' ? '<span class="text-[9px] text-gray-600 ml-1">'+fw+'</span>' : ''),
+          '</div>',
+          '<span class="text-[10px] text-gray-600">'+agoStr+'</span>',
+        '</div>',
+        '<div class="grid grid-cols-4 gap-1 mb-1.5 text-[10px]">',
+          '<div class="bg-gray-800 rounded px-1.5 py-1"><p class="text-gray-500">WiFi</p><p class="text-white font-mono">'+rssi+'</p></div>',
+          '<div class="bg-gray-800 rounded px-1.5 py-1"><p class="text-gray-500">Heap</p><p class="text-white font-mono">'+heap+'</p></div>',
+          '<div class="bg-gray-800 rounded px-1.5 py-1"><p class="text-gray-500">RX/TX</p><p class="text-white font-mono">'+rx+'/'+tx+'</p></div>',
+          '<div class="bg-gray-800 rounded px-1.5 py-1"><p class="text-gray-500">Uptime</p><p class="text-white font-mono">'+uptime+'</p></div>',
+        '</div>',
+        (online ? [
+          '<div class="flex gap-1">',
+            '<button onclick="sendIGateCmd(\''+d.call+'\',\'restart\')" ',
+              'class="flex-1 bg-red-900 hover:bg-red-800 text-red-200 text-[10px] px-2 py-1 rounded font-bold">⟳ Restart</button>',
+            '<button onclick="sendIGateCmd(\''+d.call+'\',\'beacon\')" ',
+              'class="flex-1 bg-teal-900 hover:bg-teal-800 text-teal-200 text-[10px] px-2 py-1 rounded font-bold">📡 Force Beacon</button>',
+            '<button onclick="sendIGateCmd(\''+d.call+'\',\'telemetry\')" ',
+              'class="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-[10px] px-2 py-1 rounded">↻ Status</button>',
+          '</div>'
+        ].join('') : '<p class="text-[10px] text-gray-600">Device offline — commands unavailable</p>'),
+        '<div id="igate-msg-'+d.call+'" class="text-[10px] mt-1 hidden"></div>',
+      '</div>'
+    ].join('');
+  }).join('');
+}
+
+function sendIGateCmd(deviceCall, cmd) {
+  if (!_memberSession) return;
+  var msgEl = document.getElementById('igate-msg-' + deviceCall);
+  if (msgEl) { msgEl.textContent = 'Sending…'; msgEl.className = 'text-[10px] mt-1 text-gray-400'; }
+  fetch(location.origin + '/api/member/igate/' + deviceCall + '/cmd', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Member-Token': _memberSession.token },
+    body: JSON.stringify({ cmd: cmd })
+  }).then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (msgEl) {
+        msgEl.textContent = d.ok ? '✓ Command sent' : '✗ ' + (d.error || 'Failed');
+        msgEl.className = 'text-[10px] mt-1 ' + (d.ok ? 'text-green-400' : 'text-red-400');
+        setTimeout(function() { if (msgEl) { msgEl.textContent=''; msgEl.className='text-[10px] mt-1 hidden'; } }, 3000);
+      }
+    }).catch(function() {
+      if (msgEl) { msgEl.textContent = '✗ Error'; msgEl.className = 'text-[10px] mt-1 text-red-400'; }
+    });
+}
+
+// Auto-load when member panel opens / on login
+(function() {
+  var _origApplyPrefs = applyMemberPrefsFromServer;
+  applyMemberPrefsFromServer = function(p) {
+    _origApplyPrefs(p);
+    setTimeout(loadIGates, 600);
+  };
+})();
+// ─────────────────────────────────────────────────────────────────────────────
+
 connectWS();
 setInterval(redrawMap, 30000);
 populateConnInfo();
@@ -13853,10 +13957,7 @@ document.addEventListener('keydown', function(e) {
             <p id="wx-status" class="text-[11px] mt-1.5 hidden"></p>
           </div>
 
-          </div><!-- end right column -->
-          </div><!-- end 2-col grid -->
-
-          <button onclick="saveMemberSettings()" class="bg-cyan-700 hover:bg-cyan-600 px-3 py-1.5 rounded text-xs text-white font-bold">Save Changes</button>
+          </div><!-- end right column -->\n          </div><!-- end 2-col grid -->\n\n          <!-- ── LoRa APRS iGate Devices ──────────────────────────────── -->\n          <div class="bg-gray-800 border border-gray-700 rounded p-2 mt-2">\n            <div class="flex items-center justify-between mb-1">\n              <p class="text-[11px] text-purple-400 font-bold uppercase">📡 My LoRa APRS iGate Devices</p>\n              <button onclick="loadIGates()" class="text-[10px] text-gray-500 hover:text-gray-300">↻ Refresh</button>\n            </div>\n            <p class="text-[10px] text-gray-500 mb-2">ESP32 iGate devices that connect here for telemetry and remote control. Configure your device\'s <code class="text-purple-300">mqtt.server = www.aprsnet.uk</code>, <code class="text-purple-300">username = your callsign</code>, <code class="text-purple-300">password = your member password</code>.</p>\n            <div id="igate-list" class="space-y-1.5">\n              <p class="text-[11px] text-gray-600 text-center py-3">No iGates connected yet — configure your device to connect via MQTT.</p>\n            </div>\n          </div>\n\n          <button onclick="saveMemberSettings()" class="bg-cyan-700 hover:bg-cyan-600 px-3 py-1.5 rounded text-xs text-white font-bold">Save Changes</button>
           <hr class="border-gray-700">
           <div>
             <label class="text-[11px] text-gray-400 block mb-1">Current Password</label>
