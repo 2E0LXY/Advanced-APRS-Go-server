@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -88,7 +89,70 @@ func (c *mqttConn) close() {
 var (
 	mqttConnsMu sync.RWMutex
 	mqttConns   = make(map[string]*mqttConn)
+
+	mqttActiveConnections   int64
+	mqttConnectionsAccepted int64
+	mqttConnectionsRejected int64
+	mqttAuthFailures        int64
+	mqttPublishes           int64
+
+	mqttIPMu     sync.Mutex
+	mqttIPConns  = make(map[string]int)
+	mqttAuthByIP = make(map[string]*mqttAuthWindow)
 )
+
+const maxMQTTConnsPerIP = 10
+
+type mqttAuthWindow struct {
+	start    time.Time
+	attempts int
+}
+
+func mqttRemoteIP(conn net.Conn) string {
+	host, _, err := net.SplitHostPort(conn.RemoteAddr().String())
+	if err != nil {
+		return conn.RemoteAddr().String()
+	}
+	return host
+}
+
+func acquireMQTTIP(ip string) bool {
+	mqttIPMu.Lock()
+	defer mqttIPMu.Unlock()
+	if mqttIPConns[ip] >= maxMQTTConnsPerIP {
+		return false
+	}
+	mqttIPConns[ip]++
+	return true
+}
+
+func releaseMQTTIP(ip string) {
+	mqttIPMu.Lock()
+	defer mqttIPMu.Unlock()
+	if mqttIPConns[ip] <= 1 {
+		delete(mqttIPConns, ip)
+		return
+	}
+	mqttIPConns[ip]--
+}
+
+// mqttAuthAllowed caps expensive password checks to 60 attempts per source IP
+// per minute. Normal iGates reconnect at most a few times per minute.
+func mqttAuthAllowed(ip string) bool {
+	now := time.Now()
+	mqttIPMu.Lock()
+	defer mqttIPMu.Unlock()
+	window := mqttAuthByIP[ip]
+	if window == nil || now.Sub(window.start) >= time.Minute {
+		mqttAuthByIP[ip] = &mqttAuthWindow{start: now, attempts: 1}
+		return true
+	}
+	if window.attempts >= 60 {
+		return false
+	}
+	window.attempts++
+	return true
+}
 
 // ── MQTT Packet Encoding Helpers ───────────────────────────────────────────
 
@@ -243,6 +307,7 @@ func broadcastIGateStatus(memberID string) {
 func handleMQTTClient(conn net.Conn) {
 	defer conn.Close()
 	mc := &mqttConn{conn: conn, subs: make(map[string]byte), alive: true}
+	remoteIP := mqttRemoteIP(conn)
 
 	// ── CONNECT ──
 	conn.SetDeadline(time.Now().Add(30 * time.Second))
@@ -267,13 +332,15 @@ func handleMQTTClient(conn net.Conn) {
 	if pos >= len(pkt) {
 		return
 	}
-	protoLevel := pkt[pos]; pos++
+	protoLevel := pkt[pos]
+	pos++
 	if protoLevel != 4 && protoLevel != 3 {
 		mc.send(mqttConnack(1)) // unacceptable protocol level
 		return
 	}
 	// Accept both MQTT 3.1 (level 3, PubSubClient default) and 3.1.1 (level 4)
-	flags := pkt[pos]; pos++
+	flags := pkt[pos]
+	pos++
 	pos += 2 // keep-alive
 
 	clientID, pos := mqttStr(pkt, pos)
@@ -290,8 +357,14 @@ func handleMQTTClient(conn net.Conn) {
 		password, _ = mqttStr(pkt, pos)
 	}
 
+	if !mqttAuthAllowed(remoteIP) {
+		atomic.AddInt64(&mqttConnectionsRejected, 1)
+		mc.send(mqttConnack(3)) // server unavailable while rate limited
+		return
+	}
 	memberID, ownerCall := mqttAuthMember(username, password)
 	if memberID == "" {
+		atomic.AddInt64(&mqttAuthFailures, 1)
 		mc.send(mqttConnack(4)) // bad credentials
 		log.Printf("MQTT iGate: auth failed for '%s' (clientID=%s)", username, clientID)
 		return
@@ -426,6 +499,7 @@ func handleMQTTClient(conn net.Conn) {
 }
 
 func (mc *mqttConn) mqttHandlePublish(flags byte, body []byte) {
+	atomic.AddInt64(&mqttPublishes, 1)
 	qos := (flags >> 1) & 0x03
 	topic, pos := mqttStr(body, 0)
 	var pktID uint16
@@ -477,14 +551,30 @@ func (mc *mqttConn) mqttHandleTelemetry(payload string) {
 		return
 	}
 	d.LastSeen = time.Now().Unix()
-	if v, ok := tel["uptime"].(float64);    ok { d.Uptime   = int64(v) }
-	if v, ok := tel["heap"].(float64);      ok { d.HeapFree = int(v) }
-	if v, ok := tel["wifi_rssi"].(float64); ok { d.WifiRSSI = int(v) }
-	if v, ok := tel["rx"].(float64);        ok { d.PacketsRx = int(v) }
-	if v, ok := tel["tx"].(float64);        ok { d.PacketsTx = int(v) }
-	if v, ok := tel["batt"].(float64);      ok { d.Battery   = v }
-	if v, ok := tel["fw"].(string);         ok { d.FW        = v }
-	if v, ok := tel["aprs_server"].(string); ok { d.APRSIP  = v }
+	if v, ok := tel["uptime"].(float64); ok {
+		d.Uptime = int64(v)
+	}
+	if v, ok := tel["heap"].(float64); ok {
+		d.HeapFree = int(v)
+	}
+	if v, ok := tel["wifi_rssi"].(float64); ok {
+		d.WifiRSSI = int(v)
+	}
+	if v, ok := tel["rx"].(float64); ok {
+		d.PacketsRx = int(v)
+	}
+	if v, ok := tel["tx"].(float64); ok {
+		d.PacketsTx = int(v)
+	}
+	if v, ok := tel["batt"].(float64); ok {
+		d.Battery = v
+	}
+	if v, ok := tel["fw"].(string); ok {
+		d.FW = v
+	}
+	if v, ok := tel["aprs_server"].(string); ok {
+		d.APRSIP = v
+	}
 	memberID := d.MemberID
 	igatesMu.Unlock()
 
@@ -608,6 +698,18 @@ func startIGateMQTTBroker() {
 		if err != nil {
 			continue
 		}
-		go handleMQTTClient(conn)
+		ip := mqttRemoteIP(conn)
+		if !acquireMQTTIP(ip) {
+			atomic.AddInt64(&mqttConnectionsRejected, 1)
+			conn.Close()
+			continue
+		}
+		atomic.AddInt64(&mqttConnectionsAccepted, 1)
+		atomic.AddInt64(&mqttActiveConnections, 1)
+		go func(c net.Conn, remoteIP string) {
+			defer releaseMQTTIP(remoteIP)
+			defer atomic.AddInt64(&mqttActiveConnections, -1)
+			handleMQTTClient(c)
+		}(conn, ip)
 	}
 }

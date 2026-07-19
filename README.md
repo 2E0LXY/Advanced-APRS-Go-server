@@ -130,6 +130,7 @@ Per-member weather station integration stored in the member account Settings pan
 - Hot-reload configuration, one-click self-update from GitHub (streams build progress)
 - Change admin password, configure APRS-IS upstream server and filter
 - Station-level traffic monitoring: connected clients table, recent packet log
+- **Server Performance & Issues** — admin-only live health, seven-day CPU/memory/disk/queue and packet-rate history, restart detection, APRS-IS state, and MQTT connection/authentication diagnostics
 - **API Keys** — issue/revoke API keys for the history and export endpoints
 - **Webhooks** — configure HTTP POST endpoints triggered by position, message, or weather packets; retries on 5xx
 - **Audit log** — timestamped record of all admin actions
@@ -283,6 +284,8 @@ curl -X POST https://your-domain/api/admin/update -u admin:PASSWORD
 
 - `creds.json` and `server_config.json` are created at runtime with mode 0600 and are gitignored
 - Admin endpoints protected by HTTP Basic Auth
+- Operational history is stored locally in `performance_history.jsonl` (mode 0600), retained for seven days, and is available only through the authenticated admin API
+- Public status responses expose integration availability only, never AIS or QRZ credentials
 - Member endpoints protected by session token (`X-Member-Token` header)
 - WebSocket TX requires a valid APRS-IS passcode matching the callsign
 - Unverified APRS-IS clients (passcode -1) are receive-only
@@ -294,6 +297,7 @@ curl -X POST https://your-domain/api/admin/update -u admin:PASSWORD
 
 | Version | Changes |
 |---------|---------|
+| v2.1.0 | Admin-only seven-day server performance and issue history; MQTT safety limits and authentication counters; HTTP timeouts; public integration-secret exposure removed |
 | v1.6.x | Ecowitt weather station APRS WX beaconing (server-side polling, APRS WX formatter, `wx_test` proxy endpoint); member modal scroll fix; weather settings section in member settings panel |
 | v1.5.x | Cross-device message sync — `direction` field on StoredMessage, sender copy stored, real-time WS echo to sender sessions; `member_sync` WS push on preferences save |
 | v1.4.x | Geo-fence alert rules — server-side CRUD API + real-time evaluation + WS push to member sessions |

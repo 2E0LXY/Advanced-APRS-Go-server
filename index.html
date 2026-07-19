@@ -2375,6 +2375,7 @@ ws.onmessage = (ev) => {
             <tr><td class="py-1 text-purple-400">GET /api/member/profile</td><td class="text-amber-400">Token</td><td class="text-gray-300">Member profile, watchlist, callsigns</td></tr>
             <tr><td class="py-1 text-purple-400">GET /api/member/messages</td><td class="text-amber-400">Token</td><td class="text-gray-300">Stored offline APRS messages</td></tr>
             <tr><td class="py-1 text-rose-400">GET /metrics</td><td class="text-red-400">Admin</td><td class="text-gray-300">Prometheus metrics endpoint</td></tr>
+            <tr><td class="py-1 text-rose-400">GET /api/admin/performance</td><td class="text-red-400">Admin</td><td class="text-gray-300">Current health, seven-day samples and detected operational issues</td></tr>
             <tr><td class="py-1 text-gray-400">GET /demo</td><td class="text-gray-500">None</td><td class="text-gray-300">Read-only demo mode (sets cookie)</td></tr>
           </tbody>
         </table>
@@ -2552,11 +2553,74 @@ ws.onmessage = (ev) => {
       </div>
 
       <!-- Config content — hidden until authenticated -->
-      <div id="admin-content" class="hidden max-w-2xl mx-auto space-y-4">
+      <div id="admin-content" class="hidden max-w-6xl mx-auto space-y-4">
         <div class="flex justify-between items-center">
           <h2 class="text-xl font-bold text-red-500">Core Configuration</h2>
           <button onclick="doAdminLogout()" class="text-xs text-gray-500 hover:text-white px-3 py-1 bg-gray-800 border border-gray-700 rounded">Logout</button>
         </div>
+
+        <!-- Admin-only server performance -->
+        <section id="admin-performance" class="bg-gray-800 p-4 rounded border border-gray-700" aria-labelledby="admin-performance-title">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <div>
+              <h3 id="admin-performance-title" class="text-sm font-bold text-gray-200 uppercase">📈 Server Performance &amp; Issues</h3>
+              <p class="text-xs text-gray-500 mt-1">Private operational history retained for seven days. This identifies sustained load, service restarts, queue pressure and MQTT login faults.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <select id="adm-perf-range" aria-label="Performance history range" onchange="loadAdminPerformance()" class="bg-gray-700 border border-gray-600 text-gray-200 text-xs rounded px-2 py-2">
+                <option value="1h">Last hour</option>
+                <option value="6h">Last 6 hours</option>
+                <option value="24h" selected>Last 24 hours</option>
+                <option value="7d">Last 7 days</option>
+              </select>
+              <button type="button" onclick="loadAdminPerformance()" class="bg-blue-700 hover:bg-blue-600 px-3 py-2 rounded text-xs text-white">🔄 Refresh</button>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between mb-3 bg-gray-900/60 border border-gray-700 rounded px-3 py-2">
+            <div class="flex items-center gap-2">
+              <span id="adm-perf-health-dot" class="w-2.5 h-2.5 rounded-full bg-gray-500"></span>
+              <span id="adm-perf-health" class="text-sm font-bold text-gray-400">Loading performance…</span>
+            </div>
+            <span id="adm-perf-updated" class="text-[11px] text-gray-500">Waiting for first sample</span>
+          </div>
+
+          <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-2 mb-4">
+            <div class="bg-gray-900/70 rounded border border-gray-700 p-3"><div class="text-[10px] uppercase text-gray-500">🧮 Host CPU</div><div id="adm-perf-cpu" class="text-lg font-bold text-cyan-400">—</div></div>
+            <div class="bg-gray-900/70 rounded border border-gray-700 p-3"><div class="text-[10px] uppercase text-gray-500">🧠 Memory</div><div id="adm-perf-memory" class="text-lg font-bold text-purple-400">—</div></div>
+            <div class="bg-gray-900/70 rounded border border-gray-700 p-3"><div class="text-[10px] uppercase text-gray-500">💾 Disk</div><div id="adm-perf-disk" class="text-lg font-bold text-amber-400">—</div></div>
+            <div class="bg-gray-900/70 rounded border border-gray-700 p-3"><div class="text-[10px] uppercase text-gray-500">📦 Queue peak</div><div id="adm-perf-queue" class="text-lg font-bold text-blue-400">—</div></div>
+            <div class="bg-gray-900/70 rounded border border-gray-700 p-3"><div class="text-[10px] uppercase text-gray-500">📡 Packet rate</div><div id="adm-perf-packets" class="text-lg font-bold text-green-400">—</div></div>
+            <div class="bg-gray-900/70 rounded border border-gray-700 p-3"><div class="text-[10px] uppercase text-gray-500">⏱ Uptime</div><div id="adm-perf-uptime" class="text-lg font-bold text-gray-200">—</div></div>
+            <div class="bg-gray-900/70 rounded border border-gray-700 p-3"><div class="text-[10px] uppercase text-gray-500">🌐 Web / TCP</div><div id="adm-perf-clients" class="text-lg font-bold text-sky-400">—</div></div>
+            <div class="bg-gray-900/70 rounded border border-gray-700 p-3"><div class="text-[10px] uppercase text-gray-500">🔌 MQTT live</div><div id="adm-perf-mqtt" class="text-lg font-bold text-teal-400">—</div></div>
+            <div class="bg-gray-900/70 rounded border border-gray-700 p-3"><div class="text-[10px] uppercase text-gray-500">🔐 MQTT auth fails</div><div id="adm-perf-mqtt-fails" class="text-lg font-bold text-rose-400">—</div></div>
+            <div class="bg-gray-900/70 rounded border border-gray-700 p-3"><div class="text-[10px] uppercase text-gray-500">🧵 Goroutines</div><div id="adm-perf-goroutines" class="text-lg font-bold text-indigo-400">—</div></div>
+            <div class="bg-gray-900/70 rounded border border-gray-700 p-3"><div class="text-[10px] uppercase text-gray-500">🔗 APRS upstream</div><div id="adm-perf-upstream" class="text-lg font-bold text-gray-300">—</div></div>
+            <div class="bg-gray-900/70 rounded border border-gray-700 p-3"><div class="text-[10px] uppercase text-gray-500">⚙ Process RSS</div><div id="adm-perf-rss" class="text-lg font-bold text-fuchsia-400">—</div></div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-3 mb-4">
+            <div class="bg-gray-900/60 border border-gray-700 rounded p-3">
+              <div class="flex justify-between text-[11px] text-gray-500 mb-2"><span>CPU history</span><span class="text-cyan-400">Host CPU %</span></div>
+              <svg id="adm-perf-cpu-chart" viewBox="0 0 600 150" class="w-full h-36" role="img" aria-label="Host CPU history chart"></svg>
+            </div>
+            <div class="bg-gray-900/60 border border-gray-700 rounded p-3">
+              <div class="flex justify-between text-[11px] text-gray-500 mb-2"><span>Traffic history</span><span class="text-green-400">Packets per second</span></div>
+              <svg id="adm-perf-packet-chart" viewBox="0 0 600 150" class="w-full h-36" role="img" aria-label="Packet rate history chart"></svg>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <h4 class="text-xs font-bold uppercase text-gray-300">Current and historical issues</h4>
+              <span id="adm-perf-issue-count" class="text-[11px] text-gray-500">—</span>
+            </div>
+            <div id="adm-perf-issues" class="space-y-2">
+              <p class="text-xs text-gray-500 text-center py-4">Loading issue history…</p>
+            </div>
+          </div>
+        </section>
 
         <!-- Identity -->
         <div class="bg-gray-800 p-4 rounded border border-gray-700">
@@ -2801,7 +2865,7 @@ ws.onmessage = (ev) => {
             <div>
               <label class="block text-gray-400 text-xs mb-1">aisstream.io API key (Live Ships overlay)</label>
               <input type="text" id="admAISKey" placeholder="Enter aisstream.io API key" class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white text-sm outline-none focus:border-cyan-500 font-mono">
-              <p class="text-xs text-gray-500 mt-1">Free key from <a href="https://aisstream.io" target="_blank" class="text-cyan-400 underline">aisstream.io</a>. Used when users enable the Live Ships overlay. Defaults to a built-in fallback key if blank.</p>
+              <p class="text-xs text-gray-500 mt-1">Free key from <a href="https://aisstream.io" target="_blank" class="text-cyan-400 underline">aisstream.io</a>. The server uses it for the live ship feed; it is never returned by a public API.</p>
             </div>
             <div class="pt-3 border-t border-gray-700">
               <p class="text-xs text-cyan-300 font-bold mb-2">QRZ.com XML Lookup (operator profile data)</p>
@@ -3758,6 +3822,7 @@ async function doAdminLogin() {
     // sections like MOTD only load on the second panel-toggle (when _adminCreds
     // is already set) so the form appears blank on first login.
     setTimeout(function() {
+      if (typeof loadAdminPerformance === 'function') loadAdminPerformance();
       if (typeof loadAdminMembers  === 'function') loadAdminMembers();
       if (typeof loadBans          === 'function') loadBans();
       if (typeof loadAdminMOTD     === 'function') loadAdminMOTD();
@@ -9416,6 +9481,141 @@ async function restoreBackup(event) {
   event.target.value = '';
 }
 
+// ─── Admin: Server performance and issue history ─────────────────────────────
+function perfPercent(used, total) {
+  if (!total) return 0;
+  return Math.max(0, Math.min(100, (used / total) * 100));
+}
+
+function perfQueuePercent(s) {
+  function q(n, cap) { return cap ? ((n || 0) / cap) * 100 : 0; }
+  return Math.max(q(s.broadcast_queue, s.broadcast_queue_cap),
+                  q(s.upstream_queue, s.upstream_queue_cap),
+                  q(s.upstream_tx_queue, s.upstream_tx_queue_cap));
+}
+
+function perfDuration(seconds) {
+  seconds = Math.max(0, Number(seconds) || 0);
+  var d = Math.floor(seconds / 86400), h = Math.floor((seconds % 86400) / 3600);
+  var m = Math.floor((seconds % 3600) / 60);
+  return (d ? d + 'd ' : '') + (h ? h + 'h ' : '') + m + 'm';
+}
+
+function perfEsc(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function renderPerfChart(id, samples, field, color, suffix) {
+  var svg = document.getElementById(id);
+  if (!svg) return;
+  if (!samples || samples.length < 2) {
+    svg.innerHTML = '<text x="300" y="78" text-anchor="middle" fill="#6b7280" font-size="13">History will appear after two samples</text>';
+    return;
+  }
+  var values = samples.map(function(s) { return Math.max(0, Number(s[field]) || 0); });
+  var max = Math.max.apply(null, values);
+  if (field === 'host_cpu_pct') max = 100;
+  else max = Math.max(max * 1.12, 1);
+  var points = values.map(function(v, i) {
+    var x = 34 + (i / (values.length - 1)) * 552;
+    var y = 128 - (v / max) * 104;
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+  var firstTime = new Date(samples[0].ts * 1000).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+  var lastTime = new Date(samples[samples.length - 1].ts * 1000).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+  svg.innerHTML =
+    '<line x1="34" y1="24" x2="34" y2="128" stroke="#374151"/>'
+    + '<line x1="34" y1="128" x2="586" y2="128" stroke="#374151"/>'
+    + '<line x1="34" y1="76" x2="586" y2="76" stroke="#1f2937" stroke-dasharray="4 4"/>'
+    + '<text x="30" y="29" text-anchor="end" fill="#6b7280" font-size="10">' + max.toFixed(max < 10 ? 1 : 0) + perfEsc(suffix) + '</text>'
+    + '<text x="30" y="132" text-anchor="end" fill="#6b7280" font-size="10">0</text>'
+    + '<polyline points="' + points + '" fill="none" stroke="' + color + '" stroke-width="2.5" vector-effect="non-scaling-stroke"/>'
+    + '<text x="34" y="146" fill="#6b7280" font-size="9">' + perfEsc(firstTime) + '</text>'
+    + '<text x="586" y="146" text-anchor="end" fill="#6b7280" font-size="9">' + perfEsc(lastTime) + '</text>';
+}
+
+function renderPerformanceIssues(issues) {
+  var el = document.getElementById('adm-perf-issues');
+  var count = document.getElementById('adm-perf-issue-count');
+  if (!el || !count) return;
+  issues = issues || [];
+  var active = issues.filter(function(i) { return i.active; }).length;
+  count.textContent = active + ' active · ' + issues.length + ' in selected range';
+  if (!issues.length) {
+    el.innerHTML = '<div class="rounded border border-green-800/70 bg-green-950/30 p-3 text-xs text-green-300">✓ No overload, queue, restart or connection issues were detected in this period.</div>';
+    return;
+  }
+  var colors = {
+    critical: 'border-red-700 bg-red-950/30 text-red-300',
+    warning: 'border-amber-700 bg-amber-950/30 text-amber-300',
+    info: 'border-blue-800 bg-blue-950/30 text-blue-300'
+  };
+  el.innerHTML = issues.map(function(i) {
+    var start = new Date(i.started_at * 1000).toLocaleString();
+    var end = i.active ? 'Active now' : (i.ended_at ? 'Ended ' + new Date(i.ended_at * 1000).toLocaleString() : 'Historical');
+    var peak = i.peak ? ' · Peak ' + Number(i.peak).toFixed(i.peak < 10 ? 1 : 0) + ' ' + perfEsc(i.unit || '') : '';
+    return '<div class="rounded border p-3 ' + (colors[i.severity] || colors.info) + '">'
+      + '<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">'
+      + '<strong class="text-xs">' + perfEsc(i.title) + '</strong>'
+      + '<span class="text-[10px] uppercase font-bold">' + perfEsc(i.severity) + ' · ' + perfEsc(end) + '</span></div>'
+      + '<p class="text-[11px] opacity-80 mt-1">' + perfEsc(i.detail) + peak + '</p>'
+      + '<p class="text-[10px] opacity-60 mt-1">Started ' + perfEsc(start) + '</p></div>';
+  }).join('');
+}
+
+async function loadAdminPerformance() {
+  if (!adminAuth) return;
+  var rangeEl = document.getElementById('adm-perf-range');
+  var range = rangeEl ? rangeEl.value : '24h';
+  try {
+    var r = await fetch(location.origin + '/api/admin/performance?range=' + encodeURIComponent(range), {
+      headers: { 'Authorization': adminAuth },
+      cache: 'no-store'
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var d = await r.json(), s = d.current || {};
+    var health = String(d.health || 'unknown');
+    var healthEl = document.getElementById('adm-perf-health');
+    var dot = document.getElementById('adm-perf-health-dot');
+    var labels = {healthy:'Healthy — no current overload', warning:'Warning — attention recommended', critical:'Critical — action required'};
+    var textColors = {healthy:'text-green-400', warning:'text-amber-400', critical:'text-red-400'};
+    var dotColors = {healthy:'bg-green-500', warning:'bg-amber-500', critical:'bg-red-500'};
+    healthEl.textContent = labels[health] || 'Performance state unknown';
+    healthEl.className = 'text-sm font-bold ' + (textColors[health] || 'text-gray-400');
+    dot.className = 'w-2.5 h-2.5 rounded-full ' + (dotColors[health] || 'bg-gray-500');
+    document.getElementById('adm-perf-updated').textContent = s.ts ? 'Sampled ' + new Date(s.ts * 1000).toLocaleString() : 'No samples';
+
+    var memUsed = (s.system_memory_bytes || 0) - (s.available_memory_bytes || 0);
+    var diskUsed = (s.disk_total_bytes || 0) - (s.disk_free_bytes || 0);
+    document.getElementById('adm-perf-cpu').textContent = Number(s.host_cpu_pct || 0).toFixed(1) + '%';
+    document.getElementById('adm-perf-memory').textContent = s.system_memory_bytes ? perfPercent(memUsed, s.system_memory_bytes).toFixed(1) + '%' : 'N/A';
+    document.getElementById('adm-perf-disk').textContent = s.disk_total_bytes ? perfPercent(diskUsed, s.disk_total_bytes).toFixed(1) + '%' : 'N/A';
+    document.getElementById('adm-perf-queue').textContent = perfQueuePercent(s).toFixed(1) + '%';
+    document.getElementById('adm-perf-packets').textContent = Number(s.packets_per_second || 0).toFixed(2) + '/s';
+    document.getElementById('adm-perf-uptime').textContent = perfDuration(s.uptime_sec);
+    document.getElementById('adm-perf-clients').textContent = (s.websocket_clients || 0) + ' / ' + (s.tcp_clients || 0);
+    document.getElementById('adm-perf-mqtt').textContent = String(s.mqtt_connections || 0);
+    document.getElementById('adm-perf-mqtt-fails').textContent = (s.mqtt_auth_failures_total || 0).toLocaleString();
+    document.getElementById('adm-perf-goroutines').textContent = (s.goroutines || 0).toLocaleString();
+    var upstream = document.getElementById('adm-perf-upstream');
+    upstream.textContent = s.upstream_connected ? 'Connected' : 'Disconnected';
+    upstream.className = 'text-lg font-bold ' + (s.upstream_connected ? 'text-green-400' : 'text-red-400');
+    document.getElementById('adm-perf-rss').textContent = formatBytes(s.process_rss_bytes || 0);
+
+    renderPerfChart('adm-perf-cpu-chart', d.history || [], 'host_cpu_pct', '#22d3ee', '%');
+    renderPerfChart('adm-perf-packet-chart', d.history || [], 'packets_per_second', '#4ade80', '/s');
+    renderPerformanceIssues(d.issues || []);
+  } catch (e) {
+    var healthEl = document.getElementById('adm-perf-health');
+    if (healthEl) {
+      healthEl.textContent = 'Unable to load private performance data';
+      healthEl.className = 'text-sm font-bold text-red-400';
+    }
+  }
+}
+
 // ─── Admin: Audit Log ─────────────────────────────────────────────────────────
 async function loadAudit() {
   var r = await fetch(location.origin + '/api/admin/audit?limit=100', {
@@ -9449,7 +9649,7 @@ async function loadAudit() {
     _prevTogglePanel(name);
     if (name === 'admin' && !document.getElementById('admin-panel').classList.contains('hidden')) {
       if (window._adminCreds) {
-        setTimeout(function(){ loadAdminMembers(); loadBans(); loadAdminMOTD(); loadAudit(); }, 300);
+        setTimeout(function(){ loadAdminPerformance(); loadAdminMembers(); loadBans(); loadAdminMOTD(); loadAudit(); }, 300);
       }
     }
   };
@@ -10698,23 +10898,16 @@ function toggleShips() {
 }
 
 async function setupAISFeed() {
-  // Key resolution order:
-  // 1. Server-configured key (from admin panel via /api/config)
-  // 2. Hardcoded fallback (built-in default)
-  // 3. localStorage (legacy user-supplied keys)
-  var key = '5807276bd8081e2ff5833925e91f49fbcc7a6b45';  // hardcoded fallback
-  try {
-    var r = await fetch(location.origin + '/api/status');
-    if (r.ok) {
-      var d = await r.json();
-      if (d && d.ais_stream_key && d.ais_stream_key.length >= 10) {
-        key = d.ais_stream_key;
-      }
-    }
-  } catch(e) {}
-  // localStorage override if user explicitly set one
+  // A browser-side key is optional. Server integration credentials are never
+  // returned by the public status endpoint.
+  var key = '';
   var ls = localStorage.getItem('aisstream-key');
   if (ls && ls.length >= 10) key = ls;
+  if (!key) {
+    var statusEl = document.getElementById('ais-status');
+    if (statusEl) statusEl.innerText = 'Ships need your own aisstream.io browser key';
+    return;
+  }
   startAISWebSocket(key);
 }
 

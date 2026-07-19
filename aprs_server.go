@@ -3,23 +3,23 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
-	"os"
-	"os/exec"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
-	"io"
 	"net/http"
+	"os"
+	"os/exec"
 	"regexp"
-	"strconv"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -29,7 +29,7 @@ import (
 )
 
 // AppVersion is the running server version, compared against GitHub releases.
-const AppVersion = "2.0.0"
+const AppVersion = "2.1.0"
 
 type AppConfig struct {
 	ServerName     string  `json:"server_name"`
@@ -75,9 +75,9 @@ var (
 		CenterLat:      51.5,
 		CenterLon:      -0.1,
 		RadiusKm:       100.0,
-		AISStreamKey:   "5807276bd8081e2ff5833925e91f49fbcc7a6b45",
-		QRZUsername:    "2E0LXY",
-		QRZPassword:    "_Whatthe1234",
+		AISStreamKey:   "",
+		QRZUsername:    "",
+		QRZPassword:    "",
 		MetOfficeKey:   "",
 	}
 
@@ -128,11 +128,11 @@ var (
 	apiKeysMu  sync.RWMutex
 
 	// Metrics counters
-	totalPackets    int64
-	dupePackets     int64
-	upstreamBytes   int64
-	packetsLastMin  int64
-	metricsStart    = time.Now()
+	totalPackets   int64
+	dupePackets    int64
+	upstreamBytes  int64
+	packetsLastMin int64
+	metricsStart   = time.Now()
 )
 
 var (
@@ -148,9 +148,8 @@ var (
 	objRegex = regexp.MustCompile(`;([^\*]{9})[\*_](\d{6}[z\/])(\d{2})(\d{2}\.\d{2})([NS])(.)(\d{3})(\d{2}\.\d{2})([EW])(.)`)
 	// Item format: )NAME!DDMM.MMN/DDDMM.MMW symbol comment
 	itemRegex = regexp.MustCompile(`\)([^!]{3,9})[!_](\d{2})(\d{2}\.\d{2})([NS])(.)(\d{3})(\d{2}\.\d{2})([EW])(.)`)
-	phgRegex = regexp.MustCompile(`PHG(\d)(\d)(\d)(\d)`)
+	phgRegex  = regexp.MustCompile(`PHG(\d)(\d)(\d)(\d)`)
 )
-
 
 // --- per-IP connection limiting -----------------------------------------
 // Max concurrent WS+TCP connections allowed from a single IP address.
@@ -221,6 +220,7 @@ var ctrlRe = regexp.MustCompile(`[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]`)
 func sanitisePacket(line string) string {
 	return ctrlRe.ReplaceAllString(line, "")
 }
+
 // -------------------------------------------------------------------------
 
 // decodeBase91Pos decodes a 4-char Base91 string to an integer value.
@@ -231,7 +231,6 @@ func decodeBase91Pos(s string) int {
 	}
 	return v
 }
-
 
 type HistoryPacket struct {
 	Timestamp int64   `json:"ts"`
@@ -245,23 +244,23 @@ type HistoryPacket struct {
 }
 
 type WebhookConfig struct {
-	ID        string `json:"id"`
-	URL       string `json:"url"`
-	Callsign  string `json:"callsign"`
-	Events    []string `json:"events"`
-	Secret    string `json:"secret,omitempty"`
-	Enabled   bool   `json:"enabled"`
-	LastFired int64  `json:"last_fired,omitempty"`
-	LastStatus int   `json:"last_status,omitempty"`
+	ID         string   `json:"id"`
+	URL        string   `json:"url"`
+	Callsign   string   `json:"callsign"`
+	Events     []string `json:"events"`
+	Secret     string   `json:"secret,omitempty"`
+	Enabled    bool     `json:"enabled"`
+	LastFired  int64    `json:"last_fired,omitempty"`
+	LastStatus int      `json:"last_status,omitempty"`
 }
 
 type APIKey struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Key       string `json:"key"`
-	Created   int64  `json:"created"`
-	LastUsed  int64  `json:"last_used,omitempty"`
-	ReadOnly  bool   `json:"read_only"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Key      string `json:"key"`
+	Created  int64  `json:"created"`
+	LastUsed int64  `json:"last_used,omitempty"`
+	ReadOnly bool   `json:"read_only"`
 }
 
 type WebhookEvent struct {
@@ -319,7 +318,6 @@ type wsMessage struct {
 	Minutes  int         `json:"minutes,omitempty"`
 }
 
-
 // handleTocalls serves the embedded APRS device identification database.
 // Source: https://github.com/aprsorg/aprs-deviceid (CC BY-SA 2.0)
 // Updated occasionally by re-embedding tocalls.json at build time.
@@ -328,8 +326,6 @@ func handleTocalls(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=86400") // 24h cache
 	w.Write(embeddedTocallsJSON)
 }
-
-
 
 // ─── QRZ.com XML API proxy ────────────────────────────────────────────────────
 // QRZ XML API requires login (username+password) to get a session key, then
@@ -341,9 +337,9 @@ func handleTocalls(w http.ResponseWriter, r *http.Request) {
 
 type qrzCache struct {
 	sync.RWMutex
-	SessionKey  string
-	SessionExp  int64
-	Lookups     map[string]qrzCachedLookup
+	SessionKey string
+	SessionExp int64
+	Lookups    map[string]qrzCachedLookup
 }
 
 type qrzCachedLookup struct {
@@ -406,13 +402,21 @@ func qrzLogin() (string, error) {
 	url := fmt.Sprintf("https://xmldata.qrz.com/xml/current/?username=%s;password=%s;agent=AdvancedAPRS/1.4",
 		url_encode(user), url_encode(pass))
 	resp, err := qrzHTTP.Get(url)
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	var s qrzSession
-	if err := xml.Unmarshal(body, &s); err != nil { return "", err }
-	if s.Session.Error != "" { return "", fmt.Errorf("QRZ login: %s", s.Session.Error) }
-	if s.Session.Key == "" { return "", fmt.Errorf("QRZ login: empty key") }
+	if err := xml.Unmarshal(body, &s); err != nil {
+		return "", err
+	}
+	if s.Session.Error != "" {
+		return "", fmt.Errorf("QRZ login: %s", s.Session.Error)
+	}
+	if s.Session.Key == "" {
+		return "", fmt.Errorf("QRZ login: empty key")
+	}
 	return s.Session.Key, nil
 }
 
@@ -434,7 +438,9 @@ func handleQRZLookup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Strip SSID suffix - QRZ doesn't know about it
-	if i := strings.Index(call, "-"); i > 0 { call = call[:i] }
+	if i := strings.Index(call, "-"); i > 0 {
+		call = call[:i]
+	}
 
 	// Check cache (24h TTL)
 	qrzC.RLock()
@@ -497,31 +503,81 @@ func handleQRZLookup(w http.ResponseWriter, r *http.Request) {
 	// Build response data (filter to non-sensitive fields)
 	c := s.Callsign
 	data := map[string]string{}
-	if c.Call != ""    { data["call"]    = c.Call }
-	if c.Fname != ""   { data["fname"]   = c.Fname }
-	if c.Name != ""    { data["name"]    = c.Name }
-	if c.NameFmt != "" { data["name_fmt"] = c.NameFmt }
-	if c.NickN != ""   { data["nickname"] = c.NickN }
-	if c.Addr1 != ""   { data["addr1"]   = c.Addr1 }
-	if c.Addr2 != ""   { data["addr2"]   = c.Addr2 }
-	if c.State != ""   { data["state"]   = c.State }
-	if c.Zip != ""     { data["zip"]     = c.Zip }
-	if c.Country != "" { data["country"] = c.Country }
-	if c.Grid != ""    { data["grid"]    = c.Grid }
-	if c.County != ""  { data["county"]  = c.County }
-	if c.Land != ""    { data["land"]    = c.Land }
-	if c.Class != ""   { data["class"]   = c.Class }
-	if c.Email != ""   { data["email"]   = c.Email }
-	if c.URL != ""     { data["url"]     = c.URL }
-	if c.Image != ""   { data["image"]   = c.Image }
-	if c.Aliases != "" { data["aliases"] = c.Aliases }
-	if c.Lat != ""     { data["lat"]     = c.Lat }
-	if c.Lon != ""     { data["lon"]     = c.Lon }
-	if c.QSLMgr != ""  { data["qslmgr"]  = c.QSLMgr }
-	if c.EQSL != ""    { data["eqsl"]    = c.EQSL }
-	if c.MQSL != ""    { data["mqsl"]    = c.MQSL }
-	if c.LOTW != ""    { data["lotw"]    = c.LOTW }
-	if c.Born != ""    { data["born"]    = c.Born }
+	if c.Call != "" {
+		data["call"] = c.Call
+	}
+	if c.Fname != "" {
+		data["fname"] = c.Fname
+	}
+	if c.Name != "" {
+		data["name"] = c.Name
+	}
+	if c.NameFmt != "" {
+		data["name_fmt"] = c.NameFmt
+	}
+	if c.NickN != "" {
+		data["nickname"] = c.NickN
+	}
+	if c.Addr1 != "" {
+		data["addr1"] = c.Addr1
+	}
+	if c.Addr2 != "" {
+		data["addr2"] = c.Addr2
+	}
+	if c.State != "" {
+		data["state"] = c.State
+	}
+	if c.Zip != "" {
+		data["zip"] = c.Zip
+	}
+	if c.Country != "" {
+		data["country"] = c.Country
+	}
+	if c.Grid != "" {
+		data["grid"] = c.Grid
+	}
+	if c.County != "" {
+		data["county"] = c.County
+	}
+	if c.Land != "" {
+		data["land"] = c.Land
+	}
+	if c.Class != "" {
+		data["class"] = c.Class
+	}
+	if c.Email != "" {
+		data["email"] = c.Email
+	}
+	if c.URL != "" {
+		data["url"] = c.URL
+	}
+	if c.Image != "" {
+		data["image"] = c.Image
+	}
+	if c.Aliases != "" {
+		data["aliases"] = c.Aliases
+	}
+	if c.Lat != "" {
+		data["lat"] = c.Lat
+	}
+	if c.Lon != "" {
+		data["lon"] = c.Lon
+	}
+	if c.QSLMgr != "" {
+		data["qslmgr"] = c.QSLMgr
+	}
+	if c.EQSL != "" {
+		data["eqsl"] = c.EQSL
+	}
+	if c.MQSL != "" {
+		data["mqsl"] = c.MQSL
+	}
+	if c.LOTW != "" {
+		data["lotw"] = c.LOTW
+	}
+	if c.Born != "" {
+		data["born"] = c.Born
+	}
 
 	// Cache it
 	qrzC.Lock()
@@ -530,22 +586,23 @@ func handleQRZLookup(w http.ResponseWriter, r *http.Request) {
 	if len(qrzC.Lookups) > 5000 {
 		cutoff := time.Now().Unix() - 86400
 		for k, v := range qrzC.Lookups {
-			if v.Fetched < cutoff { delete(qrzC.Lookups, k) }
+			if v.Fetched < cutoff {
+				delete(qrzC.Lookups, k)
+			}
 		}
 	}
 	qrzC.Unlock()
 
 	// Determine subscription tier - useful for UI to show 'partial data' badge
 	subscriber := s.Session.SubExp != "" && s.Session.SubExp != "non-subscriber"
-	msg := s.Session.Message  // QRZ shows "A subscription is required" for non-subscribers
+	msg := s.Session.Message // QRZ shows "A subscription is required" for non-subscribers
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"call": call, "cached": false, "data": data,
 		"subscriber": subscriber,
-		"message": msg,
+		"message":    msg,
 	})
 }
-
 
 // ─── Propagation Analytics ────────────────────────────────────────────────────
 // Computes four analytics views from the in-memory history buffer:
@@ -571,11 +628,11 @@ func handleAnalytics(w http.ResponseWriter, r *http.Request) {
 	// Per station: total packets, time span, average gap. A station heard
 	// consistently over a long span scores high; bursty/rare ones score low.
 	type staInfo struct {
-		Count     int
-		FirstTs   int64
-		LastTs    int64
-		Gaps      []int64
-		prevTs    int64
+		Count   int
+		FirstTs int64
+		LastTs  int64
+		Gaps    []int64
+		prevTs  int64
 	}
 	stations := make(map[string]*staInfo)
 	for _, p := range snap {
@@ -593,12 +650,12 @@ func handleAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type reliabilityRow struct {
-		Callsign string  `json:"callsign"`
-		Grade    string  `json:"grade"`
-		Score    int     `json:"score"`
-		Packets  int     `json:"packets"`
-		SpanMin  int64   `json:"span_min"`
-		AvgGapS  int64   `json:"avg_gap_s"`
+		Callsign string `json:"callsign"`
+		Grade    string `json:"grade"`
+		Score    int    `json:"score"`
+		Packets  int    `json:"packets"`
+		SpanMin  int64  `json:"span_min"`
+		AvgGapS  int64  `json:"avg_gap_s"`
 	}
 	var reliability []reliabilityRow
 	for call, si := range stations {
@@ -765,7 +822,6 @@ func handleAnalytics(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-
 // ─── Met Office Severe Weather Warnings proxy ─────────────────────────────────
 // The Met Office publishes UK National Severe Weather Warnings as a public
 // RSS feed that requires no API key. We proxy it server-side to avoid CORS
@@ -856,7 +912,7 @@ func main() {
 	loadOrInitCreds()
 	loadSavedConfig()
 	objectStore = make(map[string]*ObjectEntry)
-	apiKeys    = make(map[string]APIKey)
+	apiKeys = make(map[string]APIKey)
 	loadWebhooksAndKeys()
 	loadMemberStore()
 	loadBanList()
@@ -871,15 +927,25 @@ func main() {
 	go keepaliveLoop()
 	go runAISStream()
 	go weatherBeaconLoop()
+	initPerformanceMonitoring()
 
 	http.HandleFunc("/symbols/", http.StripPrefix("/symbols/", http.FileServer(http.Dir("symbols"))).ServeHTTP)
-	http.HandleFunc("/favicon.ico",          func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "favicon.ico") })
-	http.HandleFunc("/favicon.svg",          func(w http.ResponseWriter, r *http.Request) { w.Header().Set("Content-Type","image/svg+xml"); http.ServeFile(w, r, "favicon.svg") })
+	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "favicon.ico") })
+	http.HandleFunc("/favicon.svg", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/svg+xml")
+		http.ServeFile(w, r, "favicon.svg")
+	})
 	http.HandleFunc("/apple-touch-icon.png", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "apple-touch-icon.png") })
-	http.HandleFunc("/favicon-32.png",       func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "favicon-32.png") })
-	http.HandleFunc("/og-image.png",         func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "og-image.png") })
-	http.HandleFunc("/robots.txt",           func(w http.ResponseWriter, r *http.Request) { w.Header().Set("Content-Type","text/plain"); http.ServeFile(w, r, "robots.txt") })
-	http.HandleFunc("/sitemap.xml",          func(w http.ResponseWriter, r *http.Request) { w.Header().Set("Content-Type","application/xml"); http.ServeFile(w, r, "sitemap.xml") })
+	http.HandleFunc("/favicon-32.png", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "favicon-32.png") })
+	http.HandleFunc("/og-image.png", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "og-image.png") })
+	http.HandleFunc("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		http.ServeFile(w, r, "robots.txt")
+	})
+	http.HandleFunc("/sitemap.xml", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		http.ServeFile(w, r, "sitemap.xml")
+	})
 	http.HandleFunc("/demo", serveDemo)
 	http.HandleFunc("/mobile", serveMobile)
 	http.HandleFunc("/mobile-app.js", serveMobileJS)
@@ -896,25 +962,25 @@ func main() {
 	http.HandleFunc("/api/objects", handleObjects)
 	// Member system
 	http.HandleFunc("/api/member/register", handleMemberRegister)
-	http.HandleFunc("/api/member/login",    handleMemberLogin)
-	http.HandleFunc("/api/member/logout",   handleMemberLogout)
-	http.HandleFunc("/api/member/profile",  handleMemberProfile)
+	http.HandleFunc("/api/member/login", handleMemberLogin)
+	http.HandleFunc("/api/member/logout", handleMemberLogout)
+	http.HandleFunc("/api/member/profile", handleMemberProfile)
 	http.HandleFunc("/api/member/messages", handleMemberMessages)
 	http.HandleFunc("/api/member/password", handleMemberPassword)
 	http.HandleFunc("/api/member/object", handleMemberObject)
 	http.HandleFunc("/api/member/preferences", handleMemberPreferences)
-	http.HandleFunc("/api/members/callsigns",  handleMembersCallsigns)
-	http.HandleFunc("/api/member/message/send",   handleMemberMessageSend)
-	http.HandleFunc("/api/member/alert-rules",    handleAlertRules)
-	http.HandleFunc("/api/member/alert-rules/",   handleAlertRuleDelete)
-	http.HandleFunc("/api/member/wx_test",     handleWxTest)
+	http.HandleFunc("/api/members/callsigns", handleMembersCallsigns)
+	http.HandleFunc("/api/member/message/send", handleMemberMessageSend)
+	http.HandleFunc("/api/member/alert-rules", handleAlertRules)
+	http.HandleFunc("/api/member/alert-rules/", handleAlertRuleDelete)
+	http.HandleFunc("/api/member/wx_test", handleWxTest)
 	// iGate device management (per-member, private)
-	http.HandleFunc("/api/member/igates",        handleMemberIGates)
-	http.HandleFunc("/api/member/igate/",        handleIGateCmd)
+	http.HandleFunc("/api/member/igates", handleMemberIGates)
+	http.HandleFunc("/api/member/igate/", handleIGateCmd)
 
 	// Server federation registry
 	http.HandleFunc("/api/server/register", handleServerRegister)
-	http.HandleFunc("/api/admin/servers",   basicAuth(handleAdminServers))
+	http.HandleFunc("/api/admin/servers", basicAuth(handleAdminServers))
 	// Public MOTD
 	http.HandleFunc("/api/motd", handlePublicMOTD)
 	// Admin features
@@ -924,8 +990,9 @@ func main() {
 	http.HandleFunc("/api/admin/motd", basicAuth(handleAdminMOTD))
 	http.HandleFunc("/api/admin/audit", basicAuth(handleAdminAudit))
 	http.HandleFunc("/api/admin/backup", basicAuth(handleAdminBackup))
-	http.HandleFunc("/api/admin/restore",    basicAuth(handleAdminRestore))
-	http.HandleFunc("/api/admin/update",     basicAuth(handleAdminUpdate))
+	http.HandleFunc("/api/admin/restore", basicAuth(handleAdminRestore))
+	http.HandleFunc("/api/admin/update", basicAuth(handleAdminUpdate))
+	http.HandleFunc("/api/admin/performance", basicAuth(handleAdminPerformance))
 	http.HandleFunc("/metrics", basicAuth(handleMetrics))
 	http.HandleFunc("/api/webhooks", basicAuth(handleWebhooks))
 	http.HandleFunc("/api/webhooks/", basicAuth(handleWebhookDelete))
@@ -946,7 +1013,16 @@ func main() {
 
 	log.Printf("Advanced APRS Gateway active on :8080")
 	go startIGateMQTTBroker() // per-member iGate management (TCP :1883)
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	server := &http.Server{
+		Addr:              ":8080",
+		Handler:           nil,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       90 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
+	log.Fatal(server.ListenAndServe())
 }
 
 // serveMobile serves the touch-optimised mobile companion page.
@@ -1033,7 +1109,6 @@ func verifyPasscode(callsign, passcode string) bool {
 	}
 	return fmt.Sprintf("%d", hash&0x7fff) == passcode
 }
-
 
 func injectQConstruct(packet, qType string) string {
 	config.RLock()
@@ -1222,7 +1297,6 @@ func connectUpstream() {
 	}
 }
 
-
 func isAllowed(packet string) bool {
 	gtIdx := strings.Index(packet, ">")
 	colIdx := strings.Index(packet, ":")
@@ -1308,9 +1382,9 @@ func parsePacket(packet string) (HistoryPacket, bool) {
 	// Format: DTI sym_table(1) latB91(4) lonB91(4) symbol(1) cs(2) T(1)
 	if cm := compPosRegex.FindStringSubmatch(payload); cm != nil {
 		symTable := cm[1] // "/" or "\"
-		latB91   := cm[2]
-		lonB91   := cm[3]
-		symCode  := cm[4]
+		latB91 := cm[2]
+		lonB91 := cm[3]
+		symCode := cm[4]
 		// Validate: all chars must be in printable ASCII 33–123
 		valid := true
 		for _, s := range []string{latB91, lonB91} {
@@ -1375,7 +1449,6 @@ func parseAPRSMessage(packet string) *MsgEntry {
 	}
 }
 
-
 // ─── Object / Item parsing ────────────────────────────────────────────────────
 
 func parseObject(packet string) (*ObjectEntry, bool) {
@@ -1394,11 +1467,15 @@ func parseObject(packet string) (*ObjectEntry, bool) {
 		lDeg, _ := strconv.ParseFloat(m[3], 64)
 		lMin, _ := strconv.ParseFloat(m[4], 64)
 		lat := lDeg + lMin/60
-		if m[5] == "S" { lat = -lat }
+		if m[5] == "S" {
+			lat = -lat
+		}
 		lnDeg, _ := strconv.ParseFloat(m[7], 64)
 		lnMin, _ := strconv.ParseFloat(m[8], 64)
 		lon := lnDeg + lnMin/60
-		if m[9] == "W" { lon = -lon }
+		if m[9] == "W" {
+			lon = -lon
+		}
 		sym := m[6] + m[10]
 		comment := ""
 		if len(payload) > len(m[0]) {
@@ -1406,7 +1483,7 @@ func parseObject(packet string) (*ObjectEntry, bool) {
 		}
 		return &ObjectEntry{
 			Timestamp: time.Now().Unix(),
-			Name: name, Owner: owner,
+			Name:      name, Owner: owner,
 			Lat: lat, Lon: lon,
 			Symbol: sym, Comment: comment,
 			Killed: killed, Raw: packet,
@@ -1420,15 +1497,19 @@ func parseObject(packet string) (*ObjectEntry, bool) {
 		lDeg, _ := strconv.ParseFloat(m[2], 64)
 		lMin, _ := strconv.ParseFloat(m[3], 64)
 		lat := lDeg + lMin/60
-		if m[4] == "S" { lat = -lat }
+		if m[4] == "S" {
+			lat = -lat
+		}
 		lnDeg, _ := strconv.ParseFloat(m[6], 64)
 		lnMin, _ := strconv.ParseFloat(m[7], 64)
 		lon := lnDeg + lnMin/60
-		if m[8] == "W" { lon = -lon }
+		if m[8] == "W" {
+			lon = -lon
+		}
 		sym := m[5] + m[9]
 		return &ObjectEntry{
 			Timestamp: time.Now().Unix(),
-			Name: name, Owner: owner,
+			Name:      name, Owner: owner,
 			Lat: lat, Lon: lon,
 			Symbol: sym, Killed: killed, Raw: packet,
 		}, true
@@ -1531,7 +1612,9 @@ func handleBroadcasts() {
 		}
 		// Check if this is an object/item and tag it
 		payload := ""
-		if ci := strings.Index(packet, ":"); ci >= 0 { payload = packet[ci+1:] }
+		if ci := strings.Index(packet, ":"); ci >= 0 {
+			payload = packet[ci+1:]
+		}
 		if len(payload) > 0 && (payload[0] == ';' || payload[0] == ')') {
 			msg.Type = "obj"
 		}
@@ -1557,7 +1640,6 @@ func (c *wsClient) writePump() {
 		}
 	}
 }
-
 
 func handleWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -1646,8 +1728,12 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 		case "replay_request":
 			// Client wants historical packets - send up to in.Minutes minutes back
 			minutes := in.Minutes
-			if minutes <= 0 { minutes = 60 }
-			if minutes > 120 { minutes = 120 }
+			if minutes <= 0 {
+				minutes = 60
+			}
+			if minutes > 120 {
+				minutes = 120
+			}
 			go sendReplayToClient(client, minutes)
 		case "auth":
 			if verifyPasscode(in.Callsign, in.Passcode) {
@@ -1794,7 +1880,6 @@ func sendReplayToClient(client *wsClient, minutes int) {
 	}
 }
 
-
 func listenUDP() {
 	addr, err := net.ResolveUDPAddr("udp", ":14580")
 	if err != nil {
@@ -1832,7 +1917,6 @@ func listenUDP() {
 		}
 	}
 }
-
 
 // ─── TCP APRS-IS Client Listener (port 14580) ────────────────────────────────
 // Allows standard APRS clients (APRSDroid, Xastir, YAAC, Direwolf) to connect
@@ -2051,7 +2135,6 @@ func keepaliveLoop() {
 	}
 }
 
-
 func handleHistory(w http.ResponseWriter, r *http.Request) {
 	historyMu.RLock()
 	defer historyMu.RUnlock()
@@ -2073,8 +2156,8 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	metrics.RUnlock()
 	config.RLock()
 	res["upstream_addr"] = config.UpstreamAddr
-	res["ais_stream_key"] = config.AISStreamKey
-	res["qrz_username"] = config.QRZUsername
+	// Public status must expose capability state, never integration credentials.
+	res["ais_configured"] = (config.AISStreamKey != "")
 	res["qrz_configured"] = (config.QRZUsername != "" && config.QRZPassword != "")
 	res["metoffice_configured"] = (config.MetOfficeKey != "")
 	res["center_lat"] = config.CenterLat
@@ -2120,7 +2203,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
 		config.RLock()
 		defer config.RUnlock()
-		json.NewEncoder(w).Encode(config)
+		json.NewEncoder(w).Encode(&config)
 		return
 	}
 	var n AppConfig
@@ -2166,17 +2249,12 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-
-
-
 // handleVersion returns the running server version.
 // The frontend polls GitHub releases to compare and show an update badge.
 func handleVersion(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"version":"` + AppVersion + `"}`))
 }
-
-
 
 // handleARISS proxies the aprs.fi API for ARISS packets to avoid browser CORS issues.
 func handleARISS(w http.ResponseWriter, r *http.Request) {
@@ -2186,7 +2264,7 @@ func handleARISS(w http.ResponseWriter, r *http.Request) {
 	url := "https://api.aprs.fi/api/get?name=RS0ISS,RS0ISS-4,NA1SS&what=loc&apikey=104710.mxTOVTFLMl6la5&format=json&howmany=50"
 	resp, err := fetchURL(url)
 	if err != nil {
-		http.Error(w, `{"error":"` + err.Error() + `"}`, http.StatusBadGateway)
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadGateway)
 		return
 	}
 	w.Write(resp)
@@ -2199,7 +2277,7 @@ func handleISSPosition(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := fetchURL("https://api.wheretheiss.at/v1/satellites/25544")
 	if err != nil {
-		http.Error(w, `{"error":"` + err.Error() + `"}`, http.StatusBadGateway)
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadGateway)
 		return
 	}
 	w.Write(resp)
@@ -2217,8 +2295,12 @@ func fetchURL(url string) ([]byte, error) {
 	buf2 := make([]byte, 4096)
 	for {
 		n, err := resp.Body.Read(buf2)
-		if n > 0 { buf = append(buf, buf2[:n]...) }
-		if err != nil { break }
+		if n > 0 {
+			buf = append(buf, buf2[:n]...)
+		}
+		if err != nil {
+			break
+		}
 	}
 	return buf, nil
 }
@@ -2231,10 +2313,8 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(msgStore)
 }
 
-
 // handleARISS proxies ARISS packet data from aprs.fi API server-side.
 // This avoids CORS issues with direct browser requests to aprs.fi.
-
 
 // handleConfigDemo returns server config with sensitive fields redacted.
 // No authentication required — safe to expose publicly for demo mode.
@@ -2260,13 +2340,12 @@ func handleConfigDemo(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(redacted)
 }
 
-
 // handleTLE proxies TLE data from Celestrak for ISS and ARISS satellites.
 // Caches for 6 hours since TLEs change slowly.
 var (
-	tleCache    string
-	tleCacheAt  time.Time
-	tleCacheMu  sync.Mutex
+	tleCache   string
+	tleCacheAt time.Time
+	tleCacheMu sync.Mutex
 )
 
 func handleTLE(w http.ResponseWriter, r *http.Request) {
@@ -2303,8 +2382,8 @@ func handleTLE(w http.ResponseWriter, r *http.Request) {
 		if err2 := json.NewDecoder(resp.Body).Decode(&result); err2 == nil {
 			resp.Body.Close()
 			name, _ := result["name"].(string)
-			l1, _   := result["line1"].(string)
-			l2, _   := result["line2"].(string)
+			l1, _ := result["line1"].(string)
+			l2, _ := result["line2"].(string)
 			if l1 != "" && l2 != "" {
 				text := name + "\n" + l1 + "\n" + l2 + "\n"
 				tleCache = text
@@ -2346,8 +2425,6 @@ func handleWhoami(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"ok":true,"user":"` + user + `"}`))
 }
-
-
 
 // handleUpdate performs a live update: git pull, go build, systemctl restart.
 // Streams log lines as newline-delimited JSON so the browser can show progress.
@@ -2425,7 +2502,7 @@ func mustJSON(v interface{}) string {
 // saveConfig writes the current AppConfig to server_config.json.
 func saveConfig() error {
 	config.RLock()
-	data, err := json.MarshalIndent(config, "", "  ")
+	data, err := json.MarshalIndent(&config, "", "  ")
 	config.RUnlock()
 	if err != nil {
 		return err
@@ -2447,23 +2524,31 @@ func loadSavedConfig() {
 		return
 	}
 	config.Lock()
-	config.ServerName     = saved.ServerName
-	config.SoftwareVers   = saved.SoftwareVers
-	config.Callsign       = saved.Callsign
-	config.Passcode       = saved.Passcode
-	config.UpstreamAddr   = saved.UpstreamAddr
-	config.ServerFilter   = strings.TrimSpace(saved.ServerFilter)
-	config.DropPiStar     = saved.DropPiStar
-	config.DropDStar      = saved.DropDStar
-	config.DropAPDesk     = saved.DropAPDesk
+	config.ServerName = saved.ServerName
+	config.SoftwareVers = saved.SoftwareVers
+	config.Callsign = saved.Callsign
+	config.Passcode = saved.Passcode
+	config.UpstreamAddr = saved.UpstreamAddr
+	config.ServerFilter = strings.TrimSpace(saved.ServerFilter)
+	config.DropPiStar = saved.DropPiStar
+	config.DropDStar = saved.DropDStar
+	config.DropAPDesk = saved.DropAPDesk
 	config.EnableGeofence = saved.EnableGeofence
-	config.CenterLat      = saved.CenterLat
-	config.CenterLon      = saved.CenterLon
-	config.RadiusKm       = saved.RadiusKm
-	if saved.AISStreamKey != "" { config.AISStreamKey = saved.AISStreamKey }
-	if saved.MetOfficeKey != "" { config.MetOfficeKey = saved.MetOfficeKey }
-	if saved.QRZUsername != "" { config.QRZUsername = saved.QRZUsername }
-	if saved.QRZPassword != "" { config.QRZPassword = saved.QRZPassword }
+	config.CenterLat = saved.CenterLat
+	config.CenterLon = saved.CenterLon
+	config.RadiusKm = saved.RadiusKm
+	if saved.AISStreamKey != "" {
+		config.AISStreamKey = saved.AISStreamKey
+	}
+	if saved.MetOfficeKey != "" {
+		config.MetOfficeKey = saved.MetOfficeKey
+	}
+	if saved.QRZUsername != "" {
+		config.QRZUsername = saved.QRZUsername
+	}
+	if saved.QRZPassword != "" {
+		config.QRZPassword = saved.QRZPassword
+	}
 	config.Unlock()
 	log.Printf("Server config loaded: callsign=%s upstream=%s filter=%s",
 		saved.Callsign, saved.UpstreamAddr, saved.ServerFilter)
@@ -2471,7 +2556,7 @@ func loadSavedConfig() {
 
 // ─── First-run credential persistence ────────────────────────────────────────
 
-const credsFile  = "creds.json"
+const credsFile = "creds.json"
 const configFile = "server_config.json"
 
 type storedCreds struct {
@@ -2724,10 +2809,32 @@ func handleMetrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "aprs_uptime_seconds %.0f\n\n", upSecs)
 
 	pktRate := 0.0
-	if upSecs > 0 { pktRate = float64(pkts) / upSecs }
+	if upSecs > 0 {
+		pktRate = float64(pkts) / upSecs
+	}
 	fmt.Fprintf(w, "# HELP aprs_packets_per_second Average packets per second since start\n")
 	fmt.Fprintf(w, "# TYPE aprs_packets_per_second gauge\n")
 	fmt.Fprintf(w, "aprs_packets_per_second %.3f\n\n", pktRate)
+
+	fmt.Fprintf(w, "# HELP aprs_mqtt_connections Current open MQTT connections\n")
+	fmt.Fprintf(w, "# TYPE aprs_mqtt_connections gauge\n")
+	fmt.Fprintf(w, "aprs_mqtt_connections %d\n\n", atomic.LoadInt64(&mqttActiveConnections))
+
+	fmt.Fprintf(w, "# HELP aprs_mqtt_auth_failures_total MQTT logins rejected for invalid credentials\n")
+	fmt.Fprintf(w, "# TYPE aprs_mqtt_auth_failures_total counter\n")
+	fmt.Fprintf(w, "aprs_mqtt_auth_failures_total %d\n\n", atomic.LoadInt64(&mqttAuthFailures))
+
+	fmt.Fprintf(w, "# HELP aprs_mqtt_connections_rejected_total MQTT connections rejected by safety limits\n")
+	fmt.Fprintf(w, "# TYPE aprs_mqtt_connections_rejected_total counter\n")
+	fmt.Fprintf(w, "aprs_mqtt_connections_rejected_total %d\n\n", atomic.LoadInt64(&mqttConnectionsRejected))
+
+	fmt.Fprintf(w, "# HELP aprs_internal_queue_utilization_ratio Highest packet queue utilization ratio\n")
+	fmt.Fprintf(w, "# TYPE aprs_internal_queue_utilization_ratio gauge\n")
+	fmt.Fprintf(w, "aprs_internal_queue_utilization_ratio %.4f\n\n", maxQueuePercent(PerformanceSample{
+		BroadcastQueue: len(broadcast), BroadcastQueueCap: cap(broadcast),
+		UpstreamQueue: len(upstreamOut), UpstreamQueueCap: cap(upstreamOut),
+		UpstreamTxQueue: len(upstreamTx), UpstreamTxQueueCap: cap(upstreamTx),
+	})/100)
 }
 
 // ─── GeoJSON Export ───────────────────────────────────────────────────────────
@@ -2859,7 +2966,7 @@ func handleKML(w http.ResponseWriter, r *http.Request) {
 // ─── Webhooks & API Keys ──────────────────────────────────────────────────────
 
 const webhooksFile = "webhooks.json"
-const apiKeysFile  = "apikeys.json"
+const apiKeysFile = "apikeys.json"
 
 func loadWebhooksAndKeys() {
 	// Load webhooks
@@ -2916,12 +3023,14 @@ func handleWebhooks(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		var wh WebhookConfig
 		if err := json.NewDecoder(r.Body).Decode(&wh); err != nil {
-			http.Error(w, `{"error":"invalid json"}`, 400); return
+			http.Error(w, `{"error":"invalid json"}`, 400)
+			return
 		}
 		if wh.URL == "" {
-			http.Error(w, `{"error":"url required"}`, 400); return
+			http.Error(w, `{"error":"url required"}`, 400)
+			return
 		}
-		wh.ID      = generateID()
+		wh.ID = generateID()
 		wh.Enabled = true
 		webhooksMu.Lock()
 		webhooks = append(webhooks, wh)
@@ -2937,13 +3046,16 @@ func handleWebhooks(w http.ResponseWriter, r *http.Request) {
 // handleWebhookDelete - DELETE /api/webhooks/{id}
 func handleWebhookDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
-		http.Error(w, "method not allowed", 405); return
+		http.Error(w, "method not allowed", 405)
+		return
 	}
 	id := strings.TrimPrefix(r.URL.Path, "/api/webhooks/")
 	webhooksMu.Lock()
 	newWH := webhooks[:0]
 	for _, wh := range webhooks {
-		if wh.ID != id { newWH = append(newWH, wh) }
+		if wh.ID != id {
+			newWH = append(newWH, wh)
+		}
 	}
 	webhooks = newWH
 	webhooksMu.Unlock()
@@ -2976,9 +3088,12 @@ func handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 			ReadOnly bool   `json:"read_only"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, `{"error":"invalid json"}`, 400); return
+			http.Error(w, `{"error":"invalid json"}`, 400)
+			return
 		}
-		if req.Name == "" { req.Name = "API Key" }
+		if req.Name == "" {
+			req.Name = "API Key"
+		}
 		k := APIKey{
 			ID: generateID(), Name: req.Name,
 			Key: generateAPIKey(), Created: time.Now().Unix(),
@@ -2999,12 +3114,16 @@ func handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 // handleAPIKeyDelete - DELETE /api/keys/{id}
 func handleAPIKeyDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
-		http.Error(w, "method not allowed", 405); return
+		http.Error(w, "method not allowed", 405)
+		return
 	}
 	id := strings.TrimPrefix(r.URL.Path, "/api/keys/")
 	apiKeysMu.Lock()
 	for key, k := range apiKeys {
-		if k.ID == id { delete(apiKeys, key); break }
+		if k.ID == id {
+			delete(apiKeys, key)
+			break
+		}
 	}
 	apiKeysMu.Unlock()
 	saveAPIKeys()
@@ -3017,7 +3136,9 @@ func apiKeyAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Try X-API-Key header
 		key := r.Header.Get("X-API-Key")
-		if key == "" { key = r.URL.Query().Get("api_key") }
+		if key == "" {
+			key = r.URL.Query().Get("api_key")
+		}
 		if key != "" {
 			apiKeysMu.Lock()
 			k, ok := apiKeys[key]
@@ -3061,23 +3182,34 @@ func fireWebhooks(event string, callsign string, data interface{}) {
 	body, _ := json.Marshal(payload)
 
 	for i, wh := range whs {
-		if !wh.Enabled { continue }
+		if !wh.Enabled {
+			continue
+		}
 		// Check callsign filter (empty = all)
 		if wh.Callsign != "" && !strings.EqualFold(wh.Callsign, callsign) &&
-			!strings.HasSuffix(callsign, wh.Callsign) { continue }
+			!strings.HasSuffix(callsign, wh.Callsign) {
+			continue
+		}
 		// Check event filter
 		if len(wh.Events) > 0 {
 			matched := false
 			for _, e := range wh.Events {
-				if e == event || e == "*" { matched = true; break }
+				if e == event || e == "*" {
+					matched = true
+					break
+				}
 			}
-			if !matched { continue }
+			if !matched {
+				continue
+			}
 		}
 
 		go func(wh WebhookConfig, idx int) {
 			client := &http.Client{Timeout: 8 * time.Second}
 			req, err := http.NewRequest("POST", wh.URL, strings.NewReader(string(body)))
-			if err != nil { return }
+			if err != nil {
+				return
+			}
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-APRS-Event", event)
 			req.Header.Set("X-APRS-Callsign", callsign)
@@ -3086,11 +3218,14 @@ func fireWebhooks(event string, callsign string, data interface{}) {
 			}
 			resp, err := client.Do(req)
 			status := 0
-			if err == nil { status = resp.StatusCode; resp.Body.Close() }
+			if err == nil {
+				status = resp.StatusCode
+				resp.Body.Close()
+			}
 			webhooksMu.Lock()
 			for j := range webhooks {
 				if webhooks[j].ID == wh.ID {
-					webhooks[j].LastFired  = time.Now().Unix()
+					webhooks[j].LastFired = time.Now().Unix()
 					webhooks[j].LastStatus = status
 					break
 				}
@@ -3105,24 +3240,24 @@ func fireWebhooks(event string, callsign string, data interface{}) {
 // MEMBER SYSTEM
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const membersFile  = "members.json"
-const sessionTTL   = 30 * 24 * time.Hour   // 30 day sessions
+const membersFile = "members.json"
+const sessionTTL = 30 * 24 * time.Hour // 30 day sessions
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Member struct {
-	ID           string    `json:"id"`
-	Callsign     string    `json:"callsign"`             // primary callsign (login)
-	Password     string    `json:"password"`             // bcrypt-style: sha256+salt stored as hex
-	Salt         string    `json:"salt"`
-	Name         string    `json:"name,omitempty"`
-	Email        string    `json:"email,omitempty"`
-	Callsigns    []string  `json:"callsigns"`            // all owned callsigns
-	Passcode     int       `json:"passcode"`             // APRS-IS passcode
-	Watchlist    []string  `json:"watchlist"`
-	Created      int64     `json:"created"`
-	LastLogin    int64     `json:"last_login,omitempty"`
-	Verified     bool      `json:"verified"`
+	ID        string   `json:"id"`
+	Callsign  string   `json:"callsign"` // primary callsign (login)
+	Password  string   `json:"password"` // bcrypt-style: sha256+salt stored as hex
+	Salt      string   `json:"salt"`
+	Name      string   `json:"name,omitempty"`
+	Email     string   `json:"email,omitempty"`
+	Callsigns []string `json:"callsigns"` // all owned callsigns
+	Passcode  int      `json:"passcode"`  // APRS-IS passcode
+	Watchlist []string `json:"watchlist"`
+	Created   int64    `json:"created"`
+	LastLogin int64    `json:"last_login,omitempty"`
+	Verified  bool     `json:"verified"`
 	// Per-member map filter preferences. Free-form JSON blob; the web map
 	// and Android client decide which keys they understand. Common keys:
 	//   drop_pistar  - hide DV gateway beacons (Pi-Star, MMDVM, APDPRS,
@@ -3133,8 +3268,8 @@ type Member struct {
 	//   show_ships / show_lora / hide_static / cluster_enable / ghost_old
 	// Defaults to nil for unmigrated members; clients then fall back to
 	// their own defaults until the member saves once.
-	Preferences  map[string]interface{} `json:"preferences,omitempty"`
-	AlertRules   []MemberAlertRule       `json:"alert_rules,omitempty"`
+	Preferences map[string]interface{} `json:"preferences,omitempty"`
+	AlertRules  []MemberAlertRule      `json:"alert_rules,omitempty"`
 }
 
 type StoredMessage struct {
@@ -3167,10 +3302,10 @@ type RegisteredServer struct {
 }
 
 type MemberStore struct {
-	Members      map[string]*Member              `json:"members"`
-	Sessions     map[string]*MemberSession       `json:"sessions"`
-	Messages     map[string][]StoredMessage      `json:"messages"`
-	KnownServers map[string]*RegisteredServer    `json:"known_servers,omitempty"`
+	Members      map[string]*Member           `json:"members"`
+	Sessions     map[string]*MemberSession    `json:"sessions"`
+	Messages     map[string][]StoredMessage   `json:"messages"`
+	KnownServers map[string]*RegisteredServer `json:"known_servers,omitempty"`
 }
 
 var (
@@ -3190,7 +3325,9 @@ func loadMemberStore() {
 		KnownServers: make(map[string]*RegisteredServer),
 	}
 	data, err := os.ReadFile(membersFile)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	if err := json.Unmarshal(data, memberStore); err != nil {
 		log.Printf("Warning: could not parse members.json: %v", err)
 		memberStore = &MemberStore{
@@ -3200,13 +3337,17 @@ func loadMemberStore() {
 			KnownServers: make(map[string]*RegisteredServer),
 		}
 	}
-	if memberStore.KnownServers == nil { memberStore.KnownServers = make(map[string]*RegisteredServer) }
+	if memberStore.KnownServers == nil {
+		memberStore.KnownServers = make(map[string]*RegisteredServer)
+	}
 	log.Printf("Loaded %d members", len(memberStore.Members))
 }
 
 func saveMemberStore() {
 	data, err := json.MarshalIndent(memberStore, "", "  ")
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	os.WriteFile(membersFile, data, 0600)
 }
 
@@ -3249,13 +3390,19 @@ func getMemberFromRequest(r *http.Request) *Member {
 			token = c.Value
 		}
 	}
-	if token == "" { return nil }
+	if token == "" {
+		return nil
+	}
 	memberStoreMu.RLock()
 	defer memberStoreMu.RUnlock()
 	sess, ok := memberStore.Sessions[token]
-	if !ok || sess.Expires < time.Now().Unix() { return nil }
+	if !ok || sess.Expires < time.Now().Unix() {
+		return nil
+	}
 	m, ok := memberStore.Members[sess.MemberID]
-	if !ok { return nil }
+	if !ok {
+		return nil
+	}
 	return m
 }
 
@@ -3265,7 +3412,9 @@ func cleanExpiredSessions() {
 		memberStoreMu.Lock()
 		now := time.Now().Unix()
 		for tok, sess := range memberStore.Sessions {
-			if sess.Expires < now { delete(memberStore.Sessions, tok) }
+			if sess.Expires < now {
+				delete(memberStore.Sessions, tok)
+			}
 		}
 		saveMemberStore()
 		memberStoreMu.Unlock()
@@ -3276,7 +3425,10 @@ func cleanExpiredSessions() {
 
 // POST /api/member/register
 func handleMemberRegister(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost { http.Error(w, "method not allowed", 405); return }
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
 	var req struct {
 		Callsign string `json:"callsign"`
 		Password string `json:"password"`
@@ -3284,7 +3436,8 @@ func handleMemberRegister(w http.ResponseWriter, r *http.Request) {
 		Email    string `json:"email"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid json"}`, 400); return
+		http.Error(w, `{"error":"invalid json"}`, 400)
+		return
 	}
 	req.Callsign = strings.ToUpper(strings.TrimSpace(req.Callsign))
 	if len(req.Callsign) < 3 || len(req.Password) < 6 {
@@ -3329,13 +3482,17 @@ func handleMemberRegister(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/member/login
 func handleMemberLogin(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost { http.Error(w, "method not allowed", 405); return }
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
 	var req struct {
 		Callsign string `json:"callsign"`
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid json"}`, 400); return
+		http.Error(w, `{"error":"invalid json"}`, 400)
+		return
 	}
 	req.Callsign = strings.ToUpper(strings.TrimSpace(req.Callsign))
 	memberStoreMu.Lock()
@@ -3343,7 +3500,8 @@ func handleMemberLogin(w http.ResponseWriter, r *http.Request) {
 	var found *Member
 	for _, m := range memberStore.Members {
 		if strings.ToUpper(m.Callsign) == req.Callsign {
-			found = m; break
+			found = m
+			break
 		}
 	}
 	if found == nil || hashPassword(req.Password, found.Salt) != found.Password {
@@ -3362,14 +3520,14 @@ func handleMemberLogin(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name: "member_token", Value: token,
 		Expires: time.Now().Add(sessionTTL),
-		Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		Path:    "/", HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	})
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"ok": true, "token": token,
-		"callsign": found.Callsign,
-		"name":     found.Name,
-		"passcode": found.Passcode,
+		"callsign":  found.Callsign,
+		"name":      found.Name,
+		"passcode":  found.Passcode,
 		"callsigns": found.Callsigns,
 		"watchlist": found.Watchlist,
 	})
@@ -3379,7 +3537,9 @@ func handleMemberLogin(w http.ResponseWriter, r *http.Request) {
 func handleMemberLogout(w http.ResponseWriter, r *http.Request) {
 	token := r.Header.Get("X-Member-Token")
 	if token == "" {
-		if c, err := r.Cookie("member_token"); err == nil { token = c.Value }
+		if c, err := r.Cookie("member_token"); err == nil {
+			token = c.Value
+		}
 	}
 	if token != "" {
 		memberStoreMu.Lock()
@@ -3395,14 +3555,22 @@ func handleMemberLogout(w http.ResponseWriter, r *http.Request) {
 // GET /api/member/profile  PUT /api/member/profile
 func handleMemberProfile(w http.ResponseWriter, r *http.Request) {
 	m := getMemberFromRequest(r)
-	if m == nil { w.WriteHeader(401); json.NewEncoder(w).Encode(map[string]string{"error":"not logged in"}); return }
+	if m == nil {
+		w.WriteHeader(401)
+		json.NewEncoder(w).Encode(map[string]string{"error": "not logged in"})
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method == http.MethodGet {
 		// Return profile including offline messages count
 		memberStoreMu.RLock()
 		msgs := memberStore.Messages[strings.ToUpper(m.Callsign)]
 		unread := 0
-		for _, msg := range msgs { if !msg.Read { unread++ } }
+		for _, msg := range msgs {
+			if !msg.Read {
+				unread++
+			}
+		}
 		memberStoreMu.RUnlock()
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"id": m.ID, "callsign": m.Callsign, "name": m.Name, "email": m.Email,
@@ -3420,13 +3588,23 @@ func handleMemberProfile(w http.ResponseWriter, r *http.Request) {
 			Watchlist []string `json:"watchlist"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			w.WriteHeader(400); json.NewEncoder(w).Encode(map[string]string{"error":"invalid json"}); return
+			w.WriteHeader(400)
+			json.NewEncoder(w).Encode(map[string]string{"error": "invalid json"})
+			return
 		}
 		memberStoreMu.Lock()
-		if req.Name != ""      { memberStore.Members[m.ID].Name  = req.Name }
-		if req.Email != ""     { memberStore.Members[m.ID].Email = req.Email }
-		if req.Callsigns != nil { memberStore.Members[m.ID].Callsigns = req.Callsigns }
-		if req.Watchlist != nil { memberStore.Members[m.ID].Watchlist = req.Watchlist }
+		if req.Name != "" {
+			memberStore.Members[m.ID].Name = req.Name
+		}
+		if req.Email != "" {
+			memberStore.Members[m.ID].Email = req.Email
+		}
+		if req.Callsigns != nil {
+			memberStore.Members[m.ID].Callsigns = req.Callsigns
+		}
+		if req.Watchlist != nil {
+			memberStore.Members[m.ID].Watchlist = req.Watchlist
+		}
 		saveMemberStore()
 		memberStoreMu.Unlock()
 		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -3438,13 +3616,19 @@ func handleMemberProfile(w http.ResponseWriter, r *http.Request) {
 // GET /api/member/messages  PATCH /api/member/messages (mark read)
 func handleMemberMessages(w http.ResponseWriter, r *http.Request) {
 	m := getMemberFromRequest(r)
-	if m == nil { w.WriteHeader(401); json.NewEncoder(w).Encode(map[string]string{"error":"not logged in"}); return }
+	if m == nil {
+		w.WriteHeader(401)
+		json.NewEncoder(w).Encode(map[string]string{"error": "not logged in"})
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	call := strings.ToUpper(m.Callsign)
 	if r.Method == http.MethodGet {
 		memberStoreMu.RLock()
 		msgs := memberStore.Messages[call]
-		if msgs == nil { msgs = []StoredMessage{} }
+		if msgs == nil {
+			msgs = []StoredMessage{}
+		}
 		memberStoreMu.RUnlock()
 		json.NewEncoder(w).Encode(msgs)
 		return
@@ -3462,7 +3646,10 @@ func handleMemberMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodDelete {
 		remote := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("callsign")))
-		if remote == "" { http.Error(w, "callsign required", 400); return }
+		if remote == "" {
+			http.Error(w, "callsign required", 400)
+			return
+		}
 		memberStoreMu.Lock()
 		var kept []StoredMessage
 		for _, msg := range memberStore.Messages[call] {
@@ -3470,14 +3657,22 @@ func handleMemberMessages(w http.ResponseWriter, r *http.Request) {
 				kept = append(kept, msg)
 			}
 		}
-		if len(kept) == 0 { delete(memberStore.Messages, call) } else { memberStore.Messages[call] = kept }
+		if len(kept) == 0 {
+			delete(memberStore.Messages, call)
+		} else {
+			memberStore.Messages[call] = kept
+		}
 		var remoteKept []StoredMessage
 		for _, msg := range memberStore.Messages[remote] {
 			if strings.ToUpper(msg.From) != call && strings.ToUpper(msg.To) != call {
 				remoteKept = append(remoteKept, msg)
 			}
 		}
-		if len(remoteKept) == 0 { delete(memberStore.Messages, remote) } else { memberStore.Messages[remote] = remoteKept }
+		if len(remoteKept) == 0 {
+			delete(memberStore.Messages, remote)
+		} else {
+			memberStore.Messages[remote] = remoteKept
+		}
 		saveMemberStore()
 		memberStoreMu.Unlock()
 		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -3488,27 +3683,36 @@ func handleMemberMessages(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/member/password  (change password)
 func handleMemberPassword(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost { http.Error(w, "method not allowed", 405); return }
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
 	m := getMemberFromRequest(r)
-	if m == nil { w.WriteHeader(401); json.NewEncoder(w).Encode(map[string]string{"error":"not logged in"}); return }
+	if m == nil {
+		w.WriteHeader(401)
+		json.NewEncoder(w).Encode(map[string]string{"error": "not logged in"})
+		return
+	}
 	var req struct {
 		Current string `json:"current"`
 		New     string `json:"new"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.WriteHeader(400); json.NewEncoder(w).Encode(map[string]string{"error":"invalid json"}); return
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid json"})
+		return
 	}
 	memberStoreMu.Lock()
 	defer memberStoreMu.Unlock()
 	mem := memberStore.Members[m.ID]
 	if hashPassword(req.Current, mem.Salt) != mem.Password {
 		w.WriteHeader(401)
-		json.NewEncoder(w).Encode(map[string]string{"error":"current password incorrect"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "current password incorrect"})
 		return
 	}
 	if len(req.New) < 6 {
 		w.WriteHeader(400)
-		json.NewEncoder(w).Encode(map[string]string{"error":"new password must be 6+ chars"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "new password must be 6+ chars"})
 		return
 	}
 	mem.Password = hashPassword(req.New, mem.Salt)
@@ -3528,7 +3732,9 @@ func handleMemberObject(w http.ResponseWriter, r *http.Request) {
 	}
 	token := r.Header.Get("X-Member-Token")
 	if token == "" {
-		if ck, err := r.Cookie("aprs-member-token"); err == nil { token = ck.Value }
+		if ck, err := r.Cookie("aprs-member-token"); err == nil {
+			token = ck.Value
+		}
 	}
 	memberStoreMu.RLock()
 	sess, ok := memberStore.Sessions[token]
@@ -3700,7 +3906,10 @@ func handleMemberPreferences(w http.ResponseWriter, r *http.Request) {
 // GET /api/members/callsigns - public list of registered member callsigns.
 // Only exposes callsigns, no personal data. Used by clients to badge members.
 func handleMembersCallsigns(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet { http.Error(w, "method not allowed", 405); return }
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
 	memberStoreMu.RLock()
 	calls := make([]string, 0, len(memberStore.Members))
 	for _, m := range memberStore.Members {
@@ -3719,7 +3928,10 @@ func handleMembersCallsigns(w http.ResponseWriter, r *http.Request) {
 // Use when APRS delivery fails and the recipient is a known APRS Net member.
 // Auth: X-Member-Token header. Body: {"to":"CALLSIGN","text":"message"}.
 func handleMemberMessageSend(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost { http.Error(w, "method not allowed", 405); return }
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
 	m := getMemberFromRequest(r)
 	if m == nil {
 		w.WriteHeader(401)
@@ -3731,20 +3943,25 @@ func handleMemberMessageSend(w http.ResponseWriter, r *http.Request) {
 		Text string `json:"text"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid json"}`, 400); return
+		http.Error(w, `{"error":"invalid json"}`, 400)
+		return
 	}
 	req.To = strings.ToUpper(strings.TrimSpace(req.To))
 	if req.To == "" || len(strings.TrimSpace(req.Text)) == 0 {
-		http.Error(w, `{"error":"to and text required"}`, 400); return
+		http.Error(w, `{"error":"to and text required"}`, 400)
+		return
 	}
-	if len(req.Text) > 67 { req.Text = req.Text[:67] }
+	if len(req.Text) > 67 {
+		req.Text = req.Text[:67]
+	}
 
 	// Verify recipient is a registered member
 	memberStoreMu.RLock()
 	recipientExists := false
 	for _, mem := range memberStore.Members {
 		if strings.ToUpper(mem.Callsign) == req.To {
-			recipientExists = true; break
+			recipientExists = true
+			break
 		}
 	}
 	memberStoreMu.RUnlock()
@@ -3757,7 +3974,7 @@ func handleMemberMessageSend(w http.ResponseWriter, r *http.Request) {
 	// Build a synthetic APRS message packet the client parses normally.
 	// Destination padded to 9 chars per APRS spec.
 	msgId := fmt.Sprintf("%02d", time.Now().Unix()%100)
-	dest  := fmt.Sprintf("%-9s", req.To)
+	dest := fmt.Sprintf("%-9s", req.To)
 	rawPacket := fmt.Sprintf("%s>APNUK,TCPIP*::%-9s:%s{%s",
 		m.Callsign, req.To, req.Text, msgId)
 	_ = dest // suppress lint
@@ -3807,23 +4024,24 @@ func formatAPRSPosition(lat, lon float64) (string, string) {
 		fmt.Sprintf("%03d%05.2f%s", lonDeg, lonMin, lonEW)
 }
 
-
 // storeMessageForMember stores an incoming APRS message for a registered member
 // and a "sent" copy for the sender if they are also a registered member.
 // Calling this once handles both parties.
 func storeMessageForMember(to, from, text, raw string, ts int64) {
-	toUpper   := strings.ToUpper(strings.TrimSpace(to))
+	toUpper := strings.ToUpper(strings.TrimSpace(to))
 	fromUpper := strings.ToUpper(strings.TrimSpace(from))
 	memberStoreMu.Lock()
 	defer memberStoreMu.Unlock()
 
 	findMemberCall := func(search string) string {
 		base := search
-		if i := strings.Index(search, "-"); i > 0 { base = search[:i] }
+		if i := strings.Index(search, "-"); i > 0 {
+			base = search[:i]
+		}
 		for _, m := range memberStore.Members {
 			for _, c := range m.Callsigns {
 				cu := strings.ToUpper(c)
-				if cu == search || strings.ToUpper(strings.SplitN(cu,"-",2)[0]) == base {
+				if cu == search || strings.ToUpper(strings.SplitN(cu, "-", 2)[0]) == base {
 					return strings.ToUpper(m.Callsign)
 				}
 			}
@@ -3832,7 +4050,9 @@ func storeMessageForMember(to, from, text, raw string, ts int64) {
 	}
 
 	appendMsg := func(bucket, direction string, read bool) {
-		if bucket == "" { return }
+		if bucket == "" {
+			return
+		}
 		msg := StoredMessage{
 			ID: generateID(), From: from, To: to,
 			Text: text, Ts: ts, Read: read, Raw: raw,
@@ -3875,7 +4095,6 @@ func storeMessageForMember(to, from, text, raw string, ts int64) {
 		}()
 	}
 }
-
 
 // ─── Offline Message Delivery on Client Connect ───────────────────────────────
 // When a recognised member callsign connects (TCP or WebSocket), look for any
@@ -4001,17 +4220,17 @@ func forwardOfflineMessagesToCallsign(callsign string, write messageWriter) int 
 // ADMIN FEATURES: Member Mgmt, Ban List, Backup/Restore, MOTD, Audit Log
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const banFile     = "bans.json"
-const motdFile    = "motd.json"
-const auditFile   = "audit.log"
+const banFile = "bans.json"
+const motdFile = "motd.json"
+const auditFile = "audit.log"
 
 // ── Ban list ────────────────────────────────────────────────────────────────
 
 type BanEntry struct {
-	Callsign  string `json:"callsign"`   // exact or with wildcard *
-	Reason    string `json:"reason"`
-	Added     int64  `json:"added"`
-	AddedBy   string `json:"added_by"`
+	Callsign string `json:"callsign"` // exact or with wildcard *
+	Reason   string `json:"reason"`
+	Added    int64  `json:"added"`
+	AddedBy  string `json:"added_by"`
 }
 
 var (
@@ -4024,7 +4243,9 @@ func loadBanList() {
 	defer banListMu.Unlock()
 	banList = []BanEntry{}
 	data, err := os.ReadFile(banFile)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	json.Unmarshal(data, &banList)
 	log.Printf("Loaded %d ban entries", len(banList))
 }
@@ -4041,10 +4262,14 @@ func isCallsignBanned(call string) string {
 	defer banListMu.RUnlock()
 	for _, b := range banList {
 		pat := strings.ToUpper(b.Callsign)
-		if pat == call { return b.Reason }
+		if pat == call {
+			return b.Reason
+		}
 		if strings.HasSuffix(pat, "*") {
 			prefix := strings.TrimSuffix(pat, "*")
-			if strings.HasPrefix(call, prefix) { return b.Reason }
+			if strings.HasPrefix(call, prefix) {
+				return b.Reason
+			}
 		}
 	}
 	return ""
@@ -4053,11 +4278,11 @@ func isCallsignBanned(call string) string {
 // ── MOTD ───────────────────────────────────────────────────────────────────
 
 type MOTD struct {
-	Enabled  bool   `json:"enabled"`
-	Message  string `json:"message"`
-	Level    string `json:"level"`     // info, warning, success, error
-	Dismissable bool `json:"dismissable"`
-	Updated  int64  `json:"updated"`
+	Enabled     bool   `json:"enabled"`
+	Message     string `json:"message"`
+	Level       string `json:"level"` // info, warning, success, error
+	Dismissable bool   `json:"dismissable"`
+	Updated     int64  `json:"updated"`
 }
 
 var (
@@ -4069,7 +4294,10 @@ func loadMOTD() {
 	motdMu.Lock()
 	defer motdMu.Unlock()
 	data, err := os.ReadFile(motdFile)
-	if err != nil { motd = MOTD{}; return }
+	if err != nil {
+		motd = MOTD{}
+		return
+	}
 	json.Unmarshal(data, &motd)
 }
 
@@ -4082,20 +4310,22 @@ func saveMOTD() {
 
 type AuditEntry struct {
 	Ts      int64  `json:"ts"`
-	Actor   string `json:"actor"`   // who did it (admin or "system")
-	Action  string `json:"action"`  // e.g. "member.delete", "ban.add"
-	Target  string `json:"target"`  // affected entity
+	Actor   string `json:"actor"`  // who did it (admin or "system")
+	Action  string `json:"action"` // e.g. "member.delete", "ban.add"
+	Target  string `json:"target"` // affected entity
 	Details string `json:"details,omitempty"`
 	IP      string `json:"ip,omitempty"`
 }
 
 var auditMu sync.Mutex
 
-
 // Router for /api/admin/members/{id} and /api/admin/members/{id}/messages
 func handleAdminMemberRouter(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/admin/members/")
-	if path == "" { http.Error(w, "no id", 400); return }
+	if path == "" {
+		http.Error(w, "no id", 400)
+		return
+	}
 	if strings.HasSuffix(path, "/messages") {
 		handleAdminMemberMessages(w, r)
 		return
@@ -4112,19 +4342,27 @@ func auditLog(actor, action, target, details, ip string) {
 	}
 	data, _ := json.Marshal(entry)
 	f, err := os.OpenFile(auditFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	defer f.Close()
 	f.Write(append(data, '\n'))
 }
 
 func readAuditLog(lines int) []AuditEntry {
 	data, err := os.ReadFile(auditFile)
-	if err != nil { return []AuditEntry{} }
+	if err != nil {
+		return []AuditEntry{}
+	}
 	parts := strings.Split(strings.TrimSpace(string(data)), "\n")
-	if lines > 0 && len(parts) > lines { parts = parts[len(parts)-lines:] }
+	if lines > 0 && len(parts) > lines {
+		parts = parts[len(parts)-lines:]
+	}
 	entries := []AuditEntry{}
 	for _, line := range parts {
-		if line == "" { continue }
+		if line == "" {
+			continue
+		}
 		var e AuditEntry
 		if err := json.Unmarshal([]byte(line), &e); err == nil {
 			entries = append(entries, e)
@@ -4170,9 +4408,17 @@ func handleAdminMembers(w http.ResponseWriter, r *http.Request) {
 	for _, m := range memberStore.Members {
 		msgs := memberStore.Messages[strings.ToUpper(m.Callsign)]
 		unread := 0
-		for _, mg := range msgs { if !mg.Read { unread++ } }
+		for _, mg := range msgs {
+			if !mg.Read {
+				unread++
+			}
+		}
 		sessions := 0
-		for _, s := range memberStore.Sessions { if s.MemberID == m.ID { sessions++ } }
+		for _, s := range memberStore.Sessions {
+			if s.MemberID == m.ID {
+				sessions++
+			}
+		}
 		list = append(list, publicMember{
 			ID: m.ID, Callsign: m.Callsign, Name: m.Name, Email: m.Email,
 			Callsigns: m.Callsigns, Passcode: m.Passcode,
@@ -4190,20 +4436,29 @@ func handleAdminMember(w http.ResponseWriter, r *http.Request) {
 	// Extract ID from path
 	id := strings.TrimPrefix(r.URL.Path, "/api/admin/members/")
 	id = strings.SplitN(id, "/", 2)[0]
-	if id == "" { http.Error(w, "no id", 400); return }
+	if id == "" {
+		http.Error(w, "no id", 400)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 
 	memberStoreMu.Lock()
 	defer memberStoreMu.Unlock()
 	mem, ok := memberStore.Members[id]
-	if !ok { w.WriteHeader(404); json.NewEncoder(w).Encode(map[string]string{"error":"not found"}); return }
+	if !ok {
+		w.WriteHeader(404)
+		json.NewEncoder(w).Encode(map[string]string{"error": "not found"})
+		return
+	}
 
 	if r.Method == http.MethodDelete {
 		delete(memberStore.Members, id)
 		delete(memberStore.Messages, strings.ToUpper(mem.Callsign))
 		// Kill all sessions for this member
 		for tok, s := range memberStore.Sessions {
-			if s.MemberID == id { delete(memberStore.Sessions, tok) }
+			if s.MemberID == id {
+				delete(memberStore.Sessions, tok)
+			}
 		}
 		saveMemberStore()
 		auditLog("admin", "member.delete", mem.Callsign, mem.ID, ip)
@@ -4213,26 +4468,30 @@ func handleAdminMember(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == http.MethodPut {
 		var req struct {
-			Name      string   `json:"name"`
-			Email     string   `json:"email"`
-			Callsigns []string `json:"callsigns"`
-			Watchlist []string `json:"watchlist"`
-			ResetPassword string `json:"reset_password"` // new password if set
-			ForceLogout   bool   `json:"force_logout"`
+			Name          string   `json:"name"`
+			Email         string   `json:"email"`
+			Callsigns     []string `json:"callsigns"`
+			Watchlist     []string `json:"watchlist"`
+			ResetPassword string   `json:"reset_password"` // new password if set
+			ForceLogout   bool     `json:"force_logout"`
 		}
 		json.NewDecoder(r.Body).Decode(&req)
 		changes := []string{}
 		if req.Name != "" && req.Name != mem.Name {
-			mem.Name = req.Name; changes = append(changes, "name")
+			mem.Name = req.Name
+			changes = append(changes, "name")
 		}
 		if req.Email != mem.Email {
-			mem.Email = req.Email; changes = append(changes, "email")
+			mem.Email = req.Email
+			changes = append(changes, "email")
 		}
 		if req.Callsigns != nil {
-			mem.Callsigns = req.Callsigns; changes = append(changes, "callsigns")
+			mem.Callsigns = req.Callsigns
+			changes = append(changes, "callsigns")
 		}
 		if req.Watchlist != nil {
-			mem.Watchlist = req.Watchlist; changes = append(changes, "watchlist")
+			mem.Watchlist = req.Watchlist
+			changes = append(changes, "watchlist")
 		}
 		if req.ResetPassword != "" && len(req.ResetPassword) >= 6 {
 			mem.Password = hashPassword(req.ResetPassword, mem.Salt)
@@ -4242,12 +4501,14 @@ func handleAdminMember(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.ForceLogout {
 			for tok, s := range memberStore.Sessions {
-				if s.MemberID == id { delete(memberStore.Sessions, tok) }
+				if s.MemberID == id {
+					delete(memberStore.Sessions, tok)
+				}
 			}
 			changes = append(changes, "sessions cleared")
 		}
 		saveMemberStore()
-		auditLog("admin", "member.update", mem.Callsign, strings.Join(changes,","), ip)
+		auditLog("admin", "member.update", mem.Callsign, strings.Join(changes, ","), ip)
 		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "changes": changes})
 		return
 	}
@@ -4263,9 +4524,14 @@ func handleAdminMemberMessages(w http.ResponseWriter, r *http.Request) {
 	memberStoreMu.RLock()
 	defer memberStoreMu.RUnlock()
 	mem, ok := memberStore.Members[id]
-	if !ok { w.WriteHeader(404); return }
+	if !ok {
+		w.WriteHeader(404)
+		return
+	}
 	msgs := memberStore.Messages[strings.ToUpper(mem.Callsign)]
-	if msgs == nil { msgs = []StoredMessage{} }
+	if msgs == nil {
+		msgs = []StoredMessage{}
+	}
 	json.NewEncoder(w).Encode(msgs)
 }
 
@@ -4282,7 +4548,8 @@ func handleAdminBans(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		var req BanEntry
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid json", 400); return
+			http.Error(w, "invalid json", 400)
+			return
 		}
 		req.Callsign = strings.ToUpper(strings.TrimSpace(req.Callsign))
 		req.Added = time.Now().Unix()
@@ -4292,10 +4559,14 @@ func handleAdminBans(w http.ResponseWriter, r *http.Request) {
 		updated := false
 		for i, b := range banList {
 			if strings.ToUpper(b.Callsign) == req.Callsign {
-				banList[i] = req; updated = true; break
+				banList[i] = req
+				updated = true
+				break
 			}
 		}
-		if !updated { banList = append(banList, req) }
+		if !updated {
+			banList = append(banList, req)
+		}
 		saveBanList()
 		banListMu.Unlock()
 		auditLog("admin", "ban.add", req.Callsign, req.Reason, ip)
@@ -4304,11 +4575,16 @@ func handleAdminBans(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodDelete {
 		call := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("callsign")))
-		if call == "" { http.Error(w, "no callsign", 400); return }
+		if call == "" {
+			http.Error(w, "no callsign", 400)
+			return
+		}
 		banListMu.Lock()
 		newList := []BanEntry{}
 		for _, b := range banList {
-			if strings.ToUpper(b.Callsign) != call { newList = append(newList, b) }
+			if strings.ToUpper(b.Callsign) != call {
+				newList = append(newList, b)
+			}
 		}
 		banList = newList
 		saveBanList()
@@ -4333,13 +4609,15 @@ func handleAdminMOTD(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		var req MOTD
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid json", 400); return
+			http.Error(w, "invalid json", 400)
+			return
 		}
 		motdMu.Lock()
-		motd = req; motd.Updated = time.Now().Unix()
+		motd = req
+		motd.Updated = time.Now().Unix()
 		saveMOTD()
 		motdMu.Unlock()
-		auditLog("admin", "motd.update", "", req.Message[:minLen(req.Message,50)], getClientIP(r))
+		auditLog("admin", "motd.update", "", req.Message[:minLen(req.Message, 50)], getClientIP(r))
 		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 		return
 	}
@@ -4361,7 +4639,9 @@ func handlePublicMOTD(w http.ResponseWriter, r *http.Request) {
 func handleAdminAudit(w http.ResponseWriter, r *http.Request) {
 	limit := 100
 	if l := r.URL.Query().Get("limit"); l != "" {
-		if v, err := strconv.Atoi(l); err == nil && v > 0 { limit = v }
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = v
+		}
 	}
 	entries := readAuditLog(limit)
 	w.Header().Set("Content-Type", "application/json")
@@ -4386,7 +4666,9 @@ func handleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	flusher, canFlush := w.(http.Flusher)
 	write := func(msg string) {
 		fmt.Fprintf(w, "%s\n", msg)
-		if canFlush { flusher.Flush() }
+		if canFlush {
+			flusher.Flush()
+		}
 	}
 
 	write("=== APRS Net self-update ===")
@@ -4396,9 +4678,9 @@ func handleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		label string
 		args  []string
 	}{
-		{"git pull",   []string{"git", "-C", dir, "pull", "origin", "main"}},
-		{"go build",   []string{"/usr/local/go/bin/go", "build", "-o", dir + "/aprs_server", dir + "/..."}},
-		{"restart",    []string{"systemctl", "restart", "aprs"}},
+		{"git pull", []string{"git", "-C", dir, "pull", "origin", "main"}},
+		{"go build", []string{"/usr/local/go/bin/go", "build", "-o", dir + "/aprs_server", dir + "/..."}},
+		{"restart", []string{"systemctl", "restart", "aprs"}},
 	}
 
 	for _, step := range steps {
@@ -4406,7 +4688,9 @@ func handleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		cmd := exec.Command(step.args[0], step.args[1:]...)
 		cmd.Dir = dir
 		out, err := cmd.CombinedOutput()
-		if len(out) > 0 { write(string(out)) }
+		if len(out) > 0 {
+			write(string(out))
+		}
 		if err != nil {
 			write(fmt.Sprintf("ERROR: %v", err))
 			return
@@ -4448,12 +4732,17 @@ func gfKey(ruleID int64, call string) string {
 // Path: /api/member/alert-rules  (protected by memberAuth)
 func handleAlertRules(w http.ResponseWriter, r *http.Request) {
 	mem := getMemberFromRequest(r)
-	if mem == nil { http.Error(w, "unauthorized", 401); return }
+	if mem == nil {
+		http.Error(w, "unauthorized", 401)
+		return
+	}
 
 	if r.Method == http.MethodGet {
 		memberStoreMu.RLock()
 		rules := mem.AlertRules
-		if rules == nil { rules = []MemberAlertRule{} }
+		if rules == nil {
+			rules = []MemberAlertRule{}
+		}
 		memberStoreMu.RUnlock()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(rules)
@@ -4463,18 +4752,28 @@ func handleAlertRules(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		var rule MemberAlertRule
 		if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
-			http.Error(w, "invalid JSON", 400); return
+			http.Error(w, "invalid JSON", 400)
+			return
 		}
 		if rule.Type != "geofence_enter" && rule.Type != "geofence_exit" {
-			http.Error(w, "type must be geofence_enter or geofence_exit", 400); return
+			http.Error(w, "type must be geofence_enter or geofence_exit", 400)
+			return
 		}
-		if rule.RadiusMi <= 0 { rule.RadiusMi = 10 }
-		if rule.WatchCallsign == "" { rule.WatchCallsign = "*" }
+		if rule.RadiusMi <= 0 {
+			rule.RadiusMi = 10
+		}
+		if rule.WatchCallsign == "" {
+			rule.WatchCallsign = "*"
+		}
 		rule.WatchCallsign = strings.ToUpper(rule.WatchCallsign)
 
 		memberStoreMu.Lock()
 		var maxID int64
-		for _, existing := range mem.AlertRules { if existing.ID > maxID { maxID = existing.ID } }
+		for _, existing := range mem.AlertRules {
+			if existing.ID > maxID {
+				maxID = existing.ID
+			}
+		}
 		rule.ID = maxID + 1
 		mem.AlertRules = append(mem.AlertRules, rule)
 		saveMemberStore()
@@ -4493,20 +4792,29 @@ func handleAlertRules(w http.ResponseWriter, r *http.Request) {
 
 // handleAlertRuleDelete — DELETE /api/member/alert-rules/{id}
 func handleAlertRuleDelete(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete { http.Error(w, "DELETE required", 405); return }
+	if r.Method != http.MethodDelete {
+		http.Error(w, "DELETE required", 405)
+		return
+	}
 	mem := getMemberFromRequest(r)
-	if mem == nil { http.Error(w, "unauthorized", 401); return }
+	if mem == nil {
+		http.Error(w, "unauthorized", 401)
+		return
+	}
 
 	idStr := strings.TrimPrefix(r.URL.Path, "/api/member/alert-rules/")
 	var id int64
 	if _, err := fmt.Sscanf(idStr, "%d", &id); err != nil {
-		http.Error(w, "invalid id", 400); return
+		http.Error(w, "invalid id", 400)
+		return
 	}
 
 	memberStoreMu.Lock()
 	newRules := mem.AlertRules[:0]
 	for _, rule := range mem.AlertRules {
-		if rule.ID != id { newRules = append(newRules, rule) }
+		if rule.ID != id {
+			newRules = append(newRules, rule)
+		}
 	}
 	mem.AlertRules = newRules
 	saveMemberStore()
@@ -4577,7 +4885,9 @@ func checkGeofenceAlerts(watchCall string, lat, lon float64) {
 	for _, mem := range memberStore.Members {
 		for _, rule := range mem.AlertRules {
 			wc := strings.ToUpper(rule.WatchCallsign)
-			if wc != "*" && wc != strings.ToUpper(watchCall) { continue }
+			if wc != "*" && wc != strings.ToUpper(watchCall) {
+				continue
+			}
 			distKm := haversineKm(lat, lon, rule.Lat, rule.Lon)
 			distMi := distKm * 0.621371
 			typeAlerts[gfKey(rule.ID, watchCall)] = struct {
@@ -4596,10 +4906,14 @@ func checkGeofenceAlerts(watchCall string, lat, lon float64) {
 		nowInside := btoi(cand.inside)
 		geofenceState[key] = nowInside
 
-		if !known { continue } // first observation — initialise silently
+		if !known {
+			continue
+		} // first observation — initialise silently
 
 		zoneName := cand.rule.Name
-		if zoneName == "" { zoneName = "zone" }
+		if zoneName == "" {
+			zoneName = "zone"
+		}
 		var alertMsg string
 		switch {
 		case cand.rule.Type == "geofence_enter" && prev == 0 && nowInside == 1:
@@ -4627,27 +4941,35 @@ func pushAlertToMember(memberCall, alertType, stationCall, message string) {
 	clientsMu.Lock()
 	for c := range clients {
 		if strings.EqualFold(c.callsign, memberCall) {
-			select { case c.send <- data: default: }
+			select {
+			case c.send <- data:
+			default:
+			}
 		}
 	}
 	clientsMu.Unlock()
 }
 
 // btoi converts bool to int for the geofenceState map.
-func btoi(b bool) int { if b { return 1 }; return 0 }
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
 
 func handleAdminBackup(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="aprs-backup-%s.json"`, time.Now().Format("2006-01-02-150405")))
 	backup := map[string]interface{}{
-		"version": AppVersion,
-		"timestamp": time.Now().Unix(),
+		"version":       AppVersion,
+		"timestamp":     time.Now().Unix(),
 		"server_config": loadConfigFromFile(),
-		"members": memberStore,
-		"bans": banList,
-		"motd": motd,
-		"webhooks": webhooks,
-		"api_keys": apiKeys,
+		"members":       memberStore,
+		"bans":          banList,
+		"motd":          motd,
+		"webhooks":      webhooks,
+		"api_keys":      apiKeys,
 	}
 	json.NewEncoder(w).Encode(backup)
 	auditLog("admin", "backup.download", "", "", getClientIP(r))
@@ -4657,10 +4979,14 @@ func handleAdminBackup(w http.ResponseWriter, r *http.Request) {
 func handleAdminRestore(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	body, err := io.ReadAll(r.Body)
-	if err != nil || len(body) == 0 { http.Error(w, "no body", 400); return }
+	if err != nil || len(body) == 0 {
+		http.Error(w, "no body", 400)
+		return
+	}
 	var backup map[string]json.RawMessage
 	if err := json.Unmarshal(body, &backup); err != nil {
-		http.Error(w, "invalid json", 400); return
+		http.Error(w, "invalid json", 400)
+		return
 	}
 	restored := []string{}
 	if mb, ok := backup["members"]; ok {
@@ -4693,10 +5019,9 @@ func handleAdminRestore(w http.ResponseWriter, r *http.Request) {
 			restored = append(restored, "motd")
 		}
 	}
-	auditLog("admin", "backup.restore", "", strings.Join(restored,","), getClientIP(r))
+	auditLog("admin", "backup.restore", "", strings.Join(restored, ","), getClientIP(r))
 	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "restored": restored})
 }
-
 
 // =============================================================================
 // AIS live ship feed via aisstream.io WebSocket
@@ -4706,7 +5031,7 @@ func handleAdminRestore(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 type aisMessage struct {
-	MessageType string          `json:"MessageType"`
+	MessageType string `json:"MessageType"`
 	MetaData    struct {
 		MMSI       int64   `json:"MMSI"`
 		MMSIString string  `json:"MMSI_String"`
@@ -4716,18 +5041,18 @@ type aisMessage struct {
 	} `json:"MetaData"`
 	Message struct {
 		PositionReport *struct {
-			Latitude          float64 `json:"Latitude"`
-			Longitude         float64 `json:"Longitude"`
-			SpeedOverGround   float32 `json:"SpeedOverGround"`
-			CourseOverGround  float32 `json:"CourseOverGround"`
-			TrueHeading       int     `json:"TrueHeading"`
+			Latitude         float64 `json:"Latitude"`
+			Longitude        float64 `json:"Longitude"`
+			SpeedOverGround  float32 `json:"SpeedOverGround"`
+			CourseOverGround float32 `json:"CourseOverGround"`
+			TrueHeading      int     `json:"TrueHeading"`
 		} `json:"PositionReport"`
 	} `json:"Message"`
 }
 
 func runAISStream() {
 	const reconnectBase = 5 * time.Second
-	const reconnectMax  = 120 * time.Second
+	const reconnectMax = 120 * time.Second
 	delay := reconnectBase
 
 	for {
@@ -4768,7 +5093,7 @@ func connectAIS(apiKey string) error {
 		"BoundingBoxes": []interface{}{
 			[]interface{}{
 				[]float64{48.0, -12.0},
-				[]float64{62.0,   5.0},
+				[]float64{62.0, 5.0},
 			},
 		},
 		"FilterMessageTypes": []string{"PositionReport"},
@@ -4792,7 +5117,7 @@ func connectAIS(apiKey string) error {
 			continue
 		}
 
-		pr  := msg.Message.PositionReport
+		pr := msg.Message.PositionReport
 		lat := pr.Latitude
 		lon := pr.Longitude
 
@@ -4840,18 +5165,24 @@ func connectAIS(apiKey string) error {
 }
 
 // Helpers
-func minLen(s string, n int) int { if len(s) < n { return len(s) }; return n }
+func minLen(s string, n int) int {
+	if len(s) < n {
+		return len(s)
+	}
+	return n
+}
 func loadConfigFromFile() interface{} {
 	data, err := os.ReadFile("server_config.json")
-	if err != nil { return nil }
+	if err != nil {
+		return nil
+	}
 	var c interface{}
 	json.Unmarshal(data, &c)
 	return c
 }
+
 //go:embed tocalls.json
 var embeddedTocallsJSON []byte
-
-
 
 // ─── Ecowitt Weather Station Beaconing ───────────────────────────────────────
 
@@ -5070,7 +5401,7 @@ func weatherBeaconLoop() {
 			}
 			appKey, _ := p["wx_app_key"].(string)
 			apiKey, _ := p["wx_api_key"].(string)
-			mac, _    := p["wx_mac"].(string)
+			mac, _ := p["wx_mac"].(string)
 			if appKey == "" || apiKey == "" || mac == "" {
 				continue
 			}
@@ -5102,9 +5433,9 @@ func weatherBeaconLoop() {
 			}
 			lat, _ := p["wx_lat"].(float64)
 			lon, _ := p["wx_lon"].(float64)
-			solar, _    := p["wx_solar"].(bool)
-			uvOpt, _    := p["wx_uv"].(bool)
-			lsOpt, _    := p["wx_lightning"].(bool)
+			solar, _ := p["wx_solar"].(bool)
+			uvOpt, _ := p["wx_uv"].(bool)
+			lsOpt, _ := p["wx_lightning"].(bool)
 			commentStr, _ := p["wx_comment"].(string)
 			if commentStr == "" {
 				commentStr = "Ecowitt"
@@ -5137,9 +5468,12 @@ var (
 )
 
 func handleServerRegister(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost { http.Error(w, "POST only", 405); return }
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", 405)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	ip  := getClientIP(r)
+	ip := getClientIP(r)
 	now := time.Now().Unix()
 	serverRegMu.Lock()
 	if now-serverRegLastSeen[ip] < 300 {
@@ -5159,10 +5493,12 @@ func handleServerRegister(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(r.Body).Decode(&req)
 	memberStoreMu.Lock()
 	registeredAt := now
-	if ex := memberStore.KnownServers[ip]; ex != nil { registeredAt = ex.RegisteredAt }
+	if ex := memberStore.KnownServers[ip]; ex != nil {
+		registeredAt = ex.RegisteredAt
+	}
 	memberStore.KnownServers[ip] = &RegisteredServer{
 		IP: ip, Domain: req.Domain,
-		Callsign: strings.ToUpper(req.Callsign),
+		Callsign:   strings.ToUpper(req.Callsign),
 		ServerName: req.ServerName, Version: req.Version,
 		StationCount: req.StationCount,
 		RegisteredAt: registeredAt, LastSeenAt: now,
@@ -5178,7 +5514,9 @@ func handleAdminServers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	memberStoreMu.RLock()
 	list := make([]*RegisteredServer, 0, len(memberStore.KnownServers))
-	for _, s := range memberStore.KnownServers { list = append(list, s) }
+	for _, s := range memberStore.KnownServers {
+		list = append(list, s)
+	}
 	memberStoreMu.RUnlock()
 	sort.Slice(list, func(i, j int) bool { return list[i].LastSeenAt > list[j].LastSeenAt })
 	json.NewEncoder(w).Encode(list)
