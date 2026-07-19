@@ -908,6 +908,9 @@ func main() {
 	http.HandleFunc("/api/member/alert-rules",    handleAlertRules)
 	http.HandleFunc("/api/member/alert-rules/",   handleAlertRuleDelete)
 	http.HandleFunc("/api/member/wx_test",     handleWxTest)
+	// iGate device management (per-member, private)
+	http.HandleFunc("/api/member/igates",        handleMemberIGates)
+	http.HandleFunc("/api/member/igate/",        handleIGateCmd)
 
 	// Server federation registry
 	http.HandleFunc("/api/server/register", handleServerRegister)
@@ -942,6 +945,7 @@ func main() {
 	http.HandleFunc("/api/update", basicAuth(handleUpdate))
 
 	log.Printf("Advanced APRS Gateway active on :8080")
+	go startIGateMQTTBroker() // per-member iGate management (TCP :1883)
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
