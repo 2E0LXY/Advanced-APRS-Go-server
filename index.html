@@ -3739,6 +3739,15 @@ async function doAdminLogin() {
     document.getElementById('admin-login-gate').classList.add('hidden');
     document.getElementById('admin-content').classList.remove('hidden');
     populateAdmin(await cfgRes.json());
+    // Populate all admin sections immediately after login — without this,
+    // sections like MOTD only load on the second panel-toggle (when _adminCreds
+    // is already set) so the form appears blank on first login.
+    setTimeout(function() {
+      if (typeof loadAdminMembers  === 'function') loadAdminMembers();
+      if (typeof loadBans          === 'function') loadBans();
+      if (typeof loadAdminMOTD     === 'function') loadAdminMOTD();
+      if (typeof loadAudit         === 'function') loadAudit();
+    }, 400);
 
     // If an update was already detected before login, reveal the header button
     // and scroll the admin panel to the update section now.
