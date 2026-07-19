@@ -29,7 +29,7 @@ import (
 )
 
 // AppVersion is the running server version, compared against GitHub releases.
-const AppVersion = "2.3.0"
+const AppVersion = "2.3.1"
 
 type AppConfig struct {
 	ServerName     string  `json:"server_name"`
@@ -302,6 +302,7 @@ type wsClient struct {
 	authenticated bool
 	callsign      string
 	software      string
+	clientID      string
 	remoteAddr    string
 	connectedAt   int64
 	lastTx        time.Time
@@ -312,10 +313,59 @@ type wsMessage struct {
 	Callsign string      `json:"callsign,omitempty"`
 	Passcode string      `json:"passcode,omitempty"`
 	Software string      `json:"software,omitempty"`
+	ClientID string      `json:"client_id,omitempty"`
 	Status   string      `json:"status,omitempty"`
 	Packet   string      `json:"packet,omitempty"`
 	Data     interface{} `json:"data,omitempty"`
 	Minutes  int         `json:"minutes,omitempty"`
+}
+
+// registerWSAuthentication records an authenticated WebSocket identity and
+// returns older sockets from the same application installation. ClientID is a
+// random, persistent per-install identifier supplied by newer clients. It lets
+// us remove stale reconnects without treating separate phones behind the same
+// NAT address as duplicates.
+func registerWSAuthentication(current *wsClient, callsign, software, clientID string) []*wsClient {
+	callsign = strings.ToUpper(strings.TrimSpace(callsign))
+	software = strings.TrimSpace(software)
+	clientID = strings.TrimSpace(clientID)
+	if len(clientID) > 128 {
+		clientID = clientID[:128]
+	}
+
+	var stale []*wsClient
+	clientsMu.Lock()
+	current.authenticated = true
+	current.callsign = callsign
+	current.software = software
+	current.clientID = clientID
+	if clientID != "" {
+		for other := range clients {
+			if other != current &&
+				other.authenticated &&
+				other.callsign == callsign &&
+				other.software == software &&
+				other.clientID == clientID {
+				stale = append(stale, other)
+			}
+		}
+	}
+	clientsMu.Unlock()
+	return stale
+}
+
+func closeStaleWSClients(stale []*wsClient) {
+	for _, old := range stale {
+		if old == nil || old.conn == nil {
+			continue
+		}
+		_ = old.conn.WriteControl(
+			websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseNormalClosure, "replaced by newer connection"),
+			time.Now().Add(time.Second),
+		)
+		_ = old.conn.Close()
+	}
 }
 
 // handleTocalls serves the embedded APRS device identification database.
@@ -1655,7 +1705,7 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 	client := &wsClient{
 		conn:        conn,
 		send:        make(chan []byte, 1024),
-		remoteAddr:  r.RemoteAddr,
+		remoteAddr:  getRealIP(r),
 		connectedAt: time.Now().Unix(),
 		lastTx:      time.Now(),
 	}
@@ -1738,9 +1788,8 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			go sendReplayToClient(client, minutes)
 		case "auth":
 			if verifyPasscode(in.Callsign, in.Passcode) {
-				client.authenticated = true
-				client.callsign = strings.ToUpper(in.Callsign)
-				client.software = in.Software
+				stale := registerWSAuthentication(client, in.Callsign, in.Software, in.ClientID)
+				closeStaleWSClients(stale)
 				ack, _ := json.Marshal(wsMessage{Type: "auth_ack", Status: "success", Callsign: client.callsign})
 				client.send <- ack
 				// Deliver any stored offline messages to this callsign
