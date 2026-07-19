@@ -145,9 +145,9 @@ func collectPerformanceSample(persist bool) PerformanceSample {
 	s.PacketsDroppedTotal = metrics.PktsDropped
 	metrics.RUnlock()
 
-	clientsMu.Lock()
+	clientsMu.RLock()
 	s.WebSocketClients = len(clients)
-	clientsMu.Unlock()
+	clientsMu.RUnlock()
 	tcpClientsMu.Lock()
 	s.TCPClients = len(tcpClients)
 	tcpClientsMu.Unlock()

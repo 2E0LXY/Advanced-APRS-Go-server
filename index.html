@@ -13490,7 +13490,10 @@ function igateHeardRows(d) {
     var first = s.first_heard ? new Date(s.first_heard*1000).toLocaleString() : '—';
     var rssiRange = Number(s.min_rssi || 0) + '…' + Number(s.max_rssi || 0);
     var snrRange = Number(s.min_snr || 0).toFixed(1) + '…' + Number(s.max_snr || 0).toFixed(1);
-    var distance = s.has_distance ? Number(s.distance_miles).toFixed(1) + ' mi' : 'Position unavailable';
+    var useKm = d.distance_unit === 'km';
+    var distance = s.has_distance
+      ? (useKm ? (Number(s.distance_miles) / 0.621371).toFixed(1) + ' km' : Number(s.distance_miles).toFixed(1) + ' mi')
+      : 'Position unavailable';
     return '<tr class="border-t border-gray-800 hover:bg-gray-800/60">'
       + '<td class="p-2"><a class="text-cyan-400 hover:underline font-mono font-bold" target="_blank" rel="noopener" href="'+aprsLink+'">'+call+'</a></td>'
       + '<td class="p-2 whitespace-nowrap"><span class="text-gray-200">'+perfEsc(last)+'</span><span class="block text-[9px] text-gray-600">'+perfEsc(igateAge(s.last_heard))+'</span></td>'
@@ -13507,10 +13510,12 @@ function igateHeardRows(d) {
 function exportIGateHeardCSV(encodedCall) {
   var call = decodeURIComponent(encodedCall), d = _igateDevicesByCall[call];
   if (!d) return;
-  var rows = [['Station','First heard','Last heard','Packets','RSSI last','RSSI average','RSSI min','RSSI max','SNR last','SNR average','SNR min','SNR max','Distance miles','Frequency error Hz']];
+  var useKm = d.distance_unit === 'km', distanceHeader = useKm ? 'Distance kilometres' : 'Distance miles';
+  var rows = [['Station','First heard','Last heard','Packets','RSSI last','RSSI average','RSSI min','RSSI max','SNR last','SNR average','SNR min','SNR max',distanceHeader,'Frequency error Hz']];
   (d.heard_24h || []).forEach(function(s) {
     rows.push([s.callsign, new Date(s.first_heard*1000).toISOString(), new Date(s.last_heard*1000).toISOString(), s.packets,
-      s.last_rssi,s.avg_rssi,s.min_rssi,s.max_rssi,s.last_snr,s.avg_snr,s.min_snr,s.max_snr,s.has_distance?Number(s.distance_miles).toFixed(2):'',s.freq_error]);
+      s.last_rssi,s.avg_rssi,s.min_rssi,s.max_rssi,s.last_snr,s.avg_snr,s.min_snr,s.max_snr,
+      s.has_distance?(useKm ? Number(s.distance_miles/0.621371).toFixed(2) : Number(s.distance_miles).toFixed(2)):'',s.freq_error]);
   });
   var csv = rows.map(function(row) { return row.map(function(v) { return '"'+String(v == null ? '' : v).replace(/"/g,'""')+'"'; }).join(','); }).join('\r\n');
   var blob = new Blob([csv], {type:'text/csv'}), a = document.createElement('a');
@@ -13542,14 +13547,33 @@ function renderIGates(list) {
     var fw = perfEsc(d.fw || '—'), rx = d.packets_rx !== undefined ? d.packets_rx : '—', tx = d.packets_tx !== undefined ? d.packets_tx : '—';
     var heard = Array.isArray(d.heard_24h) ? d.heard_24h : [];
     var heardPackets = heard.reduce(function(total, station) { return total + Number(station.packets || 0); }, 0);
+    var commonPresetRadio = Number(d.spreading_factor) === 12
+      && Number(d.bandwidth) === 125000
+      && Number(d.coding_rate) === 5;
+    var profileMatches = Boolean(d.profile_confirmed) && (d.region_profile === 'custom'
+      || (d.region_profile === 'uk' && commonPresetRadio && Number(d.rx_frequency) === 439912500 && Number(d.tx_frequency) === 439912500)
+      || (d.region_profile === 'iaru1' && commonPresetRadio && Number(d.rx_frequency) === 433775000 && [433775000,433900000].indexOf(Number(d.tx_frequency)) >= 0));
     var health = !online ? ['Offline','text-gray-500','bg-gray-800']
       : d.update_state === 'error' ? ['Update error','text-red-300','bg-red-950/60']
+      : d.region_profile && !d.profile_confirmed ? ['Region not confirmed','text-amber-300','bg-amber-950/60']
+      : d.region_profile && !profileMatches ? ['Profile mismatch','text-amber-300','bg-amber-950/60']
       : d.wifi_rssi && d.wifi_rssi < -75 ? ['Weak WiFi','text-amber-300','bg-amber-950/60']
       : d.heap_free && d.heap_free < 70000 ? ['Low memory','text-amber-300','bg-amber-950/60']
       : ['Healthy','text-green-300','bg-green-950/50'];
     var position = (d.latitude || d.longitude) ? Number(d.latitude).toFixed(5)+', '+Number(d.longitude).toFixed(5)+' ('+perfEsc(d.position_source || 'position')+')' : 'No device position reported';
     var localLink = d.local_ip ? '<a target="_blank" rel="noopener" href="http://'+perfEsc(d.local_ip)+'/" class="text-blue-400 hover:underline">Open local interface ↗</a>' : 'Local address unavailable';
     var updateNote = d.update_state && d.update_state !== 'idle' ? '<div class="mt-2 rounded border border-blue-900 bg-blue-950/40 px-2 py-1 text-[10px] text-blue-300">Firmware update: '+perfEsc(d.update_state)+' · '+perfEsc(d.update_message || '')+'</div>' : '';
+    var regionNames = {uk:'United Kingdom',iaru1:'IARU Region 1 common',custom:'Custom / locally coordinated',unconfigured:'Not configured'};
+    var regionDetail = d.region_profile
+      ? '<div class="mt-2 rounded border '+(profileMatches?'border-green-900 bg-green-950/20 text-green-300':'border-amber-900 bg-amber-950/30 text-amber-300')+' px-2 py-1.5 text-[10px]">'
+        + '<span class="font-bold">Regional profile:</span> '+perfEsc(regionNames[d.region_profile] || d.region_profile)
+        + (d.country_code ? ' · '+perfEsc(d.country_code) : '')
+        + ' · RX '+Number(d.rx_frequency || 0).toLocaleString()+' Hz · TX '+Number(d.tx_frequency || 0).toLocaleString()+' Hz'
+        + ' · SF'+Number(d.spreading_factor || 0)+' · CR 4/'+Number(d.coding_rate || 0)+' · '+Number(d.bandwidth || 0).toLocaleString()+' Hz'
+        + ' · '+Number(d.tx_power || 0)+' dBm · '+perfEsc(d.timezone || 'timezone not reported')
+        + (!d.profile_confirmed ? ' · Operator confirmation required' : profileMatches?'':' · Values differ from the selected preset')
+        + '</div>'
+      : '<div class="mt-2 rounded border border-gray-800 bg-gray-950/40 px-2 py-1.5 text-[10px] text-gray-500">Regional profile details will appear after the next firmware update and telemetry report.</div>';
     return [
       '<article class="bg-gray-900 border border-gray-700 rounded-lg p-2.5">',
         '<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-2">',
@@ -13568,6 +13592,7 @@ function renderIGates(list) {
           '<p><span class="text-gray-600">Location:</span> '+position+'</p>',
           '<p><span class="text-gray-600">Device page:</span> '+localLink+'</p>',
         '</div>',
+        regionDetail,
         (online ? '<div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5">'
           + '<button onclick="sendIGateCmd(decodeURIComponent(\''+encodedCall+'\'),\'restart\')" class="bg-red-900 hover:bg-red-800 text-red-200 text-[10px] px-2 py-1.5 rounded font-bold">⟳ Restart</button>'
           + '<button onclick="sendIGateCmd(decodeURIComponent(\''+encodedCall+'\'),\'beacon\')" class="bg-teal-900 hover:bg-teal-800 text-teal-200 text-[10px] px-2 py-1.5 rounded font-bold">📡 Force beacon</button>'

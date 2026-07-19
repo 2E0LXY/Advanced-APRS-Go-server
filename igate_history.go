@@ -65,11 +65,16 @@ type IGateHeardSummary struct {
 var (
 	igateHistoryMu       sync.RWMutex
 	igateHistory         = make(map[string]*IGateHeardState)
+	igateStationCounts   = make(map[string]int)
 	lastIGateHistorySave time.Time
 )
 
 func heardStateKey(memberID, deviceCall, stationCall string) string {
 	return memberID + "|" + strings.ToUpper(deviceCall) + "|" + strings.ToUpper(stationCall)
+}
+
+func heardDeviceKey(memberID, deviceCall string) string {
+	return memberID + "|" + strings.ToUpper(deviceCall)
 }
 
 func loadIGateHistory() {
@@ -90,15 +95,27 @@ func loadIGateHistory() {
 	}
 	igateHistoryMu.Lock()
 	igateHistory = saved
+	igateStationCounts = make(map[string]int)
+	for _, state := range saved {
+		igateStationCounts[heardDeviceKey(state.MemberID, state.DeviceCall)]++
+	}
 	igateHistoryMu.Unlock()
 }
 
-func saveIGateHistoryLocked() {
+func prepareIGateHistorySaveLocked() []byte {
 	if !lastIGateHistorySave.IsZero() && time.Since(lastIGateHistorySave) < igateHistorySaveInterval {
-		return
+		return nil
 	}
 	data, err := json.Marshal(igateHistory)
 	if err != nil {
+		return nil
+	}
+	lastIGateHistorySave = time.Now()
+	return data
+}
+
+func saveIGateHistoryData(data []byte) {
+	if len(data) == 0 {
 		return
 	}
 	tmp := igateHistoryFile + ".tmp"
@@ -111,17 +128,10 @@ func saveIGateHistoryLocked() {
 		_ = os.Remove(igateHistoryFile)
 		_ = os.Rename(tmp, igateHistoryFile)
 	}
-	lastIGateHistorySave = time.Now()
 }
 
 func igateStationCountLocked(memberID, deviceCall string) int {
-	count := 0
-	for _, state := range igateHistory {
-		if state.MemberID == memberID && strings.EqualFold(state.DeviceCall, deviceCall) {
-			count++
-		}
-	}
-	return count
+	return igateStationCounts[heardDeviceKey(memberID, deviceCall)]
 }
 
 func telemetryInt(m map[string]interface{}, key string) int {
@@ -146,7 +156,6 @@ func updateIGateHeard(memberID, deviceCall string, deviceUptime int64, raw inter
 	now := time.Now().Unix()
 	cutoff := now - int64(igateHistoryRetention.Seconds())
 	igateHistoryMu.Lock()
-	defer igateHistoryMu.Unlock()
 
 	for index, entry := range entries {
 		if index >= maxHeardStationsPerIGate {
@@ -158,7 +167,7 @@ func updateIGateHeard(memberID, deviceCall string, deviceUptime int64, raw inter
 		}
 		call, _ := m["callsign"].(string)
 		call = strings.ToUpper(strings.TrimSpace(call))
-		if !validMQTTCall(call) {
+		if !validAPRSStationCall(call) {
 			continue
 		}
 		packets := telemetryInt(m, "packets")
@@ -181,6 +190,7 @@ func updateIGateHeard(memberID, deviceCall string, deviceUptime int64, raw inter
 			}
 			state = &IGateHeardState{MemberID: memberID, DeviceCall: strings.ToUpper(deviceCall), Callsign: call}
 			igateHistory[key] = state
+			igateStationCounts[heardDeviceKey(memberID, deviceCall)]++
 		}
 
 		delta := 0
@@ -234,9 +244,17 @@ func updateIGateHeard(memberID, deviceCall string, deviceUptime int64, raw inter
 		pruneHeardEvents(state, cutoff)
 		if len(state.Events) == 0 && state.LastHeard < cutoff {
 			delete(igateHistory, key)
+			deviceKey := heardDeviceKey(state.MemberID, state.DeviceCall)
+			if igateStationCounts[deviceKey] <= 1 {
+				delete(igateStationCounts, deviceKey)
+			} else {
+				igateStationCounts[deviceKey]--
+			}
 		}
 	}
-	saveIGateHistoryLocked()
+	saveData := prepareIGateHistorySaveLocked()
+	igateHistoryMu.Unlock()
+	saveIGateHistoryData(saveData)
 }
 
 func pruneHeardEvents(state *IGateHeardState, cutoff int64) {

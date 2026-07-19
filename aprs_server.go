@@ -29,7 +29,7 @@ import (
 )
 
 // AppVersion is the running server version, compared against GitHub releases.
-const AppVersion = "2.2.0"
+const AppVersion = "2.3.0"
 
 type AppConfig struct {
 	ServerName     string  `json:"server_name"`
@@ -95,7 +95,7 @@ var (
 	}{StartTime: time.Now()}
 
 	clients       = make(map[*wsClient]bool)
-	clientsMu     sync.Mutex
+	clientsMu     sync.RWMutex
 	broadcast     = make(chan string, 5000)
 	upstreamOut   = make(chan string, 5000)
 	reconnectChan = make(chan struct{}, 1)

@@ -56,8 +56,9 @@ The server powers four dedicated clients — all open source under GPL v3:
 
 - Private MQTT telemetry and remote controls for each member's ESP32 iGate
 - Rolling 24-hour per-device heard-station history retained across device reboots
-- First/last-heard times, packet counts, RSSI/SNR averages and ranges, frequency error, and distance in miles
+- First/last-heard times, packet counts, RSSI/SNR averages and ranges, frequency error, and distance in each device's selected miles/kilometres unit
 - Board, firmware, Wi-Fi, heap, uptime, position and local-interface health details
+- Regional profile confirmation and radio-setting mismatch warnings
 - One-click board-specific GitHub firmware updates and CSV history export
 
 ### 📱 TCP APRS-IS Client Server (port 14580)
@@ -305,6 +306,7 @@ curl -X POST https://your-domain/api/admin/update -u admin:PASSWORD
 
 | Version | Changes |
 |---------|---------|
+| v2.3.0 | International iGate regional telemetry, profile mismatch warnings, selected distance units, safer MQTT forwarding and portable callsign history support |
 | v2.2.0 | Per-device 24-hour RF heard history, signal and distance table, health details, CSV export, and remote GitHub firmware update control |
 | v2.1.0 | Admin-only seven-day server performance and issue history; MQTT safety limits and authentication counters; HTTP timeouts; public integration-secret exposure removed |
 | v1.6.x | Ecowitt weather station APRS WX beaconing (server-side polling, APRS WX formatter, `wx_test` proxy endpoint); member modal scroll fix; weather settings section in member settings panel |
