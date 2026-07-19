@@ -268,10 +268,11 @@ func handleMQTTClient(conn net.Conn) {
 		return
 	}
 	protoLevel := pkt[pos]; pos++
-	if protoLevel != 4 {
+	if protoLevel != 4 && protoLevel != 3 {
 		mc.send(mqttConnack(1)) // unacceptable protocol level
 		return
 	}
+	// Accept both MQTT 3.1 (level 3, PubSubClient default) and 3.1.1 (level 4)
 	flags := pkt[pos]; pos++
 	pos += 2 // keep-alive
 
@@ -292,9 +293,10 @@ func handleMQTTClient(conn net.Conn) {
 	memberID, ownerCall := mqttAuthMember(username, password)
 	if memberID == "" {
 		mc.send(mqttConnack(4)) // bad credentials
-		log.Printf("MQTT iGate: auth failed for '%s'", username)
+		log.Printf("MQTT iGate: auth failed for '%s' (clientID=%s)", username, clientID)
 		return
 	}
+	log.Printf("MQTT iGate: auth OK user=%s device=%s proto=%d", username, clientID, protoLevel)
 
 	deviceCall := strings.ToUpper(strings.TrimSpace(clientID))
 	if deviceCall == "" {
