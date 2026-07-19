@@ -306,6 +306,7 @@ curl -X POST https://your-domain/api/admin/update -u admin:PASSWORD
 
 | Version | Changes |
 |---------|---------|
+| v2.3.1 | Scrollable member dashboard on desktop and mobile; logical client grouping; real client IP display behind the proxy; per-install WebSocket replacement to prevent stale Android reconnects |
 | v2.3.0 | International iGate regional telemetry, profile mismatch warnings, selected distance units, safer MQTT forwarding and portable callsign history support |
 | v2.2.0 | Per-device 24-hour RF heard history, signal and distance table, health details, CSV export, and remote GitHub firmware update control |
 | v2.1.0 | Admin-only seven-day server performance and issue history; MQTT safety limits and authentication counters; HTTP timeouts; public integration-secret exposure removed |

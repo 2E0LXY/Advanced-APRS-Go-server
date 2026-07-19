@@ -338,10 +338,36 @@ body { background: var(--bg-base); color: var(--text-base); }
   z-index: 100000 !important;
 }
 
-/* Member modal: hard-clip container so the inner overflow-y-auto
-   actually scrolls. Without this, max-h-[90vh] is advisory only and
-   the modal grows to fit its content instead of scrolling. */
-#member-modal > div { overflow: hidden; }
+/* Member modal: use explicit viewport sizing rather than Tailwind's
+   arbitrary max-h-[90vh] utility. The production Tailwind build does not
+   emit that rule, which allowed a large iGate history table to make the
+   dialog thousands of pixels tall and move its header off-screen. */
+#member-modal {
+  overflow: hidden;
+}
+#member-modal > .member-modal-shell {
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  min-height: 0;
+  overflow: hidden;
+}
+#member-modal .member-modal-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+@media (max-width: 640px) {
+  #member-modal {
+    padding: 0.5rem;
+  }
+  #member-modal > .member-modal-shell {
+    max-height: calc(100vh - 1rem);
+    max-height: calc(100dvh - 1rem);
+  }
+}
 
 /* ── Message thread backgrounds (mirrors Android MessageBackground.kt) ──
    7 selectable styles, applied via msg-bg-N class on #message-thread.
@@ -3895,22 +3921,47 @@ async function loadStatus() {
     } else { hd.innerText='Disconnected'; hd.className='text-base font-mono text-red-400'; hl.classList.add('hidden'); }
     const tb = document.getElementById('client-list'); tb.innerHTML='';
     const clients = d.clients||[];
+    const groupedClients = [];
+    const groupedByIdentity = {};
+    clients.forEach(function(c) {
+      // Present repeated sockets from the same callsign/software/address as
+      // one logical client row. The server still reports the real connection
+      // count, and newer Android builds also replace stale sockets by their
+      // persistent installation ID.
+      const key = [c.call||'', c.type||'', c.soft||'', c.addr||''].join('\u001f');
+      if (groupedByIdentity[key]) {
+        groupedByIdentity[key].connections++;
+        groupedByIdentity[key].since = Math.min(groupedByIdentity[key].since || c.since || 0, c.since || 0);
+      } else {
+        const copy = Object.assign({}, c, {connections: 1});
+        groupedByIdentity[key] = copy;
+        groupedClients.push(copy);
+      }
+    });
     const cc = document.getElementById('client-count');
-    if(cc) cc.innerText = '('+clients.length+' connected)';
-    clients.forEach(c => {
+    if(cc) {
+      cc.innerText = groupedClients.length === clients.length
+        ? '('+clients.length+' connected)'
+        : '('+clients.length+' connections · '+groupedClients.length+' clients)';
+    }
+    groupedClients.forEach(c => {
       const typeColor = c.type==='tcp' ? 'text-purple-400' : 'text-blue-400';
       const typeBadge = c.type==='tcp'
         ? '<span class="bg-purple-900 text-purple-300 px-1 rounded">TCP</span>'
         : '<span class="bg-blue-900 text-blue-300 px-1 rounded">WS</span>';
       const verified = c.type==='tcp'
         ? (c.verified ? '<span class="text-green-400">✓ Verified</span>' : '<span class="text-yellow-400">Unverified (RX only)</span>')
-        : '<span class="text-green-400">✓ Auth</span>';
+        : '<span class="text-green-400">✓ Auth'
+          +(c.connections>1 ? ' · '+c.connections+' sockets' : '')+'</span>';
+      const call = perfEsc(c.call||'');
+      const software = perfEsc(c.soft||'');
+      const address = perfEsc(c.addr||'');
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td class="p-2 font-bold ${typeColor}"><a href="https://qrz.com/db/${baseCall(c.call)}" target="_blank" class="hover:underline">${c.call}</a></td>
+        <td class="p-2 font-bold ${typeColor}"><a href="https://qrz.com/db/${encodeURIComponent(baseCall(c.call||''))}" target="_blank" rel="noopener" class="hover:underline">${call}</a></td>
         <td class="p-2">${typeBadge}</td>
-        <td class="p-2 text-gray-400 text-[10px]">${c.soft||''}</td>
-        <td class="p-2 font-mono text-gray-500 text-[10px]">${c.addr||''}</td>
+        <td class="p-2 text-gray-400 text-[10px]">${software}</td>
+        <td class="p-2 font-mono text-gray-500 text-[10px]">${address}</td>
         <td class="p-2">${verified}</td>`;
       tb.appendChild(tr);
     });
@@ -8741,6 +8792,8 @@ function updateMemberBtn() {
 function openMemberPanel() {
   var modal = document.getElementById('member-modal');
   modal.classList.remove('hidden');
+  var scroller = modal.querySelector('.member-modal-scroll');
+  if (scroller) scroller.scrollTop = 0;
   if (_memberSession) {
     showMMView('dashboard');
     loadMemberDashboard();
@@ -8751,6 +8804,8 @@ function openMemberPanel() {
 
 function closeMemberModal() {
   document.getElementById('member-modal').classList.add('hidden');
+  var memberBtn = document.getElementById('member-btn');
+  if (memberBtn) memberBtn.focus();
 }
 
 function showMMView(view) {
@@ -8758,6 +8813,8 @@ function showMMView(view) {
     document.getElementById('mm-' + v).classList.add('hidden');
   });
   document.getElementById('mm-' + view).classList.remove('hidden');
+  var scroller = document.querySelector('#member-modal .member-modal-scroll');
+  if (scroller) scroller.scrollTop = 0;
   var titles = { login: ['Member Login','Sign in to your account'],
     register: ['Create Account','Join the APRS community'],
     dashboard: [(_memberSession ? _memberSession.callsign : '') + ' — Member Dashboard','Your APRS account'] };
@@ -13878,6 +13935,10 @@ document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') {
     closeSearchModal();
     closeToolsMenu();
+    var memberModal = document.getElementById('member-modal');
+    if (memberModal && !memberModal.classList.contains('hidden')) {
+      closeMemberModal();
+    }
   }
 });
 </script>
@@ -13932,8 +13993,8 @@ document.addEventListener('keydown', function(e) {
 </div>
 
 <!-- Member Login/Register/Dashboard Modal -->
-<div id="member-modal" class="hidden fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black bg-opacity-70" onclick="if(event.target===this)closeMemberModal()">
-  <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl lg:max-w-5xl max-h-[90vh] flex flex-col">
+<div id="member-modal" role="dialog" aria-modal="true" aria-labelledby="mm-title" class="hidden fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black bg-opacity-70" onclick="if(event.target===this)closeMemberModal()">
+  <div class="member-modal-shell bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl lg:max-w-5xl flex flex-col">
 
     <!-- Header -->
     <div class="flex items-center justify-between p-2 border-b border-gray-700 flex-shrink-0">
@@ -13944,11 +14005,11 @@ document.addEventListener('keydown', function(e) {
           <p id="mm-subtitle" class="text-[11px] text-gray-400">Access your APRS account</p>
         </div>
       </div>
-      <button onclick="closeMemberModal()" class="text-gray-400 hover:text-white text-lg">✕</button>
+      <button type="button" aria-label="Close member dashboard" onclick="closeMemberModal()" class="text-gray-400 hover:text-white text-lg">✕</button>
     </div>
 
     <!-- Content -->
-    <div class="flex-1 overflow-y-auto p-3 min-h-0">
+    <div class="member-modal-scroll flex-1 overflow-y-auto p-3 min-h-0" tabindex="0">
 
       <!-- LOGIN FORM -->
       <div id="mm-login" class="space-y-3">
