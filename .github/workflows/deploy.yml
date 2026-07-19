@@ -1,17 +1,5 @@
 name: Deploy to theloxleys
 
-# Triggers:
-#  1. Automatically on every push to main
-#  2. Manually from the Actions tab (workflow_dispatch)
-#
-# Required repository secret:
-#   SERVER_SSH_KEY  — private key whose public key is in root@theloxleys:~/.ssh/authorized_keys
-#
-# To add the secret:
-#   GitHub → repo → Settings → Secrets and variables → Actions → New repository secret
-#   Name:  SERVER_SSH_KEY
-#   Value: paste the full private key (-----BEGIN ... -----END ...)
-
 on:
   push:
     branches: [main]
@@ -37,6 +25,12 @@ jobs:
 
             echo "=== rebuild binary ==="
             /usr/local/go/bin/go build -o aprs_server .
+
+            echo "=== open MQTT port 1883 ==="
+            ufw allow 1883/tcp comment "APRS iGate MQTT" 2>/dev/null || true
+            ufw status | grep 1883 || echo "(ufw not active - checking iptables)"
+            iptables -C INPUT -p tcp --dport 1883 -j ACCEPT 2>/dev/null || \
+              iptables -I INPUT -p tcp --dport 1883 -j ACCEPT 2>/dev/null || true
 
             echo "=== restart service ==="
             systemctl restart aprs
