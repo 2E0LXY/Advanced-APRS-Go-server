@@ -11968,28 +11968,36 @@ function saveWxSettings() {
   var token = _memberSession && _memberSession.token;
   if (!token) { showWxStatus('Not signed in', false); return; }
   var el = function(id) { return document.getElementById(id); };
-  var prefs = (_memberSession && _memberSession.preferences) ? Object.assign({}, _memberSession.preferences) : {};
-  prefs.wx_enabled   = el('wx-enabled')  ? el('wx-enabled').checked  : false;
-  prefs.wx_app_key   = el('wx-app-key')  ? el('wx-app-key').value.trim()  : '';
-  prefs.wx_api_key   = el('wx-api-key')  ? el('wx-api-key').value.trim()  : '';
-  prefs.wx_mac       = el('wx-mac')      ? el('wx-mac').value.trim()       : '';
-  prefs.wx_lat       = el('wx-lat')      ? parseFloat(el('wx-lat').value)  || 0 : 0;
-  prefs.wx_lon       = el('wx-lon')      ? parseFloat(el('wx-lon').value)  || 0 : 0;
-  prefs.wx_interval  = wxSelectedInterval;
-  prefs.wx_ssid      = el('wx-ssid')     ? parseInt(el('wx-ssid').value)   || 13 : 13;
-  prefs.wx_pressure  = el('wx-pressure') ? el('wx-pressure').value         : 'relative';
-  prefs.wx_solar     = el('wx-solar')    ? el('wx-solar').checked          : false;
-  prefs.wx_uv        = el('wx-uv')       ? el('wx-uv').checked             : false;
-  prefs.wx_lightning = el('wx-lightning')? el('wx-lightning').checked      : false;
-  prefs.wx_comment   = el('wx-comment')  ? el('wx-comment').value.trim()   : '';
+
+  // Build wx prefs — rely on server-side merge to preserve all other keys
+  // (msg_background, bubble_colour, drop_pistar, etc.).
+  // Do NOT read _memberSession.preferences — it is never populated.
+  // Use _memberSession.prefs (set by applyMemberPrefsFromServer) as the merge base.
+  var wxPrefs = {
+    wx_enabled:   el('wx-enabled')  ? el('wx-enabled').checked         : false,
+    wx_app_key:   el('wx-app-key')  ? el('wx-app-key').value.trim()    : '',
+    wx_api_key:   el('wx-api-key')  ? el('wx-api-key').value.trim()    : '',
+    wx_mac:       el('wx-mac')      ? el('wx-mac').value.trim()        : '',
+    wx_lat:       el('wx-lat')      ? parseFloat(el('wx-lat').value)   || 0 : 0,
+    wx_lon:       el('wx-lon')      ? parseFloat(el('wx-lon').value)   || 0 : 0,
+    wx_interval:  wxSelectedInterval,
+    wx_ssid:      el('wx-ssid')     ? parseInt(el('wx-ssid').value)    || 13 : 13,
+    wx_pressure:  el('wx-pressure') ? el('wx-pressure').value          : 'relative',
+    wx_solar:     el('wx-solar')    ? el('wx-solar').checked           : false,
+    wx_uv:        el('wx-uv')       ? el('wx-uv').checked              : false,
+    wx_lightning: el('wx-lightning')? el('wx-lightning').checked       : false,
+    wx_comment:   el('wx-comment')  ? el('wx-comment').value.trim()    : ''
+  };
 
   fetch('/api/member/preferences', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', 'X-Member-Token': token },
-    body: JSON.stringify(prefs)
+    body: JSON.stringify(wxPrefs)
   }).then(function(r) { return r.json(); }).then(function(d) {
     if (d.ok) {
-      if (_memberSession) _memberSession.preferences = prefs;
+      // Keep _memberSession.prefs in sync so the form repopulates correctly
+      // if the user re-opens the WX panel without a page refresh.
+      if (_memberSession) _memberSession.prefs = Object.assign(_memberSession.prefs || {}, wxPrefs);
       showWxStatus('✓ Weather settings saved', true);
     } else {
       showWxStatus('Error: ' + (d.error || 'unknown'), false);
@@ -12546,17 +12554,11 @@ function drawPropLines() {
   }
 }
 
-// Restore prop-lines state
-(function() {
-  try {
-    if (localStorage.getItem('aprs-proplines') === '1') {
-      setTimeout(function() {
-        var cb = document.getElementById('propLines');
-        if (cb) { cb.checked = true; togglePropLines(true); }
-      }, 1800);
-    }
-  } catch(e) {}
-})();
+// Prop-lines deliberately NOT restored from localStorage on page load.
+// The feature draws lines to every heard station and is visually disruptive
+// if left on across sessions. Users can re-enable it manually each visit.
+// We still save their last choice so the toggle works correctly mid-session.
+try { localStorage.removeItem('aprs-proplines'); } catch(e) {}
 
 // Redraw prop lines periodically
 setInterval(function() { if (_propLinesEnabled) drawPropLines(); }, 30000);
