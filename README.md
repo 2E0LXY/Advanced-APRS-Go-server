@@ -52,6 +52,14 @@ The server powers four dedicated clients — all open source under GPL v3:
 - Configurable subscription filter with in-browser visual builder
 - Server-wide drop filters for Pi-Star/MMDVM, D-STAR, and APDESK traffic
 
+### 📻 LoRa iGate Fleet Management
+
+- Private MQTT telemetry and remote controls for each member's ESP32 iGate
+- Rolling 24-hour per-device heard-station history retained across device reboots
+- First/last-heard times, packet counts, RSSI/SNR averages and ranges, frequency error, and distance in miles
+- Board, firmware, Wi-Fi, heap, uptime, position and local-interface health details
+- One-click board-specific GitHub firmware updates and CSV history export
+
 ### 📱 TCP APRS-IS Client Server (port 14580)
 
 - Standard APRS-IS protocol — compatible with APRSDroid, YAAC, APRSIS32, Xastir, Direwolf
@@ -297,6 +305,7 @@ curl -X POST https://your-domain/api/admin/update -u admin:PASSWORD
 
 | Version | Changes |
 |---------|---------|
+| v2.2.0 | Per-device 24-hour RF heard history, signal and distance table, health details, CSV export, and remote GitHub firmware update control |
 | v2.1.0 | Admin-only seven-day server performance and issue history; MQTT safety limits and authentication counters; HTTP timeouts; public integration-secret exposure removed |
 | v1.6.x | Ecowitt weather station APRS WX beaconing (server-side polling, APRS WX formatter, `wx_test` proxy endpoint); member modal scroll fix; weather settings section in member settings panel |
 | v1.5.x | Cross-device message sync — `direction` field on StoredMessage, sender copy stored, real-time WS echo to sender sessions; `member_sync` WS push on preferences save |

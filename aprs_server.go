@@ -29,7 +29,7 @@ import (
 )
 
 // AppVersion is the running server version, compared against GitHub releases.
-const AppVersion = "2.1.0"
+const AppVersion = "2.2.0"
 
 type AppConfig struct {
 	ServerName     string  `json:"server_name"`
@@ -915,6 +915,7 @@ func main() {
 	apiKeys = make(map[string]APIKey)
 	loadWebhooksAndKeys()
 	loadMemberStore()
+	loadIGateHistory()
 	loadBanList()
 	loadMOTD()
 	go cleanExpiredSessions()

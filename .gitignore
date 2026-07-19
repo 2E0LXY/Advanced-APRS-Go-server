@@ -12,8 +12,11 @@ apikeys.json
 bans.json
 motd.json
 audit.log
+igate_history.json
+igate_history.json.tmp
 
 # Temp patch scripts
 *.py
+*.exe
 *.bak
 index_work.html

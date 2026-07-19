@@ -30,20 +30,29 @@ import (
 // ── iGate Device State ─────────────────────────────────────────────────────
 
 type IGateDevice struct {
-	DeviceCall string  `json:"call"`
-	OwnerCall  string  `json:"owner"`
-	MemberID   string  `json:"-"`
-	Online     bool    `json:"online"`
-	LastSeen   int64   `json:"last_seen"`
-	Uptime     int64   `json:"uptime_sec"`
-	HeapFree   int     `json:"heap_free"`
-	WifiRSSI   int     `json:"wifi_rssi"`
-	PacketsRx  int     `json:"packets_rx"`
-	PacketsTx  int     `json:"packets_tx"`
-	Battery    float64 `json:"battery_v"`
-	FW         string  `json:"fw"`
-	APRSIP     string  `json:"aprs_server"`
-	conn       *mqttConn
+	DeviceCall     string              `json:"call"`
+	OwnerCall      string              `json:"owner"`
+	MemberID       string              `json:"-"`
+	Online         bool                `json:"online"`
+	LastSeen       int64               `json:"last_seen"`
+	Uptime         int64               `json:"uptime_sec"`
+	HeapFree       int                 `json:"heap_free"`
+	WifiRSSI       int                 `json:"wifi_rssi"`
+	PacketsRx      int                 `json:"packets_rx"`
+	PacketsTx      int                 `json:"packets_tx"`
+	Battery        float64             `json:"battery_v"`
+	FW             string              `json:"fw"`
+	APRSIP         string              `json:"aprs_server"`
+	Board          string              `json:"board,omitempty"`
+	LocalIP        string              `json:"local_ip,omitempty"`
+	MQTTState      int                 `json:"mqtt_state"`
+	Latitude       float64             `json:"latitude,omitempty"`
+	Longitude      float64             `json:"longitude,omitempty"`
+	PositionSource string              `json:"position_source,omitempty"`
+	UpdateState    string              `json:"update_state,omitempty"`
+	UpdateMessage  string              `json:"update_message,omitempty"`
+	Heard          []IGateHeardSummary `json:"heard_24h"`
+	conn           *mqttConn
 }
 
 var (
@@ -53,6 +62,26 @@ var (
 
 func igateKey(memberID, deviceCall string) string {
 	return memberID + "|" + strings.ToUpper(deviceCall)
+}
+
+func validMQTTCall(call string) bool {
+	if len(call) < 1 || len(call) > 15 {
+		return false
+	}
+	for _, r := range call {
+		if (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+func boundedTelemetryString(value string, max int) string {
+	value = strings.TrimSpace(value)
+	if len(value) > max {
+		return value[:max]
+	}
+	return value
 }
 
 func markIGateOffline(key string, closing *mqttConn) bool {
@@ -292,6 +321,7 @@ func broadcastIGateStatus(memberID string) {
 		if d.MemberID == memberID {
 			cp := *d
 			cp.conn = nil
+			cp.Heard = buildIGateHeardSummaries(d.MemberID, d.DeviceCall, d.Latitude, d.Longitude)
 			list = append(list, cp)
 		}
 	}
@@ -386,6 +416,11 @@ func handleMQTTClient(conn net.Conn) {
 	deviceCall := strings.ToUpper(strings.TrimSpace(clientID))
 	if deviceCall == "" {
 		deviceCall = strings.ToUpper(ownerCall)
+	}
+	if !validMQTTCall(deviceCall) {
+		atomic.AddInt64(&mqttConnectionsRejected, 1)
+		mc.send(mqttConnack(2))
+		return
 	}
 	mc.memberID = memberID
 	mc.ownerCall = ownerCall
@@ -585,11 +620,42 @@ func (mc *mqttConn) mqttHandleTelemetry(payload string) {
 		d.FW = v
 	}
 	if v, ok := tel["aprs_server"].(string); ok {
-		d.APRSIP = v
+		d.APRSIP = boundedTelemetryString(v, 128)
+	}
+	if v, ok := tel["board"].(string); ok {
+		d.Board = boundedTelemetryString(v, 80)
+	}
+	if v, ok := tel["local_ip"].(string); ok {
+		if ip := net.ParseIP(strings.TrimSpace(v)); ip != nil && ip.To4() != nil && (ip.IsPrivate() || ip.IsLoopback()) {
+			d.LocalIP = ip.String()
+		} else {
+			d.LocalIP = ""
+		}
+	}
+	if v, ok := tel["mqtt_state"].(float64); ok {
+		d.MQTTState = int(v)
+	}
+	if v, ok := tel["latitude"].(float64); ok {
+		d.Latitude = v
+	}
+	if v, ok := tel["longitude"].(float64); ok {
+		d.Longitude = v
+	}
+	if v, ok := tel["position_source"].(string); ok {
+		d.PositionSource = boundedTelemetryString(v, 20)
+	}
+	if v, ok := tel["update_state"].(string); ok {
+		d.UpdateState = boundedTelemetryString(v, 20)
+	}
+	if v, ok := tel["update_message"].(string); ok {
+		d.UpdateMessage = boundedTelemetryString(v, 160)
 	}
 	memberID := d.MemberID
+	deviceCall := d.DeviceCall
+	uptime := d.Uptime
 	igatesMu.Unlock()
 
+	updateIGateHeard(memberID, deviceCall, uptime, tel["heard"])
 	broadcastIGateStatus(memberID)
 }
 
@@ -628,6 +694,7 @@ func handleMemberIGates(w http.ResponseWriter, r *http.Request) {
 		if d.MemberID == m.ID {
 			cp := *d
 			cp.conn = nil
+			cp.Heard = buildIGateHeardSummaries(d.MemberID, d.DeviceCall, d.Latitude, d.Longitude)
 			list = append(list, cp)
 		}
 	}
@@ -680,6 +747,12 @@ func handleIGateCmd(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Cmd == "" {
 		w.WriteHeader(400)
 		json.NewEncoder(w).Encode(map[string]string{"error": "cmd required"})
+		return
+	}
+	allowed := map[string]bool{"restart": true, "beacon": true, "telemetry": true, "aprs": true, "update": true}
+	if !allowed[req.Cmd] {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "unsupported device command"})
 		return
 	}
 

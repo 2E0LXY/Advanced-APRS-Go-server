@@ -13456,66 +13456,142 @@ function loadIGates() {
     .catch(function() {});
 }
 
+var _igateDevicesByCall = {};
+
+function igateAge(ts) {
+  if (!ts) return '—';
+  var seconds = Math.max(0, Math.floor(Date.now()/1000 - ts));
+  if (seconds < 60) return seconds + 's ago';
+  if (seconds < 3600) return Math.floor(seconds/60) + 'm ago';
+  if (seconds < 86400) return Math.floor(seconds/3600) + 'h ' + Math.floor((seconds%3600)/60) + 'm ago';
+  return Math.floor(seconds/86400) + 'd ago';
+}
+
+function igateDuration(seconds) {
+  seconds = Number(seconds) || 0;
+  if (!seconds) return '—';
+  var days = Math.floor(seconds/86400), hours = Math.floor((seconds%86400)/3600), mins = Math.floor((seconds%3600)/60);
+  return (days ? days+'d ' : '') + (hours ? hours+'h ' : '') + mins+'m';
+}
+
+function igateSignalClass(rssi) {
+  if (rssi >= -70) return 'text-green-400';
+  if (rssi >= -90) return 'text-amber-400';
+  return 'text-red-400';
+}
+
+function igateHeardRows(d) {
+  var heard = Array.isArray(d.heard_24h) ? d.heard_24h : [];
+  if (!heard.length) return '<tr><td colspan="8" class="p-4 text-center text-gray-600">No RF stations recorded in this device\'s rolling 24-hour window yet.</td></tr>';
+  return heard.map(function(s) {
+    var call = perfEsc(s.callsign || '—');
+    var aprsLink = 'https://aprs.fi/#!call=a%2F' + encodeURIComponent(s.callsign || '');
+    var last = s.last_heard ? new Date(s.last_heard*1000).toLocaleString() : '—';
+    var first = s.first_heard ? new Date(s.first_heard*1000).toLocaleString() : '—';
+    var rssiRange = Number(s.min_rssi || 0) + '…' + Number(s.max_rssi || 0);
+    var snrRange = Number(s.min_snr || 0).toFixed(1) + '…' + Number(s.max_snr || 0).toFixed(1);
+    var distance = s.has_distance ? Number(s.distance_miles).toFixed(1) + ' mi' : 'Position unavailable';
+    return '<tr class="border-t border-gray-800 hover:bg-gray-800/60">'
+      + '<td class="p-2"><a class="text-cyan-400 hover:underline font-mono font-bold" target="_blank" rel="noopener" href="'+aprsLink+'">'+call+'</a></td>'
+      + '<td class="p-2 whitespace-nowrap"><span class="text-gray-200">'+perfEsc(last)+'</span><span class="block text-[9px] text-gray-600">'+perfEsc(igateAge(s.last_heard))+'</span></td>'
+      + '<td class="p-2 whitespace-nowrap text-gray-400">'+perfEsc(first)+'</td>'
+      + '<td class="p-2 text-right font-mono text-white">'+Number(s.packets || 0).toLocaleString()+'</td>'
+      + '<td class="p-2 text-right font-mono '+igateSignalClass(Number(s.last_rssi))+'">'+Number(s.last_rssi || 0)+'<span class="block text-[9px] text-gray-600">avg '+Number(s.avg_rssi || 0).toFixed(1)+' · '+rssiRange+'</span></td>'
+      + '<td class="p-2 text-right font-mono text-purple-300">'+Number(s.last_snr || 0).toFixed(1)+'<span class="block text-[9px] text-gray-600">avg '+Number(s.avg_snr || 0).toFixed(1)+' · '+snrRange+'</span></td>'
+      + '<td class="p-2 text-right whitespace-nowrap text-blue-300">'+perfEsc(distance)+'</td>'
+      + '<td class="p-2 text-right font-mono text-gray-500">'+Number(s.freq_error || 0).toLocaleString()+' Hz</td>'
+      + '</tr>';
+  }).join('');
+}
+
+function exportIGateHeardCSV(encodedCall) {
+  var call = decodeURIComponent(encodedCall), d = _igateDevicesByCall[call];
+  if (!d) return;
+  var rows = [['Station','First heard','Last heard','Packets','RSSI last','RSSI average','RSSI min','RSSI max','SNR last','SNR average','SNR min','SNR max','Distance miles','Frequency error Hz']];
+  (d.heard_24h || []).forEach(function(s) {
+    rows.push([s.callsign, new Date(s.first_heard*1000).toISOString(), new Date(s.last_heard*1000).toISOString(), s.packets,
+      s.last_rssi,s.avg_rssi,s.min_rssi,s.max_rssi,s.last_snr,s.avg_snr,s.min_snr,s.max_snr,s.has_distance?Number(s.distance_miles).toFixed(2):'',s.freq_error]);
+  });
+  var csv = rows.map(function(row) { return row.map(function(v) { return '"'+String(v == null ? '' : v).replace(/"/g,'""')+'"'; }).join(','); }).join('\r\n');
+  var blob = new Blob([csv], {type:'text/csv'}), a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = call.replace(/[^A-Z0-9-]/gi,'_') + '-heard-24h.csv'; a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+}
+
+function requestIGateUpdate(encodedCall) {
+  var call = decodeURIComponent(encodedCall);
+  if (!confirm('Update '+call+' from the latest matching GitHub firmware release? Keep the device powered. It will reboot automatically.')) return;
+  sendIGateCmd(call, 'update');
+}
+
 function renderIGates(list) {
   var el = document.getElementById('igate-list');
   if (!el) return;
+  _igateDevicesByCall = {};
   if (!list || list.length === 0) {
     el.innerHTML = '<p class="text-[11px] text-gray-600 text-center py-3">No iGates connected yet — configure your device to connect via MQTT.</p>';
     return;
   }
+  list.sort(function(a,b){ return String(a.call).localeCompare(String(b.call)); });
   el.innerHTML = list.map(function(d) {
-    var online = d.online;
-    var dot    = online ? 'bg-green-400' : 'bg-gray-600';
-    var badge  = online ? 'text-green-400' : 'text-gray-500';
-    var state  = online ? 'Online' : 'Offline';
-    var ago    = d.last_seen ? Math.floor(Date.now()/1000 - d.last_seen) : null;
-    var agoStr = ago === null ? '—' : ago < 60 ? ago + 's ago'
-                   : ago < 3600 ? Math.floor(ago/60) + 'm ago'
-                   : Math.floor(ago/3600) + 'h ago';
-    var heap   = d.heap_free  ? (d.heap_free/1024).toFixed(0)+'k' : '—';
-    var rssi   = d.wifi_rssi  ? d.wifi_rssi+'dBm' : '—';
-    var batt   = d.battery_v  ? d.battery_v.toFixed(2)+'V' : '—';
-    var fw     = d.fw         || '—';
-    var rx     = d.packets_rx !== undefined ? d.packets_rx : '—';
-    var tx     = d.packets_tx !== undefined ? d.packets_tx : '—';
-    var uptime = d.uptime_sec ? (d.uptime_sec < 3600 ? Math.floor(d.uptime_sec/60)+'m'
-                               : Math.floor(d.uptime_sec/3600)+'h '+Math.floor((d.uptime_sec%3600)/60)+'m') : '—';
+    _igateDevicesByCall[d.call] = d;
+    var online = Boolean(d.online), call = perfEsc(d.call || 'Unknown'), encodedCall = encodeURIComponent(d.call || '');
+    var dot = online ? 'bg-green-400' : 'bg-gray-600', badge = online ? 'text-green-400' : 'text-gray-500';
+    var heap = d.heap_free ? (d.heap_free/1024).toFixed(0)+'k' : '—';
+    var rssi = d.wifi_rssi ? d.wifi_rssi+' dBm' : '—';
+    var fw = perfEsc(d.fw || '—'), rx = d.packets_rx !== undefined ? d.packets_rx : '—', tx = d.packets_tx !== undefined ? d.packets_tx : '—';
+    var heard = Array.isArray(d.heard_24h) ? d.heard_24h : [];
+    var heardPackets = heard.reduce(function(total, station) { return total + Number(station.packets || 0); }, 0);
+    var health = !online ? ['Offline','text-gray-500','bg-gray-800']
+      : d.update_state === 'error' ? ['Update error','text-red-300','bg-red-950/60']
+      : d.wifi_rssi && d.wifi_rssi < -75 ? ['Weak WiFi','text-amber-300','bg-amber-950/60']
+      : d.heap_free && d.heap_free < 70000 ? ['Low memory','text-amber-300','bg-amber-950/60']
+      : ['Healthy','text-green-300','bg-green-950/50'];
+    var position = (d.latitude || d.longitude) ? Number(d.latitude).toFixed(5)+', '+Number(d.longitude).toFixed(5)+' ('+perfEsc(d.position_source || 'position')+')' : 'No device position reported';
+    var localLink = d.local_ip ? '<a target="_blank" rel="noopener" href="http://'+perfEsc(d.local_ip)+'/" class="text-blue-400 hover:underline">Open local interface ↗</a>' : 'Local address unavailable';
+    var updateNote = d.update_state && d.update_state !== 'idle' ? '<div class="mt-2 rounded border border-blue-900 bg-blue-950/40 px-2 py-1 text-[10px] text-blue-300">Firmware update: '+perfEsc(d.update_state)+' · '+perfEsc(d.update_message || '')+'</div>' : '';
     return [
-      '<div class="bg-gray-900 border border-gray-700 rounded p-2">',
-        '<div class="flex items-center justify-between mb-1">',
-          '<div class="flex items-center gap-1.5">',
-            '<span class="w-2 h-2 rounded-full '+dot+'"></span>',
-            '<span class="text-[12px] font-bold text-white font-mono">'+d.call+'</span>',
-            '<span class="text-[10px] '+badge+'">'+state+'</span>',
-            (fw !== '—' ? '<span class="text-[9px] text-gray-600 ml-1">'+fw+'</span>' : ''),
-          '</div>',
-          '<span class="text-[10px] text-gray-600">'+agoStr+'</span>',
+      '<article class="bg-gray-900 border border-gray-700 rounded-lg p-2.5">',
+        '<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-2">',
+          '<div class="flex items-center flex-wrap gap-1.5"><span class="w-2 h-2 rounded-full '+dot+'"></span><span class="text-[12px] font-bold text-white font-mono">'+call+'</span><span class="text-[10px] '+badge+'">'+(online?'Online':'Offline')+'</span><span class="text-[9px] text-gray-600">'+fw+'</span><span class="rounded px-1.5 py-0.5 text-[9px] '+health[1]+' '+health[2]+'">'+health[0]+'</span></div>',
+          '<span class="text-[10px] text-gray-600">Last telemetry '+perfEsc(igateAge(d.last_seen))+'</span>',
         '</div>',
-        '<div class="grid grid-cols-4 gap-1 mb-1.5 text-[10px]">',
-          '<div class="bg-gray-800 rounded px-1.5 py-1"><p class="text-gray-500">WiFi</p><p class="text-white font-mono">'+rssi+'</p></div>',
-          '<div class="bg-gray-800 rounded px-1.5 py-1"><p class="text-gray-500">Heap</p><p class="text-white font-mono">'+heap+'</p></div>',
-          '<div class="bg-gray-800 rounded px-1.5 py-1"><p class="text-gray-500">RX/TX</p><p class="text-white font-mono">'+rx+'/'+tx+'</p></div>',
-          '<div class="bg-gray-800 rounded px-1.5 py-1"><p class="text-gray-500">Uptime</p><p class="text-white font-mono">'+uptime+'</p></div>',
+        '<div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-2 text-[10px]">',
+          '<div class="bg-gray-800 rounded px-2 py-1.5"><p class="text-gray-500">WiFi signal</p><p class="font-mono '+igateSignalClass(Number(d.wifi_rssi))+'">'+rssi+'</p></div>',
+          '<div class="bg-gray-800 rounded px-2 py-1.5"><p class="text-gray-500">Free heap</p><p class="text-white font-mono">'+heap+'</p></div>',
+          '<div class="bg-gray-800 rounded px-2 py-1.5"><p class="text-gray-500">RF RX / TX</p><p class="text-white font-mono">'+rx+' / '+tx+'</p></div>',
+          '<div class="bg-gray-800 rounded px-2 py-1.5"><p class="text-gray-500">Uptime</p><p class="text-white font-mono">'+igateDuration(d.uptime_sec)+'</p></div>',
         '</div>',
-        (online ? [
-          '<div class="flex gap-1">',
-            '<button onclick="sendIGateCmd(\''+d.call+'\',\'restart\')" ',
-              'class="flex-1 bg-red-900 hover:bg-red-800 text-red-200 text-[10px] px-2 py-1 rounded font-bold">⟳ Restart</button>',
-            '<button onclick="sendIGateCmd(\''+d.call+'\',\'beacon\')" ',
-              'class="flex-1 bg-teal-900 hover:bg-teal-800 text-teal-200 text-[10px] px-2 py-1 rounded font-bold">📡 Force Beacon</button>',
-            '<button onclick="sendIGateCmd(\''+d.call+'\',\'telemetry\')" ',
-              'class="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-[10px] px-2 py-1 rounded">↻ Status</button>',
-          '</div>'
-        ].join('') : '<p class="text-[10px] text-gray-600">Device offline — commands unavailable</p>'),
-        '<div id="igate-msg-'+d.call+'" class="text-[10px] mt-1 hidden"></div>',
-      '</div>'
+        '<div class="grid sm:grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-gray-500 border-t border-gray-800 pt-2 mb-2">',
+          '<p><span class="text-gray-600">Hardware:</span> '+perfEsc(d.board || 'Reported after firmware v1.2.0')+'</p>',
+          '<p><span class="text-gray-600">APRS-IS:</span> '+perfEsc(d.aprs_server || '—')+'</p>',
+          '<p><span class="text-gray-600">Location:</span> '+position+'</p>',
+          '<p><span class="text-gray-600">Device page:</span> '+localLink+'</p>',
+        '</div>',
+        (online ? '<div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5">'
+          + '<button onclick="sendIGateCmd(decodeURIComponent(\''+encodedCall+'\'),\'restart\')" class="bg-red-900 hover:bg-red-800 text-red-200 text-[10px] px-2 py-1.5 rounded font-bold">⟳ Restart</button>'
+          + '<button onclick="sendIGateCmd(decodeURIComponent(\''+encodedCall+'\'),\'beacon\')" class="bg-teal-900 hover:bg-teal-800 text-teal-200 text-[10px] px-2 py-1.5 rounded font-bold">📡 Force beacon</button>'
+          + '<button onclick="sendIGateCmd(decodeURIComponent(\''+encodedCall+'\'),\'telemetry\')" class="bg-gray-700 hover:bg-gray-600 text-gray-200 text-[10px] px-2 py-1.5 rounded">↻ Refresh status</button>'
+          + '<button onclick="requestIGateUpdate(\''+encodedCall+'\')" class="bg-blue-900 hover:bg-blue-800 text-blue-200 text-[10px] px-2 py-1.5 rounded font-bold">⇧ Update from GitHub</button></div>'
+          : '<p class="text-[10px] text-gray-600">Device offline — commands unavailable</p>'),
+        updateNote,
+        '<div id="igate-msg-'+perfEsc((d.call||'').replace(/[^A-Za-z0-9_-]/g,'_'))+'" class="text-[10px] mt-1 hidden"></div>',
+        '<details class="mt-2 border-t border-gray-800 pt-2" open>',
+          '<summary class="cursor-pointer list-none flex items-center justify-between gap-3 text-[10px] font-bold text-purple-300 hover:text-purple-200"><span>📻 Stations heard by this iGate in the last 24 hours</span><span class="font-normal text-right text-gray-500">'+heard.length+' station'+(heard.length===1?'':'s')+' · '+heardPackets.toLocaleString()+' RF packet'+(heardPackets===1?'':'s')+' · click to collapse</span></summary>',
+          '<div class="flex justify-end mt-2"><button onclick="exportIGateHeardCSV(\''+encodedCall+'\')" class="text-[9px] border border-gray-700 hover:border-cyan-600 text-gray-400 hover:text-cyan-300 rounded px-2 py-1">Download CSV</button></div>',
+          '<div class="overflow-x-auto mt-1"><table class="w-full text-[10px] min-w-[980px]">',
+            '<thead class="text-gray-500 uppercase bg-gray-950/70"><tr><th class="p-2 text-left">Station</th><th class="p-2 text-left">Last heard</th><th class="p-2 text-left">First heard</th><th class="p-2 text-right">Packets</th><th class="p-2 text-right">RSSI dBm<br><span class="normal-case font-normal">last · avg · range</span></th><th class="p-2 text-right">SNR dB<br><span class="normal-case font-normal">last · avg · range</span></th><th class="p-2 text-right">Distance</th><th class="p-2 text-right">Freq error</th></tr></thead>',
+            '<tbody>'+igateHeardRows(d)+'</tbody>',
+          '</table></div>',
+        '</details>',
+      '</article>'
     ].join('');
   }).join('');
 }
 
 function sendIGateCmd(deviceCall, cmd) {
   if (!_memberSession) return;
-  var msgEl = document.getElementById('igate-msg-' + deviceCall);
+  var msgEl = document.getElementById('igate-msg-' + deviceCall.replace(/[^A-Za-z0-9_-]/g,'_'));
   if (msgEl) { msgEl.textContent = 'Sending…'; msgEl.className = 'text-[10px] mt-1 text-gray-400'; }
   fetch(location.origin + '/api/member/igate/' + deviceCall + '/cmd', {
     method: 'POST',
@@ -13524,7 +13600,7 @@ function sendIGateCmd(deviceCall, cmd) {
   }).then(function(r) { return r.json(); })
     .then(function(d) {
       if (msgEl) {
-        msgEl.textContent = d.ok ? '✓ Command sent' : '✗ ' + (d.error || 'Failed');
+        msgEl.textContent = d.ok ? (cmd === 'update' ? '✓ Update requested — watch the firmware and online status' : '✓ Command sent') : '✗ ' + (d.error || 'Failed');
         msgEl.className = 'text-[10px] mt-1 ' + (d.ok ? 'text-green-400' : 'text-red-400');
         setTimeout(function() { if (msgEl) { msgEl.textContent=''; msgEl.className='text-[10px] mt-1 hidden'; } }, 3000);
       }
@@ -14174,7 +14250,16 @@ document.addEventListener('keydown', function(e) {
               <p class="text-[11px] text-purple-400 font-bold uppercase">📡 My LoRa APRS iGate Devices</p>
               <button onclick="loadIGates()" class="text-[10px] text-gray-500 hover:text-gray-300">↻ Refresh</button>
             </div>
-            <p class="text-[10px] text-gray-500 mb-2">ESP32 iGate devices connect here for telemetry and remote control. Set <code class="text-purple-300">mqtt.server=80.64.216.113</code> (direct IP — bypasses Cloudflare), <code class="text-purple-300">mqtt.port=1883</code>, <code class="text-purple-300">username=YOUR_CALLSIGN</code>, <code class="text-purple-300">password=YOUR_MEMBER_PASSWORD</code>.</p>
+            <p class="text-[10px] text-gray-500 mb-2">ESP32 iGate devices connect here for private telemetry, RF history and remote control.</p>
+            <div class="bg-gray-900/70 border border-gray-700 rounded p-2 mb-2">
+              <p class="text-[9px] uppercase tracking-wide text-purple-400 font-bold mb-1.5">MQTT device settings</p>
+              <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-1.5 text-[10px]">
+                <div><span class="text-gray-600 block">Server</span><code class="text-purple-300 select-all">www.aprsnet.uk</code></div>
+                <div><span class="text-gray-600 block">Port</span><code class="text-purple-300 select-all">1883</code></div>
+                <div><span class="text-gray-600 block">Username</span><code class="text-purple-300">Your member callsign</code></div>
+                <div><span class="text-gray-600 block">Password</span><code class="text-purple-300">Your member password</code></div>
+              </div>
+            </div>
             <div id="igate-list" class="space-y-1.5">
               <p class="text-[11px] text-gray-600 text-center py-3">No iGates connected yet — configure your device to connect via MQTT.</p>
             </div>
