@@ -162,6 +162,28 @@ var (
 	ipConns   = make(map[string]int)
 )
 
+// getRealIP extracts the client's real IP from a proxied request.
+// Caddy (and most reverse proxies) set X-Real-IP to the original client IP.
+// Falls back to X-Forwarded-For first entry, then raw RemoteAddr.
+// Used by the WS per-IP limiter so the limit is per-client, not per-proxy.
+func getRealIP(r *http.Request) string {
+	if ip := r.Header.Get("X-Real-IP"); ip != "" {
+		return strings.TrimSpace(ip)
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// X-Forwarded-For may be a comma-separated list; take the first (client) entry
+		if idx := strings.Index(xff, ","); idx != -1 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
 func ipConnAllow(addr string) bool {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -1538,11 +1560,11 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	if !ipConnAllow(r.RemoteAddr) {
+	if !ipConnAllow(getRealIP(r)) {
 		conn.Close()
 		return
 	}
-	defer ipConnRelease(r.RemoteAddr)
+	defer ipConnRelease(getRealIP(r))
 	client := &wsClient{
 		conn:        conn,
 		send:        make(chan []byte, 1024),
