@@ -101,6 +101,13 @@ func TestValidMQTTCall(t *testing.T) {
 	}
 }
 
+func TestEmptyIGateHistoryReturnsJSONArray(t *testing.T) {
+	withIGateHistoryTempDir(t)
+	if got := buildIGateHeardSummaries("member-1", "QA1ABC-1", 0, 0); got == nil || len(got) != 0 {
+		t.Fatalf("empty history=%#v, want non-nil empty slice", got)
+	}
+}
+
 func TestIGateHeardStationCountIsBounded(t *testing.T) {
 	withIGateHistoryTempDir(t)
 	entries := make([]interface{}, 0, maxHeardStationsPerIGate+10)

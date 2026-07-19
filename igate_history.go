@@ -312,6 +312,9 @@ func buildIGateHeardSummaries(memberID, deviceCall string, deviceLat, deviceLon 
 	}
 	igateHistoryMu.RUnlock()
 	sort.Slice(out, func(i, j int) bool { return out[i].LastHeard > out[j].LastHeard })
+	if out == nil {
+		return []IGateHeardSummary{}
+	}
 	return out
 }
 
