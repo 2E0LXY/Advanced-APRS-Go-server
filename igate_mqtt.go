@@ -226,8 +226,8 @@ func broadcastIGateStatus(memberID string) {
 	}
 	data, _ := json.Marshal(wsMessage{Type: "igate_status", Data: list})
 
-	clientsMu.RLock()
-	defer clientsMu.RUnlock()
+	clientsMu.Lock()
+	defer clientsMu.Unlock()
 	for c := range clients {
 		if c.authenticated && strings.ToUpper(c.callsign) == ownerCall {
 			select {
