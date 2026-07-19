@@ -2034,7 +2034,7 @@ body { background: var(--bg-base); color: var(--text-base); }
           <p class="text-xs text-gray-400 mb-1"><b class="text-white">Device config</b> &mdash; add to igate_conf.json:</p>
           <div class="bg-gray-800 rounded p-2 mb-2 font-mono text-[10px] text-purple-300">
             mqtt.active = true<br>
-            mqtt.server = www.aprsnet.uk<br>
+            mqtt.server = 80.64.216.113<br>
             mqtt.port &nbsp; = 1883<br>
             mqtt.topic &nbsp;= aprsnet<br>
             mqtt.username = YOUR_CALLSIGN<br>
@@ -13981,7 +13981,7 @@ document.addEventListener('keydown', function(e) {
               <p class="text-[11px] text-purple-400 font-bold uppercase">📡 My LoRa APRS iGate Devices</p>
               <button onclick="loadIGates()" class="text-[10px] text-gray-500 hover:text-gray-300">↻ Refresh</button>
             </div>
-            <p class="text-[10px] text-gray-500 mb-2">ESP32 iGate devices connect here for telemetry and remote control. Set <code class="text-purple-300">mqtt.server=www.aprsnet.uk</code>, <code class="text-purple-300">mqtt.port=1883</code>, <code class="text-purple-300">username=YOUR_CALLSIGN</code>, <code class="text-purple-300">password=YOUR_MEMBER_PASSWORD</code>.</p>
+            <p class="text-[10px] text-gray-500 mb-2">ESP32 iGate devices connect here for telemetry and remote control. Set <code class="text-purple-300">mqtt.server=80.64.216.113</code> (direct IP — bypasses Cloudflare), <code class="text-purple-300">mqtt.port=1883</code>, <code class="text-purple-300">username=YOUR_CALLSIGN</code>, <code class="text-purple-300">password=YOUR_MEMBER_PASSWORD</code>.</p>
             <div id="igate-list" class="space-y-1.5">
               <p class="text-[11px] text-gray-600 text-center py-3">No iGates connected yet — configure your device to connect via MQTT.</p>
             </div>
