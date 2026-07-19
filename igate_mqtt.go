@@ -512,8 +512,10 @@ func sendIGateCmd(memberID, deviceCall, payload string) bool {
 // ── HTTP: GET /api/member/igates ───────────────────────────────────────────
 
 func handleMemberIGates(w http.ResponseWriter, r *http.Request) {
-	m, ok := requireMemberSession(w, r)
-	if !ok {
+	m := getMemberFromRequest(r)
+	if m == nil {
+		w.WriteHeader(401)
+		json.NewEncoder(w).Encode(map[string]string{"error": "not authenticated"})
 		return
 	}
 	igatesMu.RLock()
@@ -540,8 +542,10 @@ func handleIGateCmd(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(405)
 		return
 	}
-	m, ok := requireMemberSession(w, r)
-	if !ok {
+	m := getMemberFromRequest(r)
+	if m == nil {
+		w.WriteHeader(401)
+		json.NewEncoder(w).Encode(map[string]string{"error": "not authenticated"})
 		return
 	}
 	// URL: /api/member/igate/{call}/cmd
