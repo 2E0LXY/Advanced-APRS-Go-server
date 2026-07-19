@@ -20,6 +20,16 @@ jobs:
             set -e
             cd /opt/aprs-gateway
 
+            # Older installs generated these module files directly on the VPS.
+            # Preserve any untracked copies once so Git can install the now
+            # version-controlled, reproducible module definitions.
+            stamp="$(date +%Y%m%d-%H%M%S)"
+            for module_file in go.mod go.sum; do
+              if [ -f "$module_file" ] && ! git ls-files --error-unmatch "$module_file" >/dev/null 2>&1; then
+                mv "$module_file" "${module_file}.pretracked-${stamp}"
+              fi
+            done
+
             echo "=== git pull ==="
             git pull origin main
 
