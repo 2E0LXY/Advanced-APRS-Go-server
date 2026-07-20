@@ -92,8 +92,38 @@ func isHABCallsign(call, comment string) bool {
 }
 
 // ingestHABPacket is called for every parsed position packet.
-// altM is the altitude in metres, speedKph in km/h, course in degrees.
-func ingestHABPacket(call string, lat, lon, altM, speedKph, course float64, comment string) {
+// It extracts altitude, speed, course, and comment from the raw APRS string.
+func ingestHABPacket(call string, lat, lon float64, raw string) {
+	// Extract altitude from /A=NNNNNN in the comment field
+	altM := 0.0
+	speedKph := 0.0
+	course := 0.0
+	comment := ""
+
+	// Find the payload after the first ':'
+	if ci := strings.Index(raw, ":"); ci >= 0 {
+		info := raw[ci+1:]
+		comment = info
+
+		// Altitude: /A=NNNNNN (feet)
+		if ai := strings.Index(info, "/A="); ai >= 0 && ai+9 <= len(info) {
+			var feet float64
+			if n, _ := fmt.Sscanf(info[ai+3:ai+9], "%f", &feet); n == 1 {
+				altM = feet * 0.3048
+			}
+		}
+
+		// Speed/course from position report: CSEspd (knots) in first 7 chars after symbol
+		// Format: DDDsss or just try to pull from known offsets
+		// Simplified: look for CSE/SPD in compressed or uncompressed
+		if len(info) > 10 {
+			var cse, spd int
+			if n, _ := fmt.Sscanf(info[1:4]+info[4:7], "%3d%3d", &cse, &spd); n == 2 {
+				course = float64(cse)
+				speedKph = float64(spd) * 1.852 // knots to km/h
+			}
+		}
+	}
 	if altM < 100 && !isHABCallsign(call, comment) {
 		return
 	}
