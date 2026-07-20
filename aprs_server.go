@@ -998,6 +998,11 @@ func main() {
 		w.Header().Set("Content-Type", "text/plain")
 		http.ServeFile(w, r, "robots.txt")
 	})
+	http.HandleFunc("/sw.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Header().Set("Service-Worker-Allowed", "/")
+		http.ServeFile(w, r, "sw.js")
+	})
 	http.HandleFunc("/sitemap.xml", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
 		http.ServeFile(w, r, "sitemap.xml")
