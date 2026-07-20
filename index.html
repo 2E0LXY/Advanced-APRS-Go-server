@@ -12107,21 +12107,15 @@ async function deleteAPRSObject(name) {
 })();
 
 
-// ── Expose new feature functions to global scope ──────────────────────────
-// The injection point is inside an IIFE; inline onclick handlers need these
-// to be on window to find them.
-window.requestPushPermission = requestPushPermission;
-window.openTelemPanel        = openTelemPanel;
-window.closeTelemPanel       = closeTelemPanel;
-window.toggleSotaPota        = toggleSotaPota;
-window.toggleHAB             = toggleHAB;
-window.openHABPanel          = openHABPanel;
-window.closeHABPanel         = closeHABPanel;
-window.loadMemberObjects     = loadMemberObjects;
-window.createAPRSObject      = createAPRSObject;
-window.deleteAPRSObject      = deleteAPRSObject;
-window.loadIGates            = window.loadIGates || loadIGates;
-window.sendIGateCmd          = window.sendIGateCmd || sendIGateCmd;
+// ── Expose new feature functions to global scope (safe) ──────────────────
+['requestPushPermission','openTelemPanel','closeTelemPanel','toggleSotaPota',
+ 'toggleHAB','openHABPanel','closeHABPanel','loadMemberObjects','createAPRSObject',
+ 'deleteAPRSObject','loadIGates','sendIGateCmd','renderIGates','renderObjectList',
+ 'saveMsgBackground'
+].forEach(function(name) {
+  try { if (typeof window[name] !== 'function') { var f = eval(name); if (typeof f === 'function') window[name] = f; } }
+  catch(e) { /* function not yet in scope — no-op */ }
+});
 
   var _origConnect = connectWS;
   if (typeof _origConnect === 'function') {
