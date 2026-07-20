@@ -968,6 +968,8 @@ func main() {
 	loadIGateHistory()
 	loadBanList()
 	loadMOTD()
+	initVAPID()
+	loadPushSubs()
 	go cleanExpiredSessions()
 
 	go cleanDuplicateCache()
@@ -979,6 +981,9 @@ func main() {
 	go runAISStream()
 	go weatherBeaconLoop()
 	initPerformanceMonitoring()
+	go runSotaPotaFetcher()
+	go runMemberObjectBeacon()
+	go purgeOldHABFlights()
 
 	http.HandleFunc("/symbols/", http.StripPrefix("/symbols/", http.FileServer(http.Dir("symbols"))).ServeHTTP)
 	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "favicon.ico") })
@@ -1028,6 +1033,20 @@ func main() {
 	// iGate device management (per-member, private)
 	http.HandleFunc("/api/member/igates", handleMemberIGates)
 	http.HandleFunc("/api/member/igate/", handleIGateCmd)
+	// Push notifications
+	http.HandleFunc("/api/push/vapid-key",          handlePushVapidKey)
+	http.HandleFunc("/api/member/push-subscribe",   handlePushSubscribe)
+	http.HandleFunc("/api/member/push-unsubscribe", handlePushUnsubscribe)
+	// Telemetry dashboard
+	http.HandleFunc("/api/telemetry/", handleTelemetry)
+	// SOTA / POTA live spots + map overlay
+	http.HandleFunc("/api/sota-pota", handleSotaPota)
+	// HAB flight tracker
+	http.HandleFunc("/api/hab",  handleHAB)
+	http.HandleFunc("/api/hab/", handleHAB)
+	// Member APRS objects
+	http.HandleFunc("/api/member/objects",  handleMemberObjects)
+	http.HandleFunc("/api/member/objects/", handleMemberObjects)
 
 	// Server federation registry
 	http.HandleFunc("/api/server/register", handleServerRegister)
@@ -1602,7 +1621,12 @@ func handleBroadcasts() {
 		if hasCoords {
 			go fireWebhooks("position", parsed.Callsign, parsed)
 			go checkGeofenceAlerts(parsed.Callsign, parsed.Lat, parsed.Lon)
+			// HAB flight tracker: check every position packet for balloon signature
+			go ingestHABPacket(parsed.Callsign, parsed.Lat, parsed.Lon,
+				parsed.Alt, parsed.Speed, parsed.Course, parsed.Comment)
 		}
+		// APRS telemetry packets (T#, PARM, UNIT, EQNS)
+		go ingestTelemPacket(packet)
 
 		// Store in raw ring buffer (trim entries older than 1 hour)
 		now := time.Now().Unix()
@@ -4979,7 +5003,7 @@ func checkGeofenceAlerts(watchCall string, lat, lon float64) {
 }
 
 // pushAlertToMember sends an alert WebSocket frame to all sessions that belong
-// to memberCall (matched by the WS client's authenticated callsign).
+// to memberCall AND delivers a Web Push notification to any registered devices.
 func pushAlertToMember(memberCall, alertType, stationCall, message string) {
 	alert := map[string]interface{}{
 		"type":       "alert",
@@ -4998,6 +5022,25 @@ func pushAlertToMember(memberCall, alertType, stationCall, message string) {
 		}
 	}
 	clientsMu.Unlock()
+
+	// Also push to any registered Web Push subscriptions for this member
+	memberStoreMu.RLock()
+	var memberID string
+	for _, m := range memberStore.Members {
+		if strings.EqualFold(m.Callsign, memberCall) {
+			memberID = m.ID
+			break
+		}
+	}
+	memberStoreMu.RUnlock()
+	if memberID != "" {
+		go pushToMember(memberID, PushPayload{
+			Type:  alertType,
+			Title: stationCall + " — " + alertType,
+			Body:  message,
+			Tag:   "aprs_alert_" + stationCall,
+		})
+	}
 }
 
 // btoi converts bool to int for the geofenceState map.
