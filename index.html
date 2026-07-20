@@ -11687,8 +11687,10 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 async function requestPushPermission() {
+  console.log('[PUSH] requestPushPermission called');
   var statusEl = document.getElementById('push-status');
   var btnEl    = document.getElementById('push-enable-btn');
+  console.log('[PUSH] statusEl:', statusEl, 'btnEl:', btnEl);
   function setStatus(msg, ok) {
     if (statusEl) statusEl.textContent = msg;
     if (btnEl) {
@@ -14840,7 +14842,7 @@ document.addEventListener('keydown', function(e) {
               <span id="push-status" class="text-[10px] text-gray-500"></span>
             </div>
             <p class="text-[10px] text-gray-500 mb-2">Receive alerts on this device when the page is closed — geo-fence triggers, APRS messages, SOTA/POTA activations, HAB launches.</p>
-            <button onclick="requestPushPermission()"
+            <button onclick="this.textContent='⏳ Working…';this.style.background='#92400e';requestPushPermission()"
               class="w-full bg-yellow-800 hover:bg-yellow-700 text-yellow-100 text-[11px] font-bold py-1.5 rounded" id="push-enable-btn">
               Enable Push Notifications
             </button>
