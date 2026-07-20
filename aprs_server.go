@@ -4154,6 +4154,24 @@ func storeMessageForMember(to, from, text, raw string, ts int64) {
 
 	saveMemberStore()
 
+	// Web Push notification to the RECIPIENT's registered devices.
+	// This fires even when the recipient has no open page/app.
+	var recipientID string
+	for _, m := range memberStore.Members {
+		if strings.ToUpper(m.Callsign) == recipientCall {
+			recipientID = m.ID
+			break
+		}
+	}
+	if recipientID != "" {
+		go pushToMember(recipientID, PushPayload{
+			Type:  "message",
+			Title: "APRS Message from " + from,
+			Body:  text,
+			Tag:   "aprs_msg_" + fromUpper,
+		})
+	}
+
 	// Push a real-time WS copy to all of the SENDER's other connected sessions
 	// so that other devices (web, desktop) see the sent message immediately.
 	if senderCall != "" {
