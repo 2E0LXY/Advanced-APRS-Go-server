@@ -11687,53 +11687,107 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 async function requestPushPermission() {
-  if (!('Notification' in window) || !('serviceWorker' in navigator)) {
-    document.getElementById('push-status').textContent = '✗ Not supported in this browser';
-    return;
+  var statusEl = document.getElementById('push-status');
+  var btnEl    = document.getElementById('push-enable-btn');
+  function setStatus(msg, ok) {
+    if (statusEl) statusEl.textContent = msg;
+    if (btnEl) {
+      btnEl.textContent = msg;
+      btnEl.style.background = ok === true ? '#14532d' : ok === false ? '#7f1d1d' : '';
+      btnEl.disabled = (ok === null); // null = working
+    }
   }
-  var perm = await Notification.requestPermission();
+
+  // 1. Basic browser support check
+  if (!('serviceWorker' in navigator)) {
+    setStatus('✗ Service Workers not supported in this browser', false); return;
+  }
+  if (!('PushManager' in window)) {
+    setStatus('✗ Web Push not supported in this browser', false); return;
+  }
+  if (!('Notification' in window)) {
+    setStatus('✗ Notifications not supported in this browser', false); return;
+  }
+
+  // 2. Must be signed in
+  var token = _memberSession && _memberSession.token;
+  if (!token) { setStatus('✗ Sign in first', false); return; }
+
+  // 3. Request notification permission
+  setStatus('Requesting permission…', null);
+  var perm;
+  try { perm = await Notification.requestPermission(); }
+  catch(e) { setStatus('✗ Permission error: ' + e.message, false); return; }
   if (perm !== 'granted') {
-    document.getElementById('push-status').textContent = '✗ Permission denied';
+    setStatus('✗ Permission ' + perm + ' — allow notifications in browser settings', false);
     return;
   }
-  document.getElementById('push-status').textContent = 'Subscribing…';
+
+  // 4. Register / wait for Service Worker (with 10s timeout)
+  setStatus('Registering service worker…', null);
+  var reg;
   try {
-    await navigator.serviceWorker.ready;
-    var keyResp = await fetch('/api/push/vapid-key');
-    var { public_key } = await keyResp.json();
-    var reg = await navigator.serviceWorker.ready;
-    var sub = await reg.pushManager.subscribe({
+    // Register explicitly in case page-load registration failed
+    reg = await Promise.race([
+      navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        .then(function() { return navigator.serviceWorker.ready; }),
+      new Promise(function(_, rej) {
+        setTimeout(function() { rej(new Error('SW registration timed out — check /sw.js is reachable')); }, 10000);
+      })
+    ]);
+  } catch(e) { setStatus('✗ ' + e.message, false); return; }
+
+  // 5. Fetch VAPID public key from server
+  setStatus('Fetching server key…', null);
+  var vapidKey;
+  try {
+    var kr = await fetch('/api/push/vapid-key');
+    if (!kr.ok) throw new Error('Server returned ' + kr.status);
+    var kd = await kr.json();
+    vapidKey = kd.public_key;
+    if (!vapidKey) throw new Error('No VAPID key returned');
+  } catch(e) { setStatus('✗ Key fetch failed: ' + e.message, false); return; }
+
+  // 6. Subscribe via PushManager
+  setStatus('Subscribing…', null);
+  var sub;
+  try {
+    sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(public_key)
+      applicationServerKey: urlBase64ToUint8Array(vapidKey)
     });
-    var token = _memberSession && _memberSession.token;
-    if (!token) { document.getElementById('push-status').textContent = '✗ Not signed in'; return; }
+  } catch(e) {
+    setStatus('✗ Subscribe failed: ' + e.message, false);
+    return;
+  }
+
+  // 7. Send subscription to server
+  setStatus('Saving…', null);
+  try {
     var r = await fetch('/api/member/push-subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Member-Token': token },
       body: JSON.stringify(sub.toJSON())
     });
+    if (!r.ok) throw new Error('Server returned ' + r.status);
     var d = await r.json();
-    if (d.ok) {
-      document.getElementById('push-status').textContent = '✓ Enabled';
-      document.getElementById('push-enable-btn').textContent = '✓ Push Notifications Active';
-      document.getElementById('push-enable-btn').classList.replace('bg-yellow-800','bg-green-900');
-    }
-  } catch(e) {
-    document.getElementById('push-status').textContent = '✗ ' + e.message;
-  }
+    if (!d.ok) throw new Error(d.error || 'Server rejected subscription');
+  } catch(e) { setStatus('✗ Save failed: ' + e.message, false); return; }
+
+  // ✓ All done
+  setStatus('✓ Push Notifications Enabled', true);
 }
 
 // Check existing subscription on login
 function checkPushStatus() {
-  if (!('serviceWorker' in navigator)) return;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
   navigator.serviceWorker.ready.then(function(reg) {
     reg.pushManager.getSubscription().then(function(sub) {
       if (sub) {
         var s = document.getElementById('push-status');
         var b = document.getElementById('push-enable-btn');
-        if (s) s.textContent = '✓ Enabled';
-        if (b) { b.textContent = '✓ Push Notifications Active'; b.classList.replace('bg-yellow-800','bg-green-900'); }
+        if (s) s.textContent = '✓ Enabled on this device';
+        if (b) { b.textContent = '✓ Push Notifications Enabled'; b.style.background = '#14532d'; }
       }
     });
   }).catch(function(){});
