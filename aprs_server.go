@@ -1622,8 +1622,7 @@ func handleBroadcasts() {
 			go fireWebhooks("position", parsed.Callsign, parsed)
 			go checkGeofenceAlerts(parsed.Callsign, parsed.Lat, parsed.Lon)
 			// HAB flight tracker: check every position packet for balloon signature
-			go ingestHABPacket(parsed.Callsign, parsed.Lat, parsed.Lon,
-				parsed.Alt, parsed.Speed, parsed.Course, parsed.Comment)
+			go ingestHABPacket(parsed.Callsign, parsed.Lat, parsed.Lon, parsed.Raw)
 		}
 		// APRS telemetry packets (T#, PARM, UNIT, EQNS)
 		go ingestTelemPacket(packet)
