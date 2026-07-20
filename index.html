@@ -702,6 +702,20 @@ body { background: var(--bg-base); color: var(--text-base); }
           <label class="flex items-center space-x-2 cursor-pointer text-xs"><input type="checkbox" id="lora-only-moving"           onchange="renderLoRaData(_loraLatest)"><span class="text-cyan-400">→</span><span class="text-gray-400">Moving only</span></label>
         </div>
       </div>
+      <!-- SOTA / POTA live spots -->
+      <label class="flex items-center space-x-2 cursor-pointer">
+        <input type="checkbox" id="show-sota-pota" onchange="toggleSotaPota(this.checked)"
+          class="accent-yellow-400 w-4 h-4 flex-shrink-0">
+        <span class="text-yellow-400">🏔</span>
+        <span>SOTA / POTA Spots</span>
+      </label>
+      <!-- HAB Tracker -->
+      <label class="flex items-center space-x-2 cursor-pointer">
+        <input type="checkbox" id="show-hab" onchange="toggleHAB(this.checked)"
+          class="accent-sky-400 w-4 h-4 flex-shrink-0">
+        <span class="text-sky-400">🎈</span>
+        <span>HAB Tracker</span>
+      </label>
     </div>
     <div class="mt-auto pt-3 border-t border-gray-700 space-y-2">
       <button onclick="centerOnUser()" class="w-full py-1.5 bg-gray-700 hover:bg-gray-600 rounded font-bold">📍 My Location</button>
@@ -3117,6 +3131,8 @@ ws.onmessage = (ev) => {
         <a id="modal-qrz" href="#" target="_blank" class="text-xs bg-blue-900 hover:bg-blue-800 px-2 py-1 rounded text-blue-300">QRZ ↗</a>
         <a id="modal-aprsfi" href="#" target="_blank" class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-gray-300">aprs.fi ↗</a>
         <button id="modal-msg-btn" onclick="openMsgFromModal()" class="text-xs bg-green-800 hover:bg-green-700 px-2 py-1 rounded text-green-300">✉ Message</button>
+        <button id="modal-telem-btn" onclick="openTelemPanel(_modalTarget)" title="APRS Telemetry" class="hidden text-xs bg-purple-900 hover:bg-purple-800 px-2 py-1 rounded text-purple-200">📊 Telem</button>
+        <button id="modal-hab-btn" onclick="openHABPanel(_modalTarget)" title="HAB Flight" class="hidden text-xs bg-sky-900 hover:bg-sky-800 px-2 py-1 rounded text-sky-200">🎈 HAB</button>
         <button onclick="closeStationModal()" class="text-gray-400 hover:text-white text-xl leading-none ml-2">✕</button>
       </div>
     </div>
@@ -3131,6 +3147,32 @@ ws.onmessage = (ev) => {
       <div id="modal-weather-row" class="bg-blue-900/30 border border-blue-800 rounded p-2 hidden"><p class="text-blue-300 text-xs font-bold mb-1">Weather Data</p><p id="modal-weather" class="text-xs text-gray-200 font-mono whitespace-pre"></p></div>
       <div><p class="text-gray-500 text-xs mb-1">Raw Packet</p><code id="modal-raw" class="block bg-gray-900 text-green-400 text-xs font-mono p-2 rounded border border-gray-700 break-all whitespace-pre-wrap"></code></div>
       <div id="modal-history" class="hidden"><p class="text-gray-500 text-xs mb-1">Position History (<span id="modal-hist-count"></span> points)</p><div id="modal-hist-list" class="bg-gray-900 rounded p-2 text-xs font-mono text-gray-400 max-h-28 overflow-y-auto space-y-0.5"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Telemetry Dashboard Panel ─────────────────────────────────────── -->
+<div id="telem-panel" class="hidden fixed inset-0 z-[9998] flex items-center justify-center p-4" onclick="if(event.target===this)closeTelemPanel()">
+  <div class="bg-gray-800 border border-purple-700 rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+    <div class="flex items-center justify-between p-3 border-b border-gray-700">
+      <h3 class="font-bold text-purple-300">📊 Telemetry — <span id="telem-call"></span></h3>
+      <button onclick="closeTelemPanel()" class="text-gray-400 hover:text-white text-xl">×</button>
+    </div>
+    <div class="overflow-y-auto flex-1 p-3 space-y-2" id="telem-body">
+      <p class="text-gray-500 text-sm text-center py-6">Loading…</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── HAB Flight Panel ───────────────────────────────────────────────── -->
+<div id="hab-panel" class="hidden fixed inset-0 z-[9998] flex items-center justify-center p-4" onclick="if(event.target===this)closeHABPanel()">
+  <div class="bg-gray-800 border border-sky-700 rounded-xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col">
+    <div class="flex items-center justify-between p-3 border-b border-gray-700">
+      <h3 class="font-bold text-sky-300">🎈 HAB Flight — <span id="hab-panel-call"></span></h3>
+      <button onclick="closeHABPanel()" class="text-gray-400 hover:text-white text-xl">×</button>
+    </div>
+    <div class="overflow-y-auto flex-1 p-3 space-y-2" id="hab-body">
+      <p class="text-gray-500 text-sm text-center py-6">Loading…</p>
     </div>
   </div>
 </div>
@@ -11622,6 +11664,392 @@ function autoFillAPRSCredentials() {
 }
 // Re-attempt after WS opens (e.g. on page load if WS connects after restore)
 (function(){
+// ═══════════════════════════════════════════════════════════════════════════
+// FEATURE: Push Notifications (VAPID Web Push)
+// ═══════════════════════════════════════════════════════════════════════════
+
+var _swReg = null;
+
+// Register service worker on page load (silent — no permission yet)
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js')
+    .then(function(reg) { _swReg = reg; })
+    .catch(function(e) { console.warn('SW register:', e); });
+}
+
+function urlBase64ToUint8Array(base64String) {
+  var padding = '='.repeat((4 - base64String.length % 4) % 4);
+  var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  var raw = atob(base64);
+  var output = new Uint8Array(raw.length);
+  for (var i = 0; i < raw.length; ++i) output[i] = raw.charCodeAt(i);
+  return output;
+}
+
+async function requestPushPermission() {
+  if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+    document.getElementById('push-status').textContent = '✗ Not supported in this browser';
+    return;
+  }
+  var perm = await Notification.requestPermission();
+  if (perm !== 'granted') {
+    document.getElementById('push-status').textContent = '✗ Permission denied';
+    return;
+  }
+  document.getElementById('push-status').textContent = 'Subscribing…';
+  try {
+    await navigator.serviceWorker.ready;
+    var keyResp = await fetch('/api/push/vapid-key');
+    var { public_key } = await keyResp.json();
+    var reg = await navigator.serviceWorker.ready;
+    var sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(public_key)
+    });
+    var token = _memberSession && _memberSession.token;
+    if (!token) { document.getElementById('push-status').textContent = '✗ Not signed in'; return; }
+    var r = await fetch('/api/member/push-subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Member-Token': token },
+      body: JSON.stringify(sub.toJSON())
+    });
+    var d = await r.json();
+    if (d.ok) {
+      document.getElementById('push-status').textContent = '✓ Enabled';
+      document.getElementById('push-enable-btn').textContent = '✓ Push Notifications Active';
+      document.getElementById('push-enable-btn').classList.replace('bg-yellow-800','bg-green-900');
+    }
+  } catch(e) {
+    document.getElementById('push-status').textContent = '✗ ' + e.message;
+  }
+}
+
+// Check existing subscription on login
+function checkPushStatus() {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.ready.then(function(reg) {
+    reg.pushManager.getSubscription().then(function(sub) {
+      if (sub) {
+        var s = document.getElementById('push-status');
+        var b = document.getElementById('push-enable-btn');
+        if (s) s.textContent = '✓ Enabled';
+        if (b) { b.textContent = '✓ Push Notifications Active'; b.classList.replace('bg-yellow-800','bg-green-900'); }
+      }
+    });
+  }).catch(function(){});
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FEATURE: Telemetry Dashboard
+// ═══════════════════════════════════════════════════════════════════════════
+
+var _telemCache = {}; // callsign → last fetch
+
+async function openTelemPanel(callsign) {
+  if (!callsign) return;
+  document.getElementById('telem-panel').classList.remove('hidden');
+  document.getElementById('telem-call').textContent = callsign;
+  document.getElementById('telem-body').innerHTML = '<p class="text-gray-500 text-sm text-center py-6">Loading…</p>';
+  try {
+    var r = await fetch('/api/telemetry/' + callsign);
+    var d = await r.json();
+    renderTelemPanel(d);
+  } catch(e) {
+    document.getElementById('telem-body').innerHTML = '<p class="text-red-400 text-sm text-center py-6">No telemetry data for ' + callsign + '</p>';
+  }
+}
+
+function closeTelemPanel() { document.getElementById('telem-panel').classList.add('hidden'); }
+
+function renderTelemPanel(d) {
+  if (!d || !d.samples || d.samples.length === 0) {
+    document.getElementById('telem-body').innerHTML = '<p class="text-gray-500 text-sm text-center py-6">No telemetry packets received yet.</p>';
+    return;
+  }
+  var meta = d.meta || {};
+  var names = meta.names || ['Ch1','Ch2','Ch3','Ch4','Ch5'];
+  var units = meta.units || ['','','','',''];
+  var latest = d.samples[d.samples.length - 1];
+  var html = '<p class="text-[10px] text-gray-500 mb-2">' + d.samples.length + ' samples · last ' + new Date(latest.ts * 1000).toLocaleTimeString() + '</p>';
+  html += '<div class="grid grid-cols-1 gap-2">';
+  for (var ch = 0; ch < 5; ch++) {
+    var name = names[ch] || ('Ch' + (ch+1));
+    var unit = units[ch] || '';
+    if (!name || name === ('Ch' + (ch+1)) && !unit) continue; // skip unnamed blank channels
+    var vals = d.samples.map(function(s) { return s.ch[ch]; });
+    var cur = vals[vals.length - 1];
+    var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+    // Inline sparkline SVG
+    var svgW = 200, svgH = 32, range = mx - mn || 1;
+    var pts = vals.map(function(v, i) {
+      return (i/(vals.length-1||1)*svgW).toFixed(1) + ',' + ((1-(v-mn)/range)*(svgH-4)+2).toFixed(1);
+    }).join(' ');
+    html += '<div class="bg-gray-900 rounded p-2 flex items-center gap-3">';
+    html += '<div class="flex-1 min-w-0"><p class="text-[11px] font-bold text-white">' + name + '</p>';
+    html += '<p class="text-[10px] text-gray-400">' + cur.toFixed(2) + ' ' + unit + ' <span class="text-gray-600">(min ' + mn.toFixed(1) + ' max ' + mx.toFixed(1) + ')</span></p></div>';
+    html += '<svg width="' + svgW + '" height="' + svgH + '" class="flex-shrink-0"><polyline points="' + pts + '" fill="none" stroke="#7c3aed" stroke-width="1.5"/></svg>';
+    html += '</div>';
+  }
+  html += '</div>';
+  // Bits
+  if (latest.bits) {
+    html += '<div class="mt-2 bg-gray-900 rounded p-2"><p class="text-[10px] font-bold text-white mb-1">Digital Bits</p><div class="flex gap-1 flex-wrap">';
+    latest.bits.forEach(function(b, i) {
+      html += '<span class="text-[9px] px-1.5 py-0.5 rounded font-mono ' + (b ? 'bg-green-800 text-green-200' : 'bg-gray-700 text-gray-500') + '">B' + i + ':' + (b?'1':'0') + '</span>';
+    });
+    html += '</div></div>';
+  }
+  document.getElementById('telem-body').innerHTML = html;
+}
+
+// Show telemetry button when station modal opens — check if any telemetry exists
+function checkTelemAvailable(callsign) {
+  fetch('/api/telemetry/' + callsign)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var btn = document.getElementById('modal-telem-btn');
+      if (btn) btn.classList.toggle('hidden', !d.samples || d.samples.length === 0);
+    }).catch(function(){});
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FEATURE: SOTA / POTA Map Overlay
+// ═══════════════════════════════════════════════════════════════════════════
+
+var _sotaPotaEnabled = false;
+var _sotaPotaMarkers = [];
+var _sotaPotaInterval = null;
+
+function toggleSotaPota(on) {
+  _sotaPotaEnabled = on;
+  if (on) {
+    loadSotaPota();
+    _sotaPotaInterval = setInterval(loadSotaPota, 5 * 60 * 1000);
+  } else {
+    clearInterval(_sotaPotaInterval);
+    _sotaPotaMarkers.forEach(function(m) { map.removeLayer(m); });
+    _sotaPotaMarkers = [];
+  }
+}
+
+function loadSotaPota() {
+  fetch('/api/sota-pota').then(function(r) { return r.json(); }).then(function(spots) {
+    _sotaPotaMarkers.forEach(function(m) { map.removeLayer(m); });
+    _sotaPotaMarkers = [];
+    if (!_sotaPotaEnabled) return;
+    spots.forEach(function(spot) {
+      var lat = spot.aprs_lat, lon = spot.aprs_lon;
+      if (!lat && !lon) return; // only show if heard on APRS
+      var color = spot.type === 'sota' ? '#facc15' : '#22c55e';
+      var emoji = spot.type === 'sota' ? '🏔' : '🌲';
+      var icon = L.divIcon({
+        html: '<div style="font-size:18px;line-height:1;filter:drop-shadow(0 0 4px rgba(0,0,0,0.8))">' + emoji + '</div>',
+        className: '', iconSize: [22, 22], iconAnchor: [11, 11]
+      });
+      var m = L.marker([lat, lon], { icon: icon });
+      m.bindPopup(
+        '<b style="color:' + color + '">' + spot.type.toUpperCase() + ': ' + spot.callsign + '</b><br>' +
+        '<small>' + spot.reference + ' — ' + spot.name + '</small><br>' +
+        '<small>' + spot.frequency + ' MHz ' + spot.mode + '</small>'
+      );
+      m.addTo(map);
+      _sotaPotaMarkers.push(m);
+    });
+  }).catch(function(){});
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FEATURE: HAB Tracker Map Overlay + Panel
+// ═══════════════════════════════════════════════════════════════════════════
+
+var _habEnabled = false;
+var _habMarkers = [];
+var _habPolylines = [];
+var _habInterval = null;
+
+function toggleHAB(on) {
+  _habEnabled = on;
+  if (on) {
+    loadHABFlights();
+    _habInterval = setInterval(loadHABFlights, 30 * 1000);
+  } else {
+    clearInterval(_habInterval);
+    _habMarkers.forEach(function(m) { map.removeLayer(m); });
+    _habPolylines.forEach(function(p) { map.removeLayer(p); });
+    _habMarkers = []; _habPolylines = [];
+  }
+}
+
+function loadHABFlights() {
+  fetch('/api/hab').then(function(r) { return r.json(); }).then(function(flights) {
+    _habMarkers.forEach(function(m) { map.removeLayer(m); });
+    _habPolylines.forEach(function(p) { map.removeLayer(p); });
+    _habMarkers = []; _habPolylines = [];
+    if (!_habEnabled) return;
+    flights.forEach(function(f) {
+      if (!f.track || f.track.length === 0) return;
+      // Track polyline
+      var pts = f.track.map(function(p) { return [p.lat, p.lon]; });
+      var phaseColor = f.phase === 'ascending' ? '#22d3ee' : f.phase === 'descending' ? '#f97316' : '#a3a3a3';
+      var poly = L.polyline(pts, { color: phaseColor, weight: 2, opacity: 0.8 });
+      poly.addTo(map); _habPolylines.push(poly);
+      // Current position marker
+      var last = f.track[f.track.length - 1];
+      var icon = L.divIcon({
+        html: '<div style="font-size:20px;line-height:1;filter:drop-shadow(0 0 4px #000)">🎈</div>',
+        className: '', iconSize: [24, 24], iconAnchor: [12, 12]
+      });
+      var m = L.marker([last.lat, last.lon], { icon: icon });
+      m.bindPopup(
+        '<b class="text-sky-300">' + f.callsign + '</b> — ' + f.phase + '<br>' +
+        'Alt: ' + (f.last_alt_m / 1000).toFixed(2) + ' km | ' +
+        'Rate: ' + (f.ascent_rate_ms > 0 ? '+' : '') + f.ascent_rate_ms.toFixed(1) + ' m/s<br>' +
+        '<small>Max: ' + (f.max_alt_m / 1000).toFixed(2) + ' km</small><br>' +
+        '<a href="#" onclick="openHABPanel(\'' + f.callsign + '\');return false" style="color:#7dd3fc">View details</a>'
+      );
+      m.on('click', function() { map.removeLayer(m.getPopup()); });
+      m.addTo(map); _habMarkers.push(m);
+      // Predicted landing marker
+      if (f.prediction && f.prediction.landing_lat) {
+        var lIcon = L.divIcon({
+          html: '<div style="font-size:16px;line-height:1">📍</div>',
+          className: '', iconSize: [20, 20], iconAnchor: [10, 18]
+        });
+        var lm = L.marker([f.prediction.landing_lat, f.prediction.landing_lon], { icon: lIcon });
+        lm.bindPopup('<b>Predicted landing</b><br>' + f.callsign);
+        lm.addTo(map); _habMarkers.push(lm);
+        // Prediction trajectory
+        if (f.prediction.trajectory && f.prediction.trajectory.length > 1) {
+          var predPts = f.prediction.trajectory.map(function(p) { return [p.lat, p.lon]; });
+          var predLine = L.polyline(predPts, { color: '#fbbf24', weight: 1.5, dashArray: '4,4', opacity: 0.7 });
+          predLine.addTo(map); _habPolylines.push(predLine);
+        }
+      }
+    });
+  }).catch(function(){});
+}
+
+async function openHABPanel(callsign) {
+  document.getElementById('hab-panel').classList.remove('hidden');
+  document.getElementById('hab-panel-call').textContent = callsign;
+  document.getElementById('hab-body').innerHTML = '<p class="text-gray-500 text-sm text-center py-4">Loading…</p>';
+  try {
+    var r = await fetch('/api/hab/' + callsign);
+    var f = await r.json();
+    var phaseColors = { ascending:'text-cyan-400', burst:'text-orange-400', descending:'text-orange-400', landed:'text-gray-400' };
+    var html = '<div class="grid grid-cols-2 gap-2 text-[11px]">';
+    html += '<div class="bg-gray-900 rounded p-2"><p class="text-gray-400">Phase</p><p class="font-bold ' + (phaseColors[f.phase]||'') + '">' + f.phase + '</p></div>';
+    html += '<div class="bg-gray-900 rounded p-2"><p class="text-gray-400">Altitude</p><p class="font-bold text-white">' + (f.last_alt_m/1000).toFixed(2) + ' km</p></div>';
+    html += '<div class="bg-gray-900 rounded p-2"><p class="text-gray-400">Ascent Rate</p><p class="font-bold text-white">' + (f.ascent_rate_ms > 0 ? '+' : '') + f.ascent_rate_ms.toFixed(1) + ' m/s</p></div>';
+    html += '<div class="bg-gray-900 rounded p-2"><p class="text-gray-400">Max Altitude</p><p class="font-bold text-white">' + (f.max_alt_m/1000).toFixed(2) + ' km</p></div>';
+    if (f.burst_alt_m) html += '<div class="bg-gray-900 rounded p-2"><p class="text-gray-400">Burst Alt</p><p class="font-bold text-orange-300">' + (f.burst_alt_m/1000).toFixed(2) + ' km</p></div>';
+    html += '<div class="bg-gray-900 rounded p-2"><p class="text-gray-400">Track Points</p><p class="font-bold text-white">' + (f.track||[]).length + '</p></div>';
+    html += '</div>';
+    if (f.prediction && f.prediction.landing_lat) {
+      html += '<div class="bg-sky-900/30 border border-sky-700 rounded p-2 mt-2 text-[11px]">';
+      html += '<p class="font-bold text-sky-300 mb-1">🎯 CUSF Landing Prediction</p>';
+      html += '<p class="text-white">Lat: ' + f.prediction.landing_lat.toFixed(4) + ' / Lon: ' + f.prediction.landing_lon.toFixed(4) + '</p>';
+      html += '<p class="text-gray-400">Burst alt: ' + (f.prediction.burst_alt_m ? (f.prediction.burst_alt_m/1000).toFixed(1)+'km' : '?') + '</p>';
+      html += '</div>';
+    }
+    document.getElementById('hab-body').innerHTML = html;
+    // Show HAB button in station modal
+    var btn = document.getElementById('modal-hab-btn');
+    if (btn) btn.classList.remove('hidden');
+  } catch(e) {
+    document.getElementById('hab-body').innerHTML = '<p class="text-red-400 text-sm text-center py-4">No active HAB flight for ' + callsign + '</p>';
+  }
+}
+
+function closeHABPanel() { document.getElementById('hab-panel').classList.add('hidden'); }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FEATURE: Member APRS Objects
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function loadMemberObjects() {
+  if (!_memberSession) return;
+  var r = await fetch('/api/member/objects', {
+    headers: { 'X-Member-Token': _memberSession.token }
+  });
+  var d = await r.json();
+  renderObjectList(d.objects || []);
+}
+
+function renderObjectList(objects) {
+  var el = document.getElementById('obj-list');
+  if (!el) return;
+  if (!objects.length) { el.innerHTML = '<p class="text-[10px] text-gray-600 text-center py-2">No objects yet.</p>'; return; }
+  el.innerHTML = objects.map(function(o) {
+    return '<div class="flex items-center gap-2 bg-gray-900 rounded px-2 py-1">' +
+      '<span class="font-mono text-[10px] text-green-300 flex-1">' + o.name + '</span>' +
+      '<span class="text-[9px] text-gray-500">' + o.lat.toFixed(3) + ',' + o.lon.toFixed(3) + '</span>' +
+      '<span class="text-[9px] ' + (o.active ? 'text-green-400' : 'text-gray-600') + '">' + (o.active ? '●' : '○') + '</span>' +
+      '<button onclick="deleteAPRSObject(\'' + o.name + '\')" class="text-red-500 hover:text-red-400 text-[10px]">✕</button>' +
+    '</div>';
+  }).join('');
+}
+
+async function createAPRSObject() {
+  if (!_memberSession) return;
+  var name = (document.getElementById('obj-name').value || '').trim().toUpperCase();
+  var lat  = parseFloat(document.getElementById('obj-lat').value);
+  var lon  = parseFloat(document.getElementById('obj-lon').value);
+  var sym  = (document.getElementById('obj-symbol').value || '/!').substring(0,2);
+  var comment = document.getElementById('obj-comment').value.trim();
+  if (!name) { alert('Object name required'); return; }
+  if (isNaN(lat) || isNaN(lon)) { alert('Valid coordinates required'); return; }
+  var r = await fetch('/api/member/objects', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Member-Token': _memberSession.token },
+    body: JSON.stringify({ name, lat, lon, symbol: sym, comment, active: true })
+  });
+  var d = await r.json();
+  if (d.ok) {
+    document.getElementById('obj-name').value = '';
+    document.getElementById('obj-comment').value = '';
+    loadMemberObjects();
+  } else {
+    alert(d.error || 'Failed to create object');
+  }
+}
+
+async function deleteAPRSObject(name) {
+  if (!_memberSession || !confirm('Delete object ' + name + '?')) return;
+  await fetch('/api/member/objects/' + name, {
+    method: 'DELETE',
+    headers: { 'X-Member-Token': _memberSession.token }
+  });
+  loadMemberObjects();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Wire push check into member login
+// ═══════════════════════════════════════════════════════════════════════════
+(function() {
+  var _origApplyPrefs2 = applyMemberPrefsFromServer;
+  applyMemberPrefsFromServer = function(p) {
+    _origApplyPrefs2(p);
+    setTimeout(function() {
+      checkPushStatus();
+      loadMemberObjects();
+    }, 800);
+  };
+})();
+
+// Show telemetry + HAB buttons when station modal opens
+(function() {
+  var _origOpenStation = window.openStation || function(){};
+  // Hook into wherever station call is set
+  var observer = new MutationObserver(function() {
+    var call = document.getElementById('modal-call');
+    if (call && call.textContent) {
+      checkTelemAvailable(call.textContent.trim());
+    }
+  });
+  observer.observe(document.getElementById('modal-call') || document.body, { childList: true, characterData: true, subtree: true });
+})();
+
   var _origConnect = connectWS;
   if (typeof _origConnect === 'function') {
     connectWS = function() {
@@ -14349,6 +14777,61 @@ document.addEventListener('keydown', function(e) {
             <div id="igate-list" class="space-y-1.5">
               <p class="text-[11px] text-gray-600 text-center py-3">No iGates connected yet — configure your device to connect via MQTT.</p>
             </div>
+          </div>
+
+          <!-- ── Push Notifications ─────────────────────────────────────── -->
+          <div class="bg-gray-800 border border-gray-700 rounded p-2 mt-2">
+            <div class="flex items-center justify-between mb-1">
+              <p class="text-[11px] text-yellow-400 font-bold uppercase">🔔 Push Notifications</p>
+              <span id="push-status" class="text-[10px] text-gray-500"></span>
+            </div>
+            <p class="text-[10px] text-gray-500 mb-2">Receive alerts on this device when the page is closed — geo-fence triggers, APRS messages, SOTA/POTA activations, HAB launches.</p>
+            <button onclick="requestPushPermission()"
+              class="w-full bg-yellow-800 hover:bg-yellow-700 text-yellow-100 text-[11px] font-bold py-1.5 rounded" id="push-enable-btn">
+              Enable Push Notifications
+            </button>
+          </div>
+
+          <!-- ── APRS Objects ──────────────────────────────────────────────── -->
+          <div class="bg-gray-800 border border-gray-700 rounded p-2 mt-2">
+            <div class="flex items-center justify-between mb-1">
+              <p class="text-[11px] text-green-400 font-bold uppercase">📌 My APRS Objects</p>
+              <button onclick="loadMemberObjects()" class="text-[10px] text-gray-500 hover:text-gray-300">↻ Refresh</button>
+            </div>
+            <p class="text-[10px] text-gray-500 mb-2">Place named objects on the APRS map. The server transmits them to APRS-IS every 10 minutes.</p>
+            <!-- Create form -->
+            <div class="grid grid-cols-2 gap-1.5 mb-2">
+              <div class="col-span-2">
+                <label class="text-[10px] text-gray-400">Name <span class="text-gray-600">(max 9 chars)</span></label>
+                <input id="obj-name" maxlength="9" placeholder="e.g. EVENTMKR"
+                  class="w-full bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-green-500 mt-0.5">
+              </div>
+              <div>
+                <label class="text-[10px] text-gray-400">Latitude</label>
+                <input id="obj-lat" type="number" step="0.0001" placeholder="53.7000"
+                  class="w-full bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-green-500 mt-0.5">
+              </div>
+              <div>
+                <label class="text-[10px] text-gray-400">Longitude</label>
+                <input id="obj-lon" type="number" step="0.0001" placeholder="-1.5000"
+                  class="w-full bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-green-500 mt-0.5">
+              </div>
+              <div>
+                <label class="text-[10px] text-gray-400">Symbol <span class="text-gray-600">(2 chars)</span></label>
+                <input id="obj-symbol" maxlength="2" placeholder="/!" value="/!"
+                  class="w-full bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white font-mono outline-none focus:border-green-500 mt-0.5">
+              </div>
+              <div>
+                <label class="text-[10px] text-gray-400">Comment</label>
+                <input id="obj-comment" maxlength="43" placeholder="Description"
+                  class="w-full bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-green-500 mt-0.5">
+              </div>
+            </div>
+            <button onclick="createAPRSObject()"
+              class="w-full bg-green-800 hover:bg-green-700 text-green-100 text-[11px] font-bold py-1.5 rounded mb-2">
+              📌 Place Object
+            </button>
+            <div id="obj-list" class="space-y-1"></div>
           </div>
 
           <button onclick="saveMemberSettings()" class="bg-cyan-700 hover:bg-cyan-600 px-3 py-1.5 rounded text-xs text-white font-bold">Save Changes</button>
