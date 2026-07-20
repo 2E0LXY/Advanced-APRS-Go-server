@@ -12106,6 +12106,23 @@ async function deleteAPRSObject(name) {
   observer.observe(document.getElementById('modal-call') || document.body, { childList: true, characterData: true, subtree: true });
 })();
 
+
+// ── Expose new feature functions to global scope ──────────────────────────
+// The injection point is inside an IIFE; inline onclick handlers need these
+// to be on window to find them.
+window.requestPushPermission = requestPushPermission;
+window.openTelemPanel        = openTelemPanel;
+window.closeTelemPanel       = closeTelemPanel;
+window.toggleSotaPota        = toggleSotaPota;
+window.toggleHAB             = toggleHAB;
+window.openHABPanel          = openHABPanel;
+window.closeHABPanel         = closeHABPanel;
+window.loadMemberObjects     = loadMemberObjects;
+window.createAPRSObject      = createAPRSObject;
+window.deleteAPRSObject      = deleteAPRSObject;
+window.loadIGates            = window.loadIGates || loadIGates;
+window.sendIGateCmd          = window.sendIGateCmd || sendIGateCmd;
+
   var _origConnect = connectWS;
   if (typeof _origConnect === 'function') {
     connectWS = function() {
