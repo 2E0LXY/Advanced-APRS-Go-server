@@ -527,6 +527,9 @@ body { background: var(--bg-base); color: var(--text-base); }
         <button onclick="togglePanel('utils');closeToolsMenu()"
           class="w-full text-left px-4 py-2 hover:bg-gray-700 flex items-center gap-2">
           <span class="opacity-60">🔧</span> Utilities</button>
+        <button onclick="openMapDownloader();closeToolsMenu()"
+          class="w-full text-left px-4 py-2 hover:bg-gray-700 flex items-center gap-2">
+          <span class="opacity-60">🗺</span> Map Downloader</button>
         <button onclick="togglePanel('mesh');closeToolsMenu()"
           class="w-full text-left px-4 py-2 hover:bg-gray-700 flex items-center gap-2">
           <span class="opacity-60">📡</span> Mesh</button>
@@ -14495,6 +14498,237 @@ document.addEventListener('keydown', function(e) {
     }
   }
 });
+
+
+/* ═══ Map Downloader (T-Deck offline tiles) — lazy-loaded, reuses site Leaflet ═══ */
+var _mapdlState = { map:null, rect:null, pts:[], selecting:false, min:0, max:0, cancel:false, busy:false, built:false };
+
+function _mapdlLoadScript(src){
+  return new Promise(function(res, rej){
+    if (document.querySelector('script[src="'+src+'"]')) return res();
+    var s = document.createElement('script'); s.src = src;
+    s.onload = res; s.onerror = function(){ rej(new Error('load '+src)); };
+    document.head.appendChild(s);
+  });
+}
+
+async function openMapDownloader(){
+  document.getElementById('mapdl-modal').classList.remove('hidden');
+  _mapdlLog('Loading packager libraries...');
+  try {
+    await _mapdlLoadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+    await _mapdlLoadScript('https://cdnjs.cloudflare.com/ajax/libs/pako/1.0.11/pako.min.js');
+    await _mapdlLoadScript('https://cdn.jsdelivr.net/gh/photopea/UPNG.js/UPNG.js');
+  } catch(e){ _mapdlLog('Library load failed: '+e.message, 'err'); }
+  _mapdlInit();
+}
+function closeMapDownloader(){ document.getElementById('mapdl-modal').classList.add('hidden'); }
+
+function _mapdlLog(msg, type){
+  var el = document.getElementById('mapdl-log'); if(!el) return;
+  var c = type==='err'?'#f87171':(type==='ok'?'#4ade80':'#5eead4');
+  el.innerHTML += '<div style="color:'+c+'">'+msg+'</div>'; el.scrollTop = el.scrollHeight;
+}
+
+function _mapdlInit(){
+  var S = _mapdlState;
+  if (S.built){ setTimeout(function(){ S.map.invalidateSize(); }, 100); return; }
+  S.built = true;
+
+  S.map = L.map('mapdl-map', { zoomControl:true }).setView([53.68, -1.49], 9); // Wakefield default
+  var layers = {
+    osm: L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'© OSM'}),
+    satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {attribution:'© Esri'}),
+    topo: L.tileLayer('https://a.tile.opentopomap.org/{z}/{x}/{y}.png', {attribution:'© OpenTopo'})
+  };
+  layers.osm.addTo(S.map);
+  setTimeout(function(){ S.map.invalidateSize(); }, 150);
+
+  document.getElementById('mapdl-source').onchange = function(e){
+    Object.values(layers).forEach(function(l){ S.map.removeLayer(l); });
+    layers[e.target.value].addTo(S.map);
+  };
+
+  document.getElementById('mapdl-searchBtn').onclick = async function(){
+    var q = document.getElementById('mapdl-search').value; if(!q) return;
+    try {
+      var r = await fetch('https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(q));
+      var d = await r.json();
+      if (d.length){ S.map.setView([parseFloat(d[0].lat), parseFloat(d[0].lon)], 12); _mapdlLog('Found: '+d[0].display_name); }
+      else _mapdlLog('No match.', 'err');
+    } catch(e){ _mapdlLog('Search failed.', 'err'); }
+  };
+  document.getElementById('mapdl-search').addEventListener('keydown', function(e){ if(e.key==='Enter') document.getElementById('mapdl-searchBtn').click(); });
+
+  document.getElementById('mapdl-select').onclick = function(){
+    S.selecting = true; S.pts = [];
+    if (S.rect){ S.map.removeLayer(S.rect); S.rect = null; }
+    _mapdlLog('Click two corners on the map.');
+  };
+  document.getElementById('mapdl-setmin').onclick = function(){
+    if(!S.rect) return _mapdlLog('Define an area first.', 'err');
+    S.min = S.map.getZoom(); _mapdlLog('Min zoom = '+S.min); _mapdlTelemetry();
+  };
+  document.getElementById('mapdl-setmax').onclick = function(){
+    if(!S.rect) return _mapdlLog('Define an area first.', 'err');
+    S.max = S.map.getZoom(); _mapdlLog('Max zoom = '+S.max); _mapdlTelemetry();
+  };
+  document.getElementById('mapdl-reset').onclick = function(){
+    if(S.rect){ S.map.removeLayer(S.rect); S.rect=null; }
+    S.pts=[]; S.min=0; S.max=0; _mapdlTelemetry(); _mapdlLog('Reset.');
+  };
+
+  S.map.on('click', function(e){
+    if(!S.selecting) return;
+    S.pts.push(e.latlng);
+    if(S.pts.length===2){
+      S.selecting=false;
+      var b = L.latLngBounds(S.pts);
+      S.rect = L.rectangle(b, {color:'#2dd4bf', weight:2, fillOpacity:0.1}).addTo(S.map);
+      _mapdlLog('Area defined.'); _mapdlTelemetry();
+    }
+  });
+
+  document.getElementById('mapdl-zmode').onchange = function(e){
+    var m = e.target.value;
+    var sw = document.getElementById('mapdl-stepwrap'), cw = document.getElementById('mapdl-customwrap');
+    sw.classList.toggle('hidden', m!=='step'); sw.classList.toggle('flex', m==='step');
+    cw.classList.toggle('hidden', m!=='custom'); cw.classList.toggle('flex', m==='custom');
+    if(m==='custom') _mapdlBuildCustom();
+    _mapdlTelemetry();
+  };
+  document.getElementById('mapdl-step').oninput = _mapdlTelemetry;
+  document.getElementById('mapdl-8bit').onchange = _mapdlTelemetry;
+  document.getElementById('mapdl-download').onclick = _mapdlDownload;
+  document.getElementById('mapdl-cancel').onclick = function(){ S.cancel = true; _mapdlLog('Cancelling...', 'err'); };
+  _mapdlTelemetry();
+}
+
+function _mapdlBuildCustom(){
+  var wrap = document.getElementById('mapdl-customwrap');
+  if(wrap.dataset.built) return; wrap.dataset.built='1';
+  var h='';
+  for(var z=1; z<=19; z++)
+    h += '<label class="inline-flex items-center gap-0.5 text-[10px] text-teal-300 bg-gray-900 px-1.5 py-0.5 rounded border border-gray-700 cursor-pointer"><input type="checkbox" class="mapdl-cb accent-teal-500" value="'+z+'"> '+z+'</label>';
+  wrap.innerHTML = h;
+  wrap.querySelectorAll('.mapdl-cb').forEach(function(cb){ cb.addEventListener('change', _mapdlTelemetry); });
+}
+
+function _mapdlZoomLevels(){
+  var S=_mapdlState;
+  var mode = document.getElementById('mapdl-zmode').value;
+  if(mode==='custom'){
+    var picked=[]; document.querySelectorAll('.mapdl-cb:checked').forEach(function(cb){ picked.push(parseInt(cb.value)); });
+    return picked.sort(function(a,b){return a-b;});
+  }
+  var zMin=Math.min(S.min,S.max)||S.min||S.max, zMax=Math.max(S.min,S.max)||S.min||S.max;
+  if(!zMin||!zMax) return [];
+  var levels=[];
+  if(mode==='step'){
+    var st=Math.max(1, parseInt(document.getElementById('mapdl-step').value)||1);
+    for(var z=zMin; z<=zMax; z+=st) levels.push(z);
+    if(levels[levels.length-1]!==zMax) levels.push(zMax);
+  } else { for(var z2=zMin; z2<=zMax; z2++) levels.push(z2); }
+  return levels;
+}
+
+function _mapdlLon2tile(lon,z){ return Math.floor((lon+180)/360*Math.pow(2,z)); }
+function _mapdlLat2tile(lat,z){ return Math.floor((1-Math.log(Math.tan(lat*Math.PI/180)+1/Math.cos(lat*Math.PI/180))/Math.PI)/2*Math.pow(2,z)); }
+
+function _mapdlTiles(){
+  var S=_mapdlState; if(!S.rect) return [];
+  var b=S.rect.getBounds(), n=b.getNorth(), s=b.getSouth(), w=b.getWest(), e=b.getEast();
+  var levels=_mapdlZoomLevels(); if(!levels.length) return [];
+  var list=[];
+  levels.forEach(function(z){
+    var x0=_mapdlLon2tile(w,z), x1=_mapdlLon2tile(e,z), y0=_mapdlLat2tile(n,z), y1=_mapdlLat2tile(s,z);
+    for(var x=Math.min(x0,x1); x<=Math.max(x0,x1); x++)
+      for(var y=Math.min(y0,y1); y<=Math.max(y0,y1); y++) list.push({z:z,x:x,y:y});
+  });
+  return list;
+}
+
+function _mapdlFmtSize(b){ if(b<1024)return b+' B'; if(b<1048576)return (b/1024).toFixed(1)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
+
+function _mapdlTelemetry(){
+  var S=_mapdlState;
+  document.getElementById('mapdl-vmin').innerText = S.min||'--';
+  document.getElementById('mapdl-vmax').innerText = S.max||'--';
+  var lv=_mapdlZoomLevels();
+  document.getElementById('mapdl-levels').innerText = lv.length?lv.join(', '):'--';
+  var list=_mapdlTiles(), count=list.length;
+  document.getElementById('mapdl-count').innerText = count.toLocaleString();
+  var avg={osm:22000,satellite:58000,topo:32000}[document.getElementById('mapdl-source').value]||25000;
+  var use8=document.getElementById('mapdl-8bit').checked;
+  document.getElementById('mapdl-size').innerText = _mapdlFmtSize(count*avg*(use8?0.45:1));
+  var dl=document.getElementById('mapdl-download');
+  dl.innerText = count>5000 ? ('Generate ('+count.toLocaleString()+' tiles — large!)') : 'Generate Package';
+}
+
+async function _mapdlProcTile(blob, do8){
+  var cv=document.createElement('canvas'); cv.width=256; cv.height=256;
+  var ctx=cv.getContext('2d'); var img=await createImageBitmap(blob);
+  ctx.clearRect(0,0,256,256); ctx.drawImage(img,0,0,256,256);
+  if(do8){
+    var id=ctx.getImageData(0,0,256,256); var res=UPNG.encode([id.data.buffer],256,256,256);
+    return new Blob([res],{type:'image/png'});
+  }
+  return new Promise(function(r){ cv.toBlob(function(b){r(b);},'image/png'); });
+}
+
+async function _mapdlDownload(){
+  var S=_mapdlState;
+  var list=_mapdlTiles();
+  if(!S.rect) return _mapdlLog('Define an area first.', 'err');
+  if(!S.min||!S.max) return _mapdlLog('Set min and max zoom.', 'err');
+  if(!list.length) return _mapdlLog('No tiles.', 'err');
+  if(list.length>15000 && !confirm('This will download '+list.length.toLocaleString()+' tiles — a very large job that may hit OpenStreetMap usage limits and use lots of memory. Continue?')){
+    _mapdlLog('Cancelled (tile count).', 'err'); return;
+  }
+  if(typeof JSZip==='undefined'){ _mapdlLog('Packager not loaded yet.', 'err'); return; }
+
+  S.busy=true; S.cancel=false;
+  document.getElementById('mapdl-download').classList.add('hidden');
+  document.getElementById('mapdl-cancel').classList.remove('hidden');
+  _mapdlLog('Preparing '+list.length+' tiles...');
+
+  var zip=new JSZip();
+  var struct=document.getElementById('mapdl-struct').value;
+  var target = struct==='meshcore' ? zip.folder('maps').folder('tiles') : (struct==='tiles' ? zip.folder('tiles') : zip);
+  var src=document.getElementById('mapdl-source').value, use8=document.getElementById('mapdl-8bit').checked;
+  var done=0;
+  for(var i=0;i<list.length;i++){
+    if(S.cancel) break;
+    var t=list[i], t0=Date.now();
+    try {
+      var url = src==='osm' ? 'https://tile.openstreetmap.org/'+t.z+'/'+t.x+'/'+t.y+'.png' :
+                (src==='satellite' ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+t.z+'/'+t.y+'/'+t.x :
+                 'https://a.tile.opentopomap.org/'+t.z+'/'+t.x+'/'+t.y+'.png');
+      var res=await fetch(url); if(!res.ok) throw new Error('HTTP '+res.status);
+      var blob=await res.blob(); blob=await _mapdlProcTile(blob, use8);
+      target.file(t.z+'/'+t.x+'/'+t.y+'.png', blob);
+      done++;
+      var pct=Math.floor(done/list.length*100);
+      document.getElementById('mapdl-bar').style.width=pct+'%';
+      document.getElementById('mapdl-pct').innerText=pct+'%';
+      if(done%20===0) _mapdlLog('Processed '+done+'/'+list.length+'...');
+      var wait=Math.max(0, 100-(Date.now()-t0)); await new Promise(function(r){setTimeout(r,wait);});
+    } catch(err){ _mapdlLog('Skip '+t.z+'/'+t.x+'/'+t.y+' ('+err.message+')', 'err'); }
+  }
+
+  if(!S.cancel && done>0){
+    _mapdlLog('Compiling ZIP...', 'ok');
+    var out=await zip.generateAsync({type:'blob'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(out);
+    a.download='tdeck_tiles_'+Date.now()+'.zip'; document.body.appendChild(a); a.click();
+    setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 200);
+    _mapdlLog('Done. Extract ZIP to SD card root.', 'ok');
+  }
+  S.busy=false;
+  document.getElementById('mapdl-download').classList.remove('hidden');
+  document.getElementById('mapdl-cancel').classList.add('hidden');
+}
+
 </script>
 <!-- WX Station Detail Modal -->
 <div id="wx-detail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-2 bg-black bg-opacity-70" onclick="if(event.target===this)closeWXDetail()">
@@ -15104,5 +15338,90 @@ document.addEventListener('keydown', function(e) {
       </div>
     </div>
   </div>
-</div></body>
+</div>
+
+<!-- ═══ Map Downloader Modal (T-Deck offline tile packager) ═══ -->
+<div id="mapdl-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-2" style="z-index:100000" onclick="if(event.target===this)closeMapDownloader()">
+  <div class="bg-gray-900 border border-teal-800 rounded-xl shadow-2xl w-full max-w-5xl max-h-[92vh] overflow-y-auto">
+    <div class="flex items-center justify-between p-3 border-b border-gray-700 sticky top-0 bg-gray-900 z-10">
+      <h2 class="text-lg font-bold text-teal-400">🗺 Map Downloader — Offline T-Deck Tiles</h2>
+      <button onclick="closeMapDownloader()" class="text-gray-400 hover:text-white text-xl">✕</button>
+    </div>
+    <div class="p-3 grid grid-cols-1 lg:grid-cols-3 gap-3 text-sm">
+      <!-- Map + search -->
+      <div class="lg:col-span-2 space-y-2">
+        <div class="flex gap-2">
+          <input id="mapdl-search" placeholder="Search location (e.g. Wakefield, UK)..." class="flex-1 p-2 rounded text-sm bg-gray-800 border border-gray-700 text-teal-100 outline-none">
+          <button id="mapdl-searchBtn" class="px-3 py-2 bg-gray-800 rounded text-sm hover:bg-gray-700">Search</button>
+          <select id="mapdl-source" class="p-2 rounded text-sm bg-gray-800 border border-gray-700 text-teal-100 outline-none">
+            <option value="osm">Standard (OSM)</option>
+            <option value="satellite">Satellite (Esri)</option>
+            <option value="topo">Topo (OpenTopo)</option>
+          </select>
+        </div>
+        <div id="mapdl-map" style="height:380px;border-radius:6px;border:1px solid #334155"></div>
+        <div class="flex flex-wrap gap-2">
+          <button id="mapdl-select" class="bg-teal-800 hover:bg-teal-700 px-3 py-1.5 rounded text-xs font-bold uppercase">Define Area</button>
+          <button id="mapdl-setmin" class="bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded text-xs font-bold uppercase">Set Min Zoom</button>
+          <button id="mapdl-setmax" class="bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded text-xs font-bold uppercase">Set Max Zoom</button>
+          <button id="mapdl-reset" class="bg-red-900/40 text-red-300 border border-red-900/50 px-3 py-1.5 rounded text-xs font-bold uppercase">Reset</button>
+        </div>
+      </div>
+      <!-- Controls -->
+      <div class="space-y-3">
+        <!-- Zoom Levels -->
+        <div class="bg-gray-800/60 p-3 rounded border border-gray-700">
+          <h3 class="text-[10px] font-bold uppercase text-teal-600 mb-2 tracking-widest">Zoom Levels</h3>
+          <div class="flex flex-wrap items-center gap-2 mb-2">
+            <select id="mapdl-zmode" class="text-xs p-1 rounded bg-gray-900 border border-gray-700 text-teal-100 outline-none">
+              <option value="continuous">Continuous (Min→Max)</option>
+              <option value="step">Step (every Nth)</option>
+              <option value="custom">Custom levels</option>
+            </select>
+            <div id="mapdl-stepwrap" class="hidden items-center gap-1">
+              <label class="text-[10px] uppercase text-teal-700">Step</label>
+              <input id="mapdl-step" type="number" value="2" min="1" max="10" class="w-12 text-xs p-1 rounded bg-gray-900 border border-gray-700 text-teal-100 outline-none">
+            </div>
+          </div>
+          <div id="mapdl-customwrap" class="hidden flex-wrap gap-1 mb-2"></div>
+          <div class="text-[11px] font-mono text-teal-400 border-t border-gray-700 pt-2">
+            Min: <b id="mapdl-vmin" class="text-teal-300">--</b> ·
+            Max: <b id="mapdl-vmax" class="text-teal-300">--</b><br>
+            Levels: <b id="mapdl-levels" class="text-teal-300">--</b>
+          </div>
+        </div>
+        <!-- Output -->
+        <div class="bg-gray-800/60 p-3 rounded border border-gray-700">
+          <h3 class="text-[10px] font-bold uppercase text-teal-600 mb-2 tracking-widest">Output</h3>
+          <label class="text-[10px] uppercase text-teal-700 block mb-1">Folder layout</label>
+          <select id="mapdl-struct" class="w-full text-xs p-1 rounded bg-gray-900 border border-gray-700 text-teal-100 mb-2 outline-none">
+            <option value="root">Flat Root (/z/x/y.png)</option>
+            <option value="tiles">Subfolder (/tiles/z/x/y.png)</option>
+            <option value="meshcore">MeshCore (/maps/tiles/)</option>
+          </select>
+          <label class="inline-flex items-center gap-2 text-[10px] uppercase text-teal-400 font-bold">
+            <input type="checkbox" id="mapdl-8bit" checked class="accent-teal-500"> 8-bit Indexed (smaller)
+          </label>
+        </div>
+        <!-- Telemetry -->
+        <div class="bg-teal-900/20 border border-teal-900/40 p-3 rounded">
+          <div class="flex justify-between text-xs mb-1 text-teal-500">
+            <span>Progress</span><span id="mapdl-pct" class="font-bold text-teal-400">0%</span>
+          </div>
+          <div class="w-full bg-gray-900 h-2 rounded-full overflow-hidden mb-2">
+            <div id="mapdl-bar" class="bg-teal-500 h-full w-0 transition-all"></div>
+          </div>
+          <div class="flex justify-between text-[11px]"><span class="text-teal-700 uppercase">Tiles</span><span id="mapdl-count" class="font-bold">0</span></div>
+          <div class="flex justify-between text-[11px]"><span class="text-teal-700 uppercase">Est size</span><span id="mapdl-size" class="font-bold">0 B</span></div>
+        </div>
+        <button id="mapdl-download" class="w-full bg-teal-800 hover:bg-teal-700 py-2.5 rounded text-sm font-bold uppercase">Generate Package</button>
+        <button id="mapdl-cancel" class="hidden w-full bg-red-900/40 text-red-300 py-2.5 rounded text-sm font-bold uppercase border border-red-900/50">Cancel</button>
+        <div id="mapdl-log" class="bg-black/50 p-2 rounded font-mono text-[10px] h-24 overflow-y-auto border border-gray-800 text-teal-500">Ready.</div>
+      </div>
+    </div>
+    <div class="px-3 pb-3 text-[10px] text-gray-500">Tiles © OpenStreetMap / Esri / OpenTopoMap contributors. Extract the ZIP to your SD card root. For personal/amateur use — respect tile provider usage policies.</div>
+  </div>
+</div>
+
+</body>
 </html>
