@@ -12033,7 +12033,7 @@ async function loadMemberObjects() {
 }
 
 function renderObjectList(objects) {
-  var el = document.getElementById('obj-list');
+  var el = document.getElementById('mobj-list');
   if (!el) return;
   if (!objects.length) { el.innerHTML = '<p class="text-[10px] text-gray-600 text-center py-2">No objects yet.</p>'; return; }
   el.innerHTML = objects.map(function(o) {
@@ -12048,11 +12048,11 @@ function renderObjectList(objects) {
 
 async function createAPRSObject() {
   if (!_memberSession) return;
-  var name = (document.getElementById('obj-name').value || '').trim().toUpperCase();
-  var lat  = parseFloat(document.getElementById('obj-lat').value);
-  var lon  = parseFloat(document.getElementById('obj-lon').value);
-  var sym  = (document.getElementById('obj-symbol').value || '/!').substring(0,2);
-  var comment = document.getElementById('obj-comment').value.trim();
+  var name = (document.getElementById('mobj-name').value || '').trim().toUpperCase();
+  var lat  = parseFloat(document.getElementById('mobj-lat').value);
+  var lon  = parseFloat(document.getElementById('mobj-lon').value);
+  var sym  = (document.getElementById('mobj-symbol').value || '/!').substring(0,2);
+  var comment = document.getElementById('mobj-comment').value.trim();
   if (!name) { alert('Object name required'); return; }
   if (isNaN(lat) || isNaN(lon)) { alert('Valid coordinates required'); return; }
   var r = await fetch('/api/member/objects', {
@@ -12062,8 +12062,8 @@ async function createAPRSObject() {
   });
   var d = await r.json();
   if (d.ok) {
-    document.getElementById('obj-name').value = '';
-    document.getElementById('obj-comment').value = '';
+    document.getElementById('mobj-name').value = '';
+    document.getElementById('mobj-comment').value = '';
     loadMemberObjects();
   } else {
     alert(d.error || 'Failed to create object');
@@ -12721,7 +12721,7 @@ function loadWxSettings() {
       ssidSel.appendChild(opt);
     }
   }
-  var p = (_memberSession && _memberSession.preferences) ? _memberSession.preferences : {};
+  var p = (_memberSession && _memberSession.prefs) ? _memberSession.prefs : {};
   var el = function(id) { return document.getElementById(id); };
   if (el('wx-enabled'))   el('wx-enabled').checked   = !!p.wx_enabled;
   if (el('wx-app-key')  && p.wx_app_key)  el('wx-app-key').value  = p.wx_app_key;
@@ -14870,27 +14870,27 @@ document.addEventListener('keydown', function(e) {
             <div class="grid grid-cols-2 gap-1.5 mb-2">
               <div class="col-span-2">
                 <label class="text-[10px] text-gray-400">Name <span class="text-gray-600">(max 9 chars)</span></label>
-                <input id="obj-name" maxlength="9" placeholder="e.g. EVENTMKR"
+                <input id="mobj-name" maxlength="9" placeholder="e.g. EVENTMKR"
                   class="w-full bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-green-500 mt-0.5">
               </div>
               <div>
                 <label class="text-[10px] text-gray-400">Latitude</label>
-                <input id="obj-lat" type="number" step="0.0001" placeholder="53.7000"
+                <input id="mobj-lat" type="number" step="0.0001" placeholder="53.7000"
                   class="w-full bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-green-500 mt-0.5">
               </div>
               <div>
                 <label class="text-[10px] text-gray-400">Longitude</label>
-                <input id="obj-lon" type="number" step="0.0001" placeholder="-1.5000"
+                <input id="mobj-lon" type="number" step="0.0001" placeholder="-1.5000"
                   class="w-full bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-green-500 mt-0.5">
               </div>
               <div>
                 <label class="text-[10px] text-gray-400">Symbol <span class="text-gray-600">(2 chars)</span></label>
-                <input id="obj-symbol" maxlength="2" placeholder="/!" value="/!"
+                <input id="mobj-symbol" maxlength="2" placeholder="/!" value="/!"
                   class="w-full bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white font-mono outline-none focus:border-green-500 mt-0.5">
               </div>
               <div>
                 <label class="text-[10px] text-gray-400">Comment</label>
-                <input id="obj-comment" maxlength="43" placeholder="Description"
+                <input id="mobj-comment" maxlength="43" placeholder="Description"
                   class="w-full bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-green-500 mt-0.5">
               </div>
             </div>
@@ -14898,7 +14898,7 @@ document.addEventListener('keydown', function(e) {
               class="w-full bg-green-800 hover:bg-green-700 text-green-100 text-[11px] font-bold py-1.5 rounded mb-2">
               📌 Place Object
             </button>
-            <div id="obj-list" class="space-y-1"></div>
+            <div id="mobj-list" class="space-y-1"></div>
           </div>
 
           <button onclick="saveMemberSettings()" class="bg-cyan-700 hover:bg-cyan-600 px-3 py-1.5 rounded text-xs text-white font-bold">Save Changes</button>
