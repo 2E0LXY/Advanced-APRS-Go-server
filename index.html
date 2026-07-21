@@ -14514,12 +14514,15 @@ function _mapdlLoadScript(src){
 
 async function openMapDownloader(){
   document.getElementById('mapdl-modal').classList.remove('hidden');
-  _mapdlLog('Loading packager libraries...');
-  try {
-    await _mapdlLoadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
-    await _mapdlLoadScript('https://cdnjs.cloudflare.com/ajax/libs/pako/1.0.11/pako.min.js');
-    await _mapdlLoadScript('https://cdn.jsdelivr.net/gh/photopea/UPNG.js/UPNG.js');
-  } catch(e){ _mapdlLog('Library load failed: '+e.message, 'err'); }
+  if (typeof JSZip === 'undefined') {
+    _mapdlLog('Loading packager libraries...');
+    try {
+      await _mapdlLoadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+      await _mapdlLoadScript('https://cdnjs.cloudflare.com/ajax/libs/pako/1.0.11/pako.min.js');
+      await _mapdlLoadScript('https://cdn.jsdelivr.net/gh/photopea/UPNG.js/UPNG.js');
+      _mapdlLog('Ready to download tiles.', 'ok');
+    } catch(e){ _mapdlLog('Library load failed: '+e.message, 'err'); }
+  }
   _mapdlInit();
 }
 function closeMapDownloader(){ document.getElementById('mapdl-modal').classList.add('hidden'); }
@@ -15445,10 +15448,11 @@ async function _mapdlDownload(){
           <h3 class="text-[10px] font-bold uppercase text-teal-600 mb-2 tracking-widest">Output</h3>
           <label class="text-[10px] uppercase text-teal-700 block mb-1">Folder layout</label>
           <select id="mapdl-struct" class="w-full text-xs p-1 rounded bg-gray-900 border border-gray-700 text-teal-100 mb-2 outline-none">
-            <option value="root">Flat Root (/z/x/y.png)</option>
-            <option value="tiles">Subfolder (/tiles/z/x/y.png)</option>
-            <option value="meshcore">MeshCore (/maps/tiles/)</option>
+            <option value="root" selected>Drop-on-SD root (z/x/y.png — no wrapper folder)</option>
+            <option value="tiles">Subfolder (tiles/z/x/y.png)</option>
+            <option value="meshcore">MeshCore (maps/tiles/z/x/y.png)</option>
           </select>
+          <p class="text-[10px] text-teal-700 mb-2 leading-tight">Drop-on-SD root: extract the ZIP straight onto the SD card — the z/x/y folders land at the root, no extra folder to move.</p>
           <label class="inline-flex items-center gap-2 text-[10px] uppercase text-teal-400 font-bold">
             <input type="checkbox" id="mapdl-8bit" checked class="accent-teal-500"> 8-bit Indexed (smaller)
           </label>
