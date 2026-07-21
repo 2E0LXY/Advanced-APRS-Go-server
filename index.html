@@ -14626,6 +14626,12 @@ function _mapdlInit(){
   document.getElementById('mapdl-step').oninput = _mapdlTelemetry;
   document.getElementById('mapdl-8bit').onchange = _mapdlTelemetry;
   document.getElementById('mapdl-download').onclick = _mapdlDownload;
+  document.getElementById('mapdl-writesd').onclick = _mapdlWriteSD;
+  // Hide the SD button on browsers without the File System Access API
+  if (typeof window.showDirectoryPicker !== 'function') {
+    var wb = document.getElementById('mapdl-writesd');
+    if (wb) { wb.style.display='none'; }
+  }
   document.getElementById('mapdl-cancel').onclick = function(){ S.cancel = true; _mapdlLog('Cancelling...', 'err'); };
   _mapdlTelemetry();
 }
@@ -14703,6 +14709,108 @@ async function _mapdlProcTile(blob, overlayBlob, do8){
   return new Promise(function(r){ cv.toBlob(function(b){r(b);},'image/png'); });
 }
 
+// Build the tile URL(s) for a given tile + source. Returns {url, overlayUrl}.
+function _mapdlTileUrl(src, t){
+  var url='', overlayUrl=null;
+  if(src==='osm') url='https://tile.openstreetmap.org/'+t.z+'/'+t.x+'/'+t.y+'.png';
+  else if(src==='carto_light') url='https://a.basemaps.cartocdn.com/light_all/'+t.z+'/'+t.x+'/'+t.y+'.png';
+  else if(src==='carto_dark') url='https://a.basemaps.cartocdn.com/dark_all/'+t.z+'/'+t.x+'/'+t.y+'.png';
+  else if(src==='humanitarian') url='https://a.tile.openstreetmap.fr/hot/'+t.z+'/'+t.x+'/'+t.y+'.png';
+  else if(src==='topo') url='https://a.tile.opentopomap.org/'+t.z+'/'+t.x+'/'+t.y+'.png';
+  else if(src==='cyclosm') url='https://a.tile-cyclosm.openstreetmap.fr/cyclosm/'+t.z+'/'+t.x+'/'+t.y+'.png';
+  else if(src==='esri_topo') url='https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/'+t.z+'/'+t.y+'/'+t.x;
+  else if(src==='satellite') url='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+t.z+'/'+t.y+'/'+t.x;
+  else if(src==='satellite_hybrid'){
+    url='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+t.z+'/'+t.y+'/'+t.x;
+    overlayUrl='https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/'+t.z+'/'+t.y+'/'+t.x;
+  } else url='https://tile.openstreetmap.org/'+t.z+'/'+t.x+'/'+t.y+'.png';
+  return { url:url, overlayUrl:overlayUrl };
+}
+
+// Write tiles DIRECTLY to an SD card (or any folder) the user selects, using
+// the File System Access API. No ZIP, no extracting. Chrome/Edge desktop only.
+async function _mapdlWriteSD(){
+  var S=_mapdlState;
+  var list=_mapdlTiles();
+  if(!S.rect) return _mapdlLog('Define an area first.', 'err');
+  if(!S.min||!S.max) return _mapdlLog('Set min and max zoom.', 'err');
+  if(!list.length) return _mapdlLog('No tiles.', 'err');
+  if(typeof window.showDirectoryPicker !== 'function'){
+    _mapdlLog('This browser cannot write directly. Use Download ZIP instead (Chrome/Edge desktop supports direct write).', 'err');
+    return;
+  }
+
+  var root;
+  try {
+    _mapdlLog('Select your SD card (or a folder on it)...');
+    root = await window.showDirectoryPicker({ mode:'readwrite' });
+  } catch(e){ _mapdlLog('SD selection cancelled.', 'err'); return; }
+
+  // Optional wrapper folder to match the chosen layout
+  var struct=document.getElementById('mapdl-struct').value;
+  try {
+    if(struct==='tiles') root = await root.getDirectoryHandle('tiles', {create:true});
+    else if(struct==='meshcore'){
+      var maps = await root.getDirectoryHandle('maps', {create:true});
+      root = await maps.getDirectoryHandle('tiles', {create:true});
+    }
+  } catch(e){ _mapdlLog('Cannot create folder on SD: '+e.message, 'err'); return; }
+
+  if(list.length>15000 && !confirm('This will write '+list.length.toLocaleString()+' tiles to the SD card — a very large job. Continue?')){
+    _mapdlLog('Cancelled (tile count).', 'err'); return;
+  }
+
+  S.busy=true; S.cancel=false;
+  document.getElementById('mapdl-writesd').classList.add('hidden');
+  document.getElementById('mapdl-download').classList.add('hidden');
+  document.getElementById('mapdl-cancel').classList.remove('hidden');
+  _mapdlLog('Writing '+list.length+' tiles to SD...');
+
+  var src=document.getElementById('mapdl-source').value, use8=document.getElementById('mapdl-8bit').checked;
+  var zDirs={}, xDirs={}, done=0, failed=0;
+
+  // Helper: get-or-create a subdirectory handle, cached
+  async function getDir(parent, name, cache, key){
+    if(cache[key]) return cache[key];
+    var h = await parent.getDirectoryHandle(String(name), {create:true});
+    cache[key]=h; return h;
+  }
+
+  for(var i=0;i<list.length;i++){
+    if(S.cancel) break;
+    var t=list[i], t0=Date.now();
+    try {
+      var u=_mapdlTileUrl(src,t);
+      var res=await fetch(u.url); if(!res.ok) throw new Error('HTTP '+res.status);
+      var blob=await res.blob();
+      var overlayBlob = u.overlayUrl ? await (await fetch(u.overlayUrl)).blob() : null;
+      blob = await _mapdlProcTile(blob, overlayBlob, use8);
+
+      // z/x/ directories then y.png file
+      var zdir = await getDir(root, t.z, zDirs, 'z'+t.z);
+      var xdir = await getDir(zdir, t.x, xDirs, 'z'+t.z+'x'+t.x);
+      var fh = await xdir.getFileHandle(t.y+'.png', {create:true});
+      var w = await fh.createWritable();
+      await w.write(blob); await w.close();
+
+      done++;
+      var pct=Math.floor(done/list.length*100);
+      document.getElementById('mapdl-bar').style.width=pct+'%';
+      document.getElementById('mapdl-pct').innerText=pct+'%';
+      if(done%20===0) _mapdlLog('Written '+done+'/'+list.length+'...');
+      var wait=Math.max(0, 100-(Date.now()-t0)); await new Promise(function(r){setTimeout(r,wait);});
+    } catch(err){ failed++; _mapdlLog('Skip '+t.z+'/'+t.x+'/'+t.y+' ('+err.message+')', 'err'); }
+    // Clear the x-dir cache between z levels to avoid stale handles growing unbounded
+    if(i+1<list.length && list[i+1].z!==t.z) xDirs={};
+  }
+
+  S.busy=false;
+  document.getElementById('mapdl-writesd').classList.remove('hidden');
+  document.getElementById('mapdl-download').classList.remove('hidden');
+  document.getElementById('mapdl-cancel').classList.add('hidden');
+  if(!S.cancel) _mapdlLog('Done. '+done+' tiles written to SD'+(failed?(' ('+failed+' skipped)'):'')+'. Safely eject the card.', 'ok');
+}
+
 async function _mapdlDownload(){
   var S=_mapdlState;
   var list=_mapdlTiles();
@@ -14716,6 +14824,7 @@ async function _mapdlDownload(){
 
   S.busy=true; S.cancel=false;
   document.getElementById('mapdl-download').classList.add('hidden');
+  var _wsd=document.getElementById('mapdl-writesd'); if(_wsd) _wsd.classList.add('hidden');
   document.getElementById('mapdl-cancel').classList.remove('hidden');
   _mapdlLog('Preparing '+list.length+' tiles...');
 
@@ -14728,19 +14837,7 @@ async function _mapdlDownload(){
     if(S.cancel) break;
     var t=list[i], t0=Date.now();
     try {
-      var url='', overlayUrl=null;
-      if(src==='osm') url='https://tile.openstreetmap.org/'+t.z+'/'+t.x+'/'+t.y+'.png';
-      else if(src==='carto_light') url='https://a.basemaps.cartocdn.com/light_all/'+t.z+'/'+t.x+'/'+t.y+'.png';
-      else if(src==='carto_dark') url='https://a.basemaps.cartocdn.com/dark_all/'+t.z+'/'+t.x+'/'+t.y+'.png';
-      else if(src==='humanitarian') url='https://a.tile.openstreetmap.fr/hot/'+t.z+'/'+t.x+'/'+t.y+'.png';
-      else if(src==='topo') url='https://a.tile.opentopomap.org/'+t.z+'/'+t.x+'/'+t.y+'.png';
-      else if(src==='cyclosm') url='https://a.tile-cyclosm.openstreetmap.fr/cyclosm/'+t.z+'/'+t.x+'/'+t.y+'.png';
-      else if(src==='esri_topo') url='https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/'+t.z+'/'+t.y+'/'+t.x;
-      else if(src==='satellite') url='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+t.z+'/'+t.y+'/'+t.x;
-      else if(src==='satellite_hybrid'){
-        url='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+t.z+'/'+t.y+'/'+t.x;
-        overlayUrl='https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/'+t.z+'/'+t.y+'/'+t.x;
-      } else url='https://tile.openstreetmap.org/'+t.z+'/'+t.x+'/'+t.y+'.png';
+      var u=_mapdlTileUrl(src,t); var url=u.url, overlayUrl=u.overlayUrl;
       var res=await fetch(url); if(!res.ok) throw new Error('HTTP '+res.status);
       var blob=await res.blob();
       var overlayBlob = overlayUrl ? await (await fetch(overlayUrl)).blob() : null;
@@ -14765,6 +14862,7 @@ async function _mapdlDownload(){
   }
   S.busy=false;
   document.getElementById('mapdl-download').classList.remove('hidden');
+  if(_wsd && typeof window.showDirectoryPicker==='function') _wsd.classList.remove('hidden');
   document.getElementById('mapdl-cancel').classList.add('hidden');
 }
 
@@ -15468,7 +15566,9 @@ async function _mapdlDownload(){
           <div class="flex justify-between text-[11px]"><span class="text-teal-700 uppercase">Tiles</span><span id="mapdl-count" class="font-bold">0</span></div>
           <div class="flex justify-between text-[11px]"><span class="text-teal-700 uppercase">Est size</span><span id="mapdl-size" class="font-bold">0 B</span></div>
         </div>
-        <button id="mapdl-download" class="w-full bg-teal-800 hover:bg-teal-700 py-2.5 rounded text-sm font-bold uppercase">Generate Package</button>
+        <button id="mapdl-writesd" class="w-full bg-emerald-700 hover:bg-emerald-600 py-2.5 rounded text-sm font-bold uppercase flex items-center justify-center gap-2">💾 Write Directly to SD Card</button>
+        <button id="mapdl-download" class="w-full bg-teal-800 hover:bg-teal-700 py-2.5 rounded text-sm font-bold uppercase">Download ZIP Instead</button>
+        <p class="text-[10px] text-teal-700 leading-tight">💾 Direct write needs Chrome or Edge on desktop, and the SD card mounted as a drive (in a card reader, or the T-Deck acting as one). Pick the card when prompted and tiles are written straight to it.</p>
         <button id="mapdl-cancel" class="hidden w-full bg-red-900/40 text-red-300 py-2.5 rounded text-sm font-bold uppercase border border-red-900/50">Cancel</button>
         <div id="mapdl-log" class="bg-black/50 p-2 rounded font-mono text-[10px] h-24 overflow-y-auto border border-gray-800 text-teal-500">Ready.</div>
       </div>
