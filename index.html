@@ -334,6 +334,11 @@ body { background: var(--bg-base); color: var(--text-base); }
 #msg-auth-modal,
 #detail-modal,
 #wx-detail-modal,
+@keyframes aprsLocateFlash {
+  0%, 100% { filter: drop-shadow(0 0 0 rgba(56,189,248,0)); transform: scale(1); }
+  50%      { filter: drop-shadow(0 0 12px rgba(56,189,248,1)); transform: scale(1.35); }
+}
+.aprs-locate-flash { animation: aprsLocateFlash 0.6s ease-in-out 3; z-index: 10000 !important; }
 #station-modal {
   z-index: 100000 !important;
 }
@@ -3711,7 +3716,7 @@ if (typeof L.markerClusterGroup === 'function') {
     children.forEach(function(m) {
       var c = m._aprsCall || '';
       if (!c) return;
-      html += '<div onclick="if(window._cpTimer)clearTimeout(window._cpTimer);map.closePopup();openDetail(\'' + c + '\')" '
+      html += '<div onclick="if(window._cpTimer)clearTimeout(window._cpTimer);map.closePopup();goToStation(\'' + c + '\')" '
         + 'style="padding:4px 8px;cursor:pointer;border-radius:3px;color:#60a5fa;white-space:nowrap" '
         + 'onmouseover="this.style.background=\'rgba(255,255,255,0.1)\'" '
         + 'onmouseout="this.style.background=\'\'">'
@@ -5049,7 +5054,7 @@ function renderList() {
       tr.innerHTML=`
         <td class="p-2 text-center">${(function(){var t=st.sym&&st.sym.length>=2?st.sym[0]:"/",c=st.sym&&st.sym.length>=2?st.sym[1]:"-",sp=getSymbolSprite(t,c);if(sp)return '<div style="width:24px;height:24px;overflow:hidden;image-rendering:pixelated;border-radius:2px;display:inline-block"><div style="width:24px;height:24px;background:url('+sp.sheet+') -'+sp.px+'px -'+sp.py+'px;background-size:'+sp.sheetW+'px '+sp.sheetH+'px;background-repeat:no-repeat"></div></div>';return '<div style="width:24px;height:24px;background:#374151;border-radius:2px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:#fff">'+c+'</div>';})()} </td>
         <td class="p-2 font-bold">
-          <a href="#" onclick="_activePanel==='messages'?openConversation('${call}'):openDetail('${call}');return false;" class="hover:underline text-blue-400 cursor-pointer">${call}</a>
+          <a href="#" onclick="_activePanel==='messages'?openConversation('${call}'):goToStation('${call}');return false;" class="hover:underline text-blue-400 cursor-pointer">${call}</a>
         </td>
         <td class="p-2">${deviceChip(extractTocall(st.raw))}</td>
         <td class="p-2 font-mono text-gray-500 truncate max-w-[100px]">${st.path||''}</td>
@@ -6434,6 +6439,45 @@ function openDetail(call) {
   refreshDetailData();
 }
 
+// ─── goToStation: unified "show me this callsign" entry point ──────────────
+// Used by callsign links across ALL pages (stations list, digipeaters,
+// messages, telemetry, search, member dashboard, etc.). It:
+//   1. finds the station's latest known position
+//   2. switches to the map page
+//   3. pans/zooms the map to that position and opens the marker popup
+//   4. opens the detail modal (QRZ profile, message button, aprs.fi, etc.)
+// If the station has no known position it still opens the detail modal so
+// the operator can QRZ / message, but shows a note that there's no fix.
+function goToStation(call) {
+  if (!call) return;
+  call = String(call).trim();
+  var st = stations[call] || stations[call.split('-')[0]];
+
+  // Always open the detail modal so QRZ / message / aprs.fi are available
+  try { openDetail(call); } catch(e) {}
+
+  // If we have a position, jump the map to it
+  if (st && st.positions && st.positions.length) {
+    var p = st.positions[st.positions.length - 1];
+    // Switch to the map page first (so the pan is visible)
+    try { togglePanel('map'); } catch(e) {}
+    setTimeout(function() {
+      try {
+        map.setView([p.lat, p.lon], Math.max(map.getZoom(), 13), {animate: true, duration: 0.6});
+        // Open the marker's popup / bounce it so the user sees which one
+        if (st.marker) {
+          if (st.marker.openPopup) { try { st.marker.openPopup(); } catch(e) {} }
+          // Flash a highlight ring so it's obvious among many markers
+          if (st.marker._icon) {
+            st.marker._icon.classList.add('aprs-locate-flash');
+            setTimeout(function(){ if (st.marker && st.marker._icon) st.marker._icon.classList.remove('aprs-locate-flash'); }, 2500);
+          }
+        }
+      } catch(e) {}
+    }, 120);
+  }
+}
+
 function closeDetail() {
   document.getElementById('detail-modal').classList.add('hidden');
   var qb = document.getElementById('d-qrz-block');
@@ -6838,7 +6882,7 @@ function renderDetailConnections() {
         + data.heardByThis.slice(0, 30).map(function(h) {
           var ago = secondsAgo(h.lastTs);
           return '<tr class="hover:bg-gray-900">'
-            + '<td class="py-0.5"><a class="text-cyan-400 hover:underline cursor-pointer font-mono" onclick="openDetail(\''+h.call.replace(/[\\\']/g,'')+'\')">'+h.call+'</a>' + (h.hasPos?'':' <span class="text-gray-600 text-[10px]">(no position)</span>') + '</td>'
+            + '<td class="py-0.5"><a class="text-cyan-400 hover:underline cursor-pointer font-mono" onclick="goToStation(\''+h.call.replace(/[\\\']/g,'')+'\')">'+h.call+'</a>' + (h.hasPos?'':' <span class="text-gray-600 text-[10px]">(no position)</span>') + '</td>'
             + '<td class="py-0.5 text-right text-gray-400">'+h.count+'</td>'
             + '<td class="py-0.5 text-right text-gray-500">'+ago+'</td>'
             + '</tr>';
@@ -6859,7 +6903,7 @@ function renderDetailConnections() {
           var ago = secondsAgo(v.lastTs);
           var distStr = v.dist != null ? (v.dist*0.621371).toFixed(1) + ' mi' : '-';
           return '<tr class="hover:bg-gray-900">'
-            + '<td class="py-0.5"><a class="text-amber-400 hover:underline cursor-pointer font-mono" onclick="openDetail(\''+v.call.replace(/[\\\']/g,'')+'\')">'+v.call+'</a>' + (v.hasPos?'':' <span class="text-gray-600 text-[10px]">(no position)</span>') + '</td>'
+            + '<td class="py-0.5"><a class="text-amber-400 hover:underline cursor-pointer font-mono" onclick="goToStation(\''+v.call.replace(/[\\\']/g,'')+'\')">'+v.call+'</a>' + (v.hasPos?'':' <span class="text-gray-600 text-[10px]">(no position)</span>') + '</td>'
             + '<td class="py-0.5 text-right text-blue-300">'+distStr+'</td>'
             + '<td class="py-0.5 text-right text-gray-500">'+ago+'</td>'
             + '</tr>';
@@ -6877,7 +6921,7 @@ function renderDetailConnections() {
         + data.nearby.slice(0, 30).map(function(n) {
           var ago = secondsAgo(n.lastTs);
           return '<tr class="hover:bg-gray-900">'
-            + '<td class="py-0.5"><a class="text-purple-300 hover:underline cursor-pointer font-mono" onclick="openDetail(\''+n.call.replace(/[\\\']/g,'')+'\')">'+n.call+'</a></td>'
+            + '<td class="py-0.5"><a class="text-purple-300 hover:underline cursor-pointer font-mono" onclick="goToStation(\''+n.call.replace(/[\\\']/g,'')+'\')">'+n.call+'</a></td>'
             + '<td class="py-0.5 text-right text-blue-300">'+(n.dist*0.621371).toFixed(1)+' mi ('+n.dist.toFixed(1)+' km)</td>'
             + '<td class="py-0.5 text-right text-gray-500">'+ago+'</td>'
             + '</tr>';
@@ -7921,7 +7965,7 @@ function makeRows(arr, cols, tbodyId) {
     var h = '<td class="p-2 text-center text-gray-400">' + medal + '</td>';
     cols.forEach(function(c) { h += '<td class="p-2 ' + (c.cls||'') + '">' + c.val(row) + '</td>'; });
     tr.innerHTML = h;
-    tr.onclick = function(){ openDetail(row.call); };
+    tr.onclick = function(){ goToStation(row.call); };
     tbody.appendChild(tr);
   });
 }
@@ -8039,7 +8083,7 @@ function renderLeaderboard() {
     var recent = msgs.slice().reverse().slice(0, 50);
     msgBoard.onclick = function(e) {
       var s = e.target.closest('.lb-from-call');
-      if (s && s.dataset.call) openDetail(s.dataset.call);
+      if (s && s.dataset.call) goToStation(s.dataset.call);
     };
     msgBoard.innerHTML = recent.map(function(m) {
       var t = new Date((m.ts||0)*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
@@ -9142,7 +9186,7 @@ async function loadMemberMessages() {
     empty.classList.add('hidden');
     list.onclick = function(e) {
       var s = e.target.closest('.mm-from-call');
-      if (s) { closeMemberModal(); openDetail(s.dataset.call); }
+      if (s) { closeMemberModal(); goToStation(s.dataset.call); }
     };
     list.innerHTML = msgs.slice().reverse().map(function(m) {
       var t = new Date(m.ts * 1000).toLocaleString();
@@ -10126,7 +10170,7 @@ function searchPick(i) {
     }
     openDetail(r.call);
   } else if (r.type === 'message') {
-    if (r.msg.from) openDetail(r.msg.from);
+    if (r.msg.from) goToStation(r.msg.from);
   } else if (r.type === 'device') {
     // Find all stations using this device and filter the list
     togglePanel('search'); // open stations panel
@@ -10347,7 +10391,7 @@ function applyURLParams() {
     var attempts = 0;
     var tryOpen = function() {
       if (stations[p.call]) {
-        openDetail(p.call);
+        goToStation(p.call);
       } else if (attempts++ < 20) {
         setTimeout(tryOpen, 500);
       }
@@ -12108,7 +12152,7 @@ async function deleteAPRSObject(name) {
 
 
 // ── Expose new feature functions to global scope (safe) ──────────────────
-['requestPushPermission','openTelemPanel','closeTelemPanel','toggleSotaPota',
+['goToStation','requestPushPermission','openTelemPanel','closeTelemPanel','toggleSotaPota',
  'toggleHAB','openHABPanel','closeHABPanel','loadMemberObjects','createAPRSObject',
  'deleteAPRSObject','loadIGates','sendIGateCmd','renderIGates','renderObjectList',
  'saveMsgBackground'
