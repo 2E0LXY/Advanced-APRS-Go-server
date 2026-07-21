@@ -334,14 +334,15 @@ body { background: var(--bg-base); color: var(--text-base); }
 #msg-auth-modal,
 #detail-modal,
 #wx-detail-modal,
+#station-modal {
+  z-index: 100000 !important;
+}
+
 @keyframes aprsLocateFlash {
   0%, 100% { filter: drop-shadow(0 0 0 rgba(56,189,248,0)); transform: scale(1); }
   50%      { filter: drop-shadow(0 0 12px rgba(56,189,248,1)); transform: scale(1.35); }
 }
 .aprs-locate-flash { animation: aprsLocateFlash 0.6s ease-in-out 3; z-index: 10000 !important; }
-#station-modal {
-  z-index: 100000 !important;
-}
 
 /* Member modal: use explicit viewport sizing rather than Tailwind's
    arbitrary max-h-[90vh] utility. The production Tailwind build does not
