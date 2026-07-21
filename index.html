@@ -14535,11 +14535,21 @@ function _mapdlInit(){
   if (S.built){ setTimeout(function(){ S.map.invalidateSize(); }, 100); return; }
   S.built = true;
 
-  S.map = L.map('mapdl-map', { zoomControl:true }).setView([53.68, -1.49], 9); // Wakefield default
+  S.map = L.map('mapdl-map', { zoomControl:true, maxZoom:20 }).setView([53.68, -1.49], 9); // Wakefield default
+  var mz = { maxZoom:20 };
   var layers = {
-    osm: L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'© OSM'}),
-    satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {attribution:'© Esri'}),
-    topo: L.tileLayer('https://a.tile.opentopomap.org/{z}/{x}/{y}.png', {attribution:'© OpenTopo'})
+    osm: L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', mz),
+    carto_light: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', mz),
+    carto_dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', mz),
+    humanitarian: L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', mz),
+    topo: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', mz),
+    cyclosm: L.tileLayer('https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png', mz),
+    esri_topo: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', mz),
+    satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', mz),
+    satellite_hybrid: L.layerGroup([
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', mz),
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', mz)
+    ])
   };
   layers.osm.addTo(S.map);
   setTimeout(function(){ S.map.invalidateSize(); }, 150);
@@ -14576,6 +14586,19 @@ function _mapdlInit(){
   document.getElementById('mapdl-reset').onclick = function(){
     if(S.rect){ S.map.removeLayer(S.rect); S.rect=null; }
     S.pts=[]; S.min=0; S.max=0; _mapdlTelemetry(); _mapdlLog('Reset.');
+  };
+
+  document.getElementById('mapdl-applyManual').onclick = function(){
+    var n=parseFloat(document.getElementById('mapdl-mN').value),
+        s=parseFloat(document.getElementById('mapdl-mS').value),
+        w=parseFloat(document.getElementById('mapdl-mW').value),
+        e=parseFloat(document.getElementById('mapdl-mE').value);
+    if([n,s,w,e].some(isNaN)) return _mapdlLog('Enter all four bounds.', 'err');
+    if(S.rect) S.map.removeLayer(S.rect);
+    var b = L.latLngBounds([s,w],[n,e]);
+    S.rect = L.rectangle(b, {color:'#2dd4bf', weight:2, fillOpacity:0.1}).addTo(S.map);
+    S.map.fitBounds(b);
+    _mapdlLog('Manual bounds applied.'); _mapdlTelemetry();
   };
 
   S.map.on('click', function(e){
@@ -14658,17 +14681,18 @@ function _mapdlTelemetry(){
   document.getElementById('mapdl-levels').innerText = lv.length?lv.join(', '):'--';
   var list=_mapdlTiles(), count=list.length;
   document.getElementById('mapdl-count').innerText = count.toLocaleString();
-  var avg={osm:22000,satellite:58000,topo:32000}[document.getElementById('mapdl-source').value]||25000;
+  var avg={osm:22000,carto_light:14000,carto_dark:16000,humanitarian:20000,topo:32000,cyclosm:30000,esri_topo:40000,satellite:58000,satellite_hybrid:70000}[document.getElementById('mapdl-source').value]||25000;
   var use8=document.getElementById('mapdl-8bit').checked;
   document.getElementById('mapdl-size').innerText = _mapdlFmtSize(count*avg*(use8?0.45:1));
   var dl=document.getElementById('mapdl-download');
   dl.innerText = count>5000 ? ('Generate ('+count.toLocaleString()+' tiles — large!)') : 'Generate Package';
 }
 
-async function _mapdlProcTile(blob, do8){
+async function _mapdlProcTile(blob, overlayBlob, do8){
   var cv=document.createElement('canvas'); cv.width=256; cv.height=256;
   var ctx=cv.getContext('2d'); var img=await createImageBitmap(blob);
   ctx.clearRect(0,0,256,256); ctx.drawImage(img,0,0,256,256);
+  if(overlayBlob){ var ov=await createImageBitmap(overlayBlob); ctx.drawImage(ov,0,0,256,256); }
   if(do8){
     var id=ctx.getImageData(0,0,256,256); var res=UPNG.encode([id.data.buffer],256,256,256);
     return new Blob([res],{type:'image/png'});
@@ -14701,11 +14725,23 @@ async function _mapdlDownload(){
     if(S.cancel) break;
     var t=list[i], t0=Date.now();
     try {
-      var url = src==='osm' ? 'https://tile.openstreetmap.org/'+t.z+'/'+t.x+'/'+t.y+'.png' :
-                (src==='satellite' ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+t.z+'/'+t.y+'/'+t.x :
-                 'https://a.tile.opentopomap.org/'+t.z+'/'+t.x+'/'+t.y+'.png');
+      var url='', overlayUrl=null;
+      if(src==='osm') url='https://tile.openstreetmap.org/'+t.z+'/'+t.x+'/'+t.y+'.png';
+      else if(src==='carto_light') url='https://a.basemaps.cartocdn.com/light_all/'+t.z+'/'+t.x+'/'+t.y+'.png';
+      else if(src==='carto_dark') url='https://a.basemaps.cartocdn.com/dark_all/'+t.z+'/'+t.x+'/'+t.y+'.png';
+      else if(src==='humanitarian') url='https://a.tile.openstreetmap.fr/hot/'+t.z+'/'+t.x+'/'+t.y+'.png';
+      else if(src==='topo') url='https://a.tile.opentopomap.org/'+t.z+'/'+t.x+'/'+t.y+'.png';
+      else if(src==='cyclosm') url='https://a.tile-cyclosm.openstreetmap.fr/cyclosm/'+t.z+'/'+t.x+'/'+t.y+'.png';
+      else if(src==='esri_topo') url='https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/'+t.z+'/'+t.y+'/'+t.x;
+      else if(src==='satellite') url='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+t.z+'/'+t.y+'/'+t.x;
+      else if(src==='satellite_hybrid'){
+        url='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+t.z+'/'+t.y+'/'+t.x;
+        overlayUrl='https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/'+t.z+'/'+t.y+'/'+t.x;
+      } else url='https://tile.openstreetmap.org/'+t.z+'/'+t.x+'/'+t.y+'.png';
       var res=await fetch(url); if(!res.ok) throw new Error('HTTP '+res.status);
-      var blob=await res.blob(); blob=await _mapdlProcTile(blob, use8);
+      var blob=await res.blob();
+      var overlayBlob = overlayUrl ? await (await fetch(overlayUrl)).blob() : null;
+      blob=await _mapdlProcTile(blob, overlayBlob, use8);
       target.file(t.z+'/'+t.x+'/'+t.y+'.png', blob);
       done++;
       var pct=Math.floor(done/list.length*100);
@@ -15355,8 +15391,14 @@ async function _mapdlDownload(){
           <button id="mapdl-searchBtn" class="px-3 py-2 bg-gray-800 rounded text-sm hover:bg-gray-700">Search</button>
           <select id="mapdl-source" class="p-2 rounded text-sm bg-gray-800 border border-gray-700 text-teal-100 outline-none">
             <option value="osm">Standard (OSM)</option>
-            <option value="satellite">Satellite (Esri)</option>
+            <option value="carto_light">Carto Light</option>
+            <option value="carto_dark">Carto Dark</option>
+            <option value="humanitarian">Humanitarian</option>
             <option value="topo">Topo (OpenTopo)</option>
+            <option value="cyclosm">CyclOSM</option>
+            <option value="esri_topo">Esri Topo</option>
+            <option value="satellite">Satellite (Esri)</option>
+            <option value="satellite_hybrid">Satellite + Labels</option>
           </select>
         </div>
         <div id="mapdl-map" style="height:380px;border-radius:6px;border:1px solid #334155"></div>
@@ -15365,6 +15407,14 @@ async function _mapdlDownload(){
           <button id="mapdl-setmin" class="bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded text-xs font-bold uppercase">Set Min Zoom</button>
           <button id="mapdl-setmax" class="bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded text-xs font-bold uppercase">Set Max Zoom</button>
           <button id="mapdl-reset" class="bg-red-900/40 text-red-300 border border-red-900/50 px-3 py-1.5 rounded text-xs font-bold uppercase">Reset</button>
+        </div>
+        <div class="flex flex-wrap items-end gap-1 text-[10px]">
+          <span class="text-teal-700 uppercase w-full">Or enter bounds manually:</span>
+          <input id="mapdl-mN" type="number" step="0.0001" placeholder="N" class="w-16 p-1 rounded bg-gray-800 border border-gray-700 text-teal-100 outline-none">
+          <input id="mapdl-mS" type="number" step="0.0001" placeholder="S" class="w-16 p-1 rounded bg-gray-800 border border-gray-700 text-teal-100 outline-none">
+          <input id="mapdl-mW" type="number" step="0.0001" placeholder="W" class="w-16 p-1 rounded bg-gray-800 border border-gray-700 text-teal-100 outline-none">
+          <input id="mapdl-mE" type="number" step="0.0001" placeholder="E" class="w-16 p-1 rounded bg-gray-800 border border-gray-700 text-teal-100 outline-none">
+          <button id="mapdl-applyManual" class="bg-gray-700 hover:bg-gray-600 text-teal-300 px-2 py-1 rounded text-[10px] font-bold uppercase">Apply</button>
         </div>
       </div>
       <!-- Controls -->
