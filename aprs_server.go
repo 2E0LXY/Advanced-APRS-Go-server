@@ -4170,6 +4170,8 @@ func storeMessageForMember(to, from, text, raw string, ts int64) {
 			Body:  text,
 			Tag:   "aprs_msg_" + fromUpper,
 		})
+		// Also deliver to any of the member's online MQTT devices (T-Deck etc.)
+		go pushMessageToMemberDevices(recipientID, from, text)
 	}
 
 	// Push a real-time WS copy to all of the SENDER's other connected sessions
