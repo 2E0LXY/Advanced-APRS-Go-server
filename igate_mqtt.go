@@ -660,6 +660,22 @@ func (mc *mqttConn) mqttHandleMessage(payload string) {
 		fromCall, req.To, mc.deviceCall)
 }
 
+// pushMessageToMemberDevices delivers an incoming message down to all of a
+// member's currently-connected MQTT devices, on aprsnet/{owner}/{device}/inbox.
+// Devices subscribe to their inbox topic to receive messages via server route.
+func pushMessageToMemberDevices(memberID, from, text string) {
+	payload, _ := json.Marshal(map[string]string{"from": from, "text": text})
+	mqttConnsMu.RLock()
+	defer mqttConnsMu.RUnlock()
+	for _, mc := range mqttConns {
+		if mc.memberID != memberID {
+			continue
+		}
+		topic := "aprsnet/" + mc.ownerCall + "/" + mc.deviceCall + "/inbox"
+		_ = mc.send(mqttBuildPublish(topic, string(payload)))
+	}
+}
+
 func (mc *mqttConn) mqttHandleTelemetry(payload string) {
 	var tel map[string]interface{}
 	if err := json.Unmarshal([]byte(payload), &tel); err != nil {
