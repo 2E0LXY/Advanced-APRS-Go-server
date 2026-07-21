@@ -17,6 +17,7 @@ package main
 import (
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -590,6 +591,12 @@ func (mc *mqttConn) mqttHandlePublish(flags byte, body []byte) {
 	if len(parts) >= 4 && parts[len(parts)-1] == "telemetry" {
 		mc.mqttHandleTelemetry(payload)
 	}
+	// Device → server message: aprsnet/{owner}/{device}/message
+	// Payload: {"to":"CALLSIGN","text":"..."}  — delivered store-and-forward
+	// exactly like the website's "direct" route (no RF needed).
+	if len(parts) >= 4 && parts[len(parts)-1] == "message" {
+		mc.mqttHandleMessage(payload)
+	}
 
 	// Forward to any subscribed device on the same member account (e.g. inter-device)
 	mqttConnsMu.RLock()
@@ -619,6 +626,38 @@ func (mc *mqttConn) mqttHandlePublish(flags byte, body []byte) {
 	if qos == 1 {
 		mc.send(mqttPuback(pktID))
 	}
+}
+
+func (mc *mqttConn) mqttHandleMessage(payload string) {
+	var req struct {
+		To   string `json:"to"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal([]byte(payload), &req); err != nil {
+		log.Printf("MQTT message: bad payload from %s: %v", mc.deviceCall, err)
+		return
+	}
+	if req.To == "" || req.Text == "" {
+		return
+	}
+	// Look up the owning member to use as the "from" callsign.
+	// RLock is released before storeMessageForMember (which takes its own Lock).
+	memberStoreMu.RLock()
+	var fromCall string
+	if m, ok := memberStore.Members[mc.memberID]; ok {
+		fromCall = m.Callsign
+	}
+	memberStoreMu.RUnlock()
+	if fromCall == "" {
+		fromCall = mc.deviceCall
+	}
+	toUpper := strings.ToUpper(req.To)
+	// Synthesize a raw APRS message line for the record/history.
+	raw := fromCall + ">APLT00::" + fmt.Sprintf("%-9s", toUpper) + ":" + req.Text
+	// Deliver store-and-forward via the same path the website uses.
+	storeMessageForMember(toUpper, fromCall, req.Text, raw, time.Now().Unix())
+	log.Printf("MQTT message: %s → %s via server-direct (device %s)",
+		fromCall, req.To, mc.deviceCall)
 }
 
 func (mc *mqttConn) mqttHandleTelemetry(payload string) {
