@@ -6949,6 +6949,9 @@ function showConnectionsOnMap() {
 
 function drawConnections(call) {
   clearConnectionsOnMap();
+  // Connection lines disabled — they clutter the map with long cross-globe
+  // lines to every heard station. Kept as a no-op so callers don't error.
+  return;
   var st = stations[call];
   if (!st || !st.positions.length) return;
   var thisPos = st.positions[st.positions.length-1];
@@ -8550,6 +8553,15 @@ function toggleSidebar() {
 
 // Position sidebar tab correctly on page load
 window.addEventListener('load', function() {
+  // Ensure station-connection line overlays start OFF and clear any stragglers
+  try {
+    var cb = document.getElementById('show-all-connections');
+    if (cb) cb.checked = false;
+    _allConnEnabled = false;
+    if (typeof clearAllConnections === 'function') clearAllConnections();
+    if (typeof clearConnectionsOnMap === 'function') clearConnectionsOnMap();
+  } catch(e) {}
+
   var sb  = document.getElementById('controls-sidebar');
   var tab = document.getElementById('sidebar-tab');
   if (sb && tab) {
@@ -9953,8 +9965,10 @@ function clearAllConnections() {
 }
 
 function drawAllConnections() {
-  if (!_allConnEnabled || typeof map === 'undefined') return;
+  // All-connections overlay disabled — drew a line from every station to
+  // every digipeater worldwide, cluttering the map. No-op now.
   clearAllConnections();
+  return;
   _allConnLayer = L.layerGroup().addTo(map);
 
   // Build a unique link set so we don't draw A->B twice
