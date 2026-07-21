@@ -14624,6 +14624,14 @@ function _mapdlInit(){
     _mapdlTelemetry();
   };
   document.getElementById('mapdl-step').oninput = _mapdlTelemetry;
+  var rOn=document.getElementById('mapdl-radiusOn');
+  if(rOn) rOn.onchange=function(){
+    var w=document.getElementById('mapdl-radiusWrap');
+    w.classList.toggle('hidden', !rOn.checked); w.classList.toggle('flex', rOn.checked);
+    _mapdlTelemetry();
+  };
+  var rz=document.getElementById('mapdl-radiusZ'); if(rz) rz.oninput=_mapdlTelemetry;
+  var rk=document.getElementById('mapdl-radiusKm'); if(rk) rk.oninput=_mapdlTelemetry;
   document.getElementById('mapdl-8bit').onchange = _mapdlTelemetry;
   document.getElementById('mapdl-download').onclick = _mapdlDownload;
   document.getElementById('mapdl-writesd').onclick = _mapdlWriteSD;
@@ -14667,18 +14675,51 @@ function _mapdlZoomLevels(){
 function _mapdlLon2tile(lon,z){ return Math.floor((lon+180)/360*Math.pow(2,z)); }
 function _mapdlLat2tile(lat,z){ return Math.floor((1-Math.log(Math.tan(lat*Math.PI/180)+1/Math.cos(lat*Math.PI/180))/Math.PI)/2*Math.pow(2,z)); }
 
-function _mapdlTiles(){
-  var S=_mapdlState; if(!S.rect) return [];
+// Tile centre in lat/lon for a given tile (for radius filtering)
+function _mapdlTileCenter(z,x,y){
+  var n=Math.pow(2,z);
+  var lon=(x+0.5)/n*360-180;
+  var latRad=Math.atan(Math.sinh(Math.PI*(1-2*(y+0.5)/n)));
+  return { lat: latRad*180/Math.PI, lon: lon };
+}
+// Haversine distance in km
+function _mapdlHaversine(a,b,c,d){
+  var R=6371, dLat=(c-a)*Math.PI/180, dLon=(d-b)*Math.PI/180;
+  var q=Math.sin(dLat/2)**2 + Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(q), Math.sqrt(1-q));
+}
+
+// Returns {list, byLevel} — byLevel is {z: count} for the breakdown display
+function _mapdlTilesDetailed(){
+  var S=_mapdlState; if(!S.rect) return {list:[], byLevel:{}};
   var b=S.rect.getBounds(), n=b.getNorth(), s=b.getSouth(), w=b.getWest(), e=b.getEast();
-  var levels=_mapdlZoomLevels(); if(!levels.length) return [];
-  var list=[];
+  var levels=_mapdlZoomLevels(); if(!levels.length) return {list:[], byLevel:{}};
+
+  var radiusOn = document.getElementById('mapdl-radiusOn') && document.getElementById('mapdl-radiusOn').checked;
+  var radiusZ = parseInt(document.getElementById('mapdl-radiusZ').value)||13;
+  var radiusKm = parseFloat(document.getElementById('mapdl-radiusKm').value)||10;
+  var cLat=(n+s)/2, cLon=(w+e)/2;
+
+  var list=[], byLevel={};
   levels.forEach(function(z){
     var x0=_mapdlLon2tile(w,z), x1=_mapdlLon2tile(e,z), y0=_mapdlLat2tile(n,z), y1=_mapdlLat2tile(s,z);
-    for(var x=Math.min(x0,x1); x<=Math.max(x0,x1); x++)
-      for(var y=Math.min(y0,y1); y<=Math.max(y0,y1); y++) list.push({z:z,x:x,y:y});
+    var cnt=0;
+    for(var x=Math.min(x0,x1); x<=Math.max(x0,x1); x++){
+      for(var y=Math.min(y0,y1); y<=Math.max(y0,y1); y++){
+        // Radius filter: only for levels at/above the threshold
+        if(radiusOn && z>=radiusZ){
+          var ctr=_mapdlTileCenter(z,x,y);
+          if(_mapdlHaversine(cLat,cLon,ctr.lat,ctr.lon) > radiusKm) continue;
+        }
+        list.push({z:z,x:x,y:y}); cnt++;
+      }
+    }
+    byLevel[z]=cnt;
   });
-  return list;
+  return {list:list, byLevel:byLevel};
 }
+
+function _mapdlTiles(){ return _mapdlTilesDetailed().list; }
 
 function _mapdlFmtSize(b){ if(b<1024)return b+' B'; if(b<1048576)return (b/1024).toFixed(1)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
 
@@ -14688,8 +14729,14 @@ function _mapdlTelemetry(){
   document.getElementById('mapdl-vmax').innerText = S.max||'--';
   var lv=_mapdlZoomLevels();
   document.getElementById('mapdl-levels').innerText = lv.length?lv.join(', '):'--';
-  var list=_mapdlTiles(), count=list.length;
+  var detailed=_mapdlTilesDetailed(), list=detailed.list, count=list.length;
   document.getElementById('mapdl-count').innerText = count.toLocaleString();
+  // Per-level breakdown so the user sees what drives the count
+  var bd=document.getElementById('mapdl-breakdown');
+  if(bd){
+    var parts=[]; Object.keys(detailed.byLevel).forEach(function(z){ parts.push('z'+z+':'+detailed.byLevel[z].toLocaleString()); });
+    bd.innerText = parts.length?parts.join('  '):'';
+  }
   var avg={osm:22000,carto_light:14000,carto_dark:16000,humanitarian:20000,topo:32000,cyclosm:30000,esri_topo:40000,satellite:58000,satellite_hybrid:70000}[document.getElementById('mapdl-source').value]||25000;
   var use8=document.getElementById('mapdl-8bit').checked;
   document.getElementById('mapdl-size').innerText = _mapdlFmtSize(count*avg*(use8?0.45:1));
@@ -15535,10 +15582,24 @@ async function _mapdlDownload(){
             </div>
           </div>
           <div id="mapdl-customwrap" class="hidden flex-wrap gap-1 mb-2"></div>
+          <div class="border-t border-gray-700 pt-2 mb-2">
+            <label class="inline-flex items-center gap-2 text-[10px] uppercase text-teal-400 font-bold mb-1">
+              <input type="checkbox" id="mapdl-radiusOn" class="accent-teal-500"> Limit high detail to a radius
+            </label>
+            <div id="mapdl-radiusWrap" class="hidden items-center flex-wrap gap-2 text-[10px]">
+              <span class="text-teal-700 uppercase">Levels ≥</span>
+              <input type="number" id="mapdl-radiusZ" value="13" min="1" max="19" class="w-12 p-1 rounded bg-gray-900 border border-gray-700 text-teal-100 outline-none">
+              <span class="text-teal-700 uppercase">within</span>
+              <input type="number" id="mapdl-radiusKm" value="10" min="1" max="200" class="w-14 p-1 rounded bg-gray-900 border border-gray-700 text-teal-100 outline-none">
+              <span class="text-teal-700 uppercase">km of centre</span>
+            </div>
+            <p class="text-[10px] text-teal-700 leading-tight mt-1">Keeps the wide overview at low zoom, but only grabs street-level tiles near the middle of your area — cuts the count dramatically.</p>
+          </div>
           <div class="text-[11px] font-mono text-teal-400 border-t border-gray-700 pt-2">
             Min: <b id="mapdl-vmin" class="text-teal-300">--</b> ·
             Max: <b id="mapdl-vmax" class="text-teal-300">--</b><br>
-            Levels: <b id="mapdl-levels" class="text-teal-300">--</b>
+            Levels: <b id="mapdl-levels" class="text-teal-300">--</b><br>
+            <span id="mapdl-breakdown" class="text-teal-600 text-[10px]"></span>
           </div>
         </div>
         <!-- Output -->
