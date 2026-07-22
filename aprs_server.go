@@ -479,6 +479,114 @@ func url_encode(s string) string {
 }
 
 // handleQRZLookup proxies a QRZ callsign lookup with caching.
+// handleFirmwareProxy streams a GitHub release firmware asset through our
+// own server so the browser-based Firmware Flasher can fetch it. Direct
+// browser fetches to GitHub's release asset storage (Azure Blob, behind
+// release-assets.githubusercontent.com) do NOT send CORS headers, so a
+// cross-origin fetch() from aprsnet.uk always fails with "Failed to fetch"
+// even though the file itself is public. Proxying server-side sidesteps
+// that entirely - our server has no CORS restriction on its own outbound
+// requests, and we control the CORS headers on the response we send back.
+//
+// Usage: /api/firmware-proxy?repo=OWNER/REPO&asset=FILENAME.bin
+// Only allows the known firmware repos, to avoid becoming an open proxy.
+var firmwareProxyHTTP = &http.Client{Timeout: 30 * time.Second}
+
+var firmwareProxyAllowedRepos = map[string]bool{
+	"2E0LXY/2E0LXY-LoRa-APRS-Tracker": true,
+	"2E0LXY/2E0LXY-LoRa-APRS-iGate":   true,
+}
+
+func handleFirmwareProxy(w http.ResponseWriter, r *http.Request) {
+	repo := r.URL.Query().Get("repo")
+	asset := r.URL.Query().Get("asset")
+	if repo == "" || asset == "" {
+		w.WriteHeader(400)
+		w.Write([]byte(`{"error":"repo and asset parameters required"}`))
+		return
+	}
+	if !firmwareProxyAllowedRepos[repo] {
+		w.WriteHeader(403)
+		w.Write([]byte(`{"error":"repo not allowed"}`))
+		return
+	}
+	// Basic filename sanity check - only expect our own .bin release assets
+	if strings.ContainsAny(asset, "/\") || !strings.HasSuffix(asset, ".bin") {
+		w.WriteHeader(400)
+		w.Write([]byte(`{"error":"invalid asset name"}`))
+		return
+	}
+
+	// Resolve the latest release and find the matching asset (server-side
+	// call to api.github.com - not subject to browser CORS at all).
+	apiURL := "https://api.github.com/repos/" + repo + "/releases/latest"
+	req, _ := http.NewRequest("GET", apiURL, nil)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "aprsnet.uk-firmware-proxy")
+	resp, err := firmwareProxyHTTP.Do(req)
+	if err != nil {
+		w.WriteHeader(502)
+		json.NewEncoder(w).Encode(map[string]string{"error": "release lookup failed: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	var rel struct {
+		TagName string `json:"tag_name"`
+		Assets  []struct {
+			Name               string `json:"name"`
+			BrowserDownloadURL string `json:"browser_download_url"`
+			Size               int64  `json:"size"`
+		} `json:"assets"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+		w.WriteHeader(502)
+		json.NewEncoder(w).Encode(map[string]string{"error": "release parse failed"})
+		return
+	}
+
+	var assetURL string
+	var assetSize int64
+	for _, a := range rel.Assets {
+		if a.Name == asset {
+			assetURL = a.BrowserDownloadURL
+			assetSize = a.Size
+			break
+		}
+	}
+	if assetURL == "" {
+		w.WriteHeader(404)
+		json.NewEncoder(w).Encode(map[string]string{"error": "asset not found in latest release " + rel.TagName})
+		return
+	}
+
+	// Fetch the binary server-side (this request has no Origin header, so
+	// GitHub's lack of CORS headers is irrelevant here) and stream it back.
+	binReq, _ := http.NewRequest("GET", assetURL, nil)
+	binReq.Header.Set("User-Agent", "aprsnet.uk-firmware-proxy")
+	binResp, err := firmwareProxyHTTP.Do(binReq)
+	if err != nil {
+		w.WriteHeader(502)
+		json.NewEncoder(w).Encode(map[string]string{"error": "asset download failed: " + err.Error()})
+		return
+	}
+	defer binResp.Body.Close()
+	if binResp.StatusCode != 200 {
+		w.WriteHeader(502)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("asset fetch returned HTTP %d", binResp.StatusCode)})
+		return
+	}
+
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+asset+"\"")
+	if assetSize > 0 {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", assetSize))
+	}
+	w.Header().Set("X-Firmware-Version", rel.TagName)
+	io.Copy(w, binResp.Body)
+}
+
 func handleQRZLookup(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	call := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("call")))
@@ -1078,6 +1186,7 @@ func main() {
 	http.HandleFunc("/api/tle", handleTLE)
 	http.HandleFunc("/api/ariss", handleARISS)
 	http.HandleFunc("/api/version", handleVersion)
+	http.HandleFunc("/api/firmware-proxy", handleFirmwareProxy)
 	http.HandleFunc("/api/tocalls", handleTocalls)
 	http.HandleFunc("/api/qrz/lookup", handleQRZLookup)
 	http.HandleFunc("/api/analytics", handleAnalytics)
