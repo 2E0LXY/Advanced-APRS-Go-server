@@ -15862,8 +15862,15 @@ async function _fwFlash(){
   document.getElementById('fw-flash').disabled=true;
   document.getElementById('fw-status').innerText='Downloading firmware...';
   try {
-    // Fetch the .bin (GitHub release assets are CORS-enabled)
-    var resp=await fetch(board._asset.browser_download_url);
+    // Fetch via our own server proxy — GitHub release assets do NOT send
+    // CORS headers (confirmed: neither the github.com redirect nor the final
+    // release-assets.githubusercontent.com response includes
+    // access-control-allow-origin), so a direct cross-origin browser fetch
+    // always fails with "Failed to fetch". The server fetches it (no CORS
+    // applies to server-to-server requests) and streams it back with our
+    // own CORS header.
+    var proxyUrl='/api/firmware-proxy?repo='+encodeURIComponent(board.repo)+'&asset='+encodeURIComponent(board._asset.name);
+    var resp=await fetch(proxyUrl);
     if(!resp.ok) throw new Error('download HTTP '+resp.status);
     var buf=new Uint8Array(await resp.arrayBuffer());
     _fwLog('Downloaded '+(buf.length/1024/1024).toFixed(2)+' MB', 'ok');
