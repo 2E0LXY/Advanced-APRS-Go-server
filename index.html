@@ -15040,6 +15040,38 @@ async function _fwBoardChanged(){
   } catch(e){ info.innerText='Could not fetch release info: '+e.message; }
 }
 
+
+// Minimal MD5 (binary string in, lowercase hex out). Self-contained — no
+// external dependency, used only to verify the flashed image's checksum.
+function _fwMd5(input){
+  function rotl(x,c){ return (x<<c)|(x>>>(32-c)); }
+  function toHex(n){ var s=''; for(var i=0;i<4;i++){ s+=('0'+((n>>>(i*8))&0xFF).toString(16)).slice(-2);} return s; }
+  var K=[]; for(var i=0;i<64;i++) K[i]=Math.floor(Math.abs(Math.sin(i+1))*4294967296);
+  var S=[7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,
+         4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21];
+  var a0=1732584193,b0=-271733879,c0=-1732584194,d0=271733878;
+  var msgLen=input.length, bitLen=msgLen*8;
+  var bytes=[]; for(var i=0;i<msgLen;i++) bytes.push(input.charCodeAt(i)&0xFF);
+  bytes.push(0x80); while(bytes.length%64!==56) bytes.push(0);
+  for(var i=0;i<8;i++) bytes.push((bitLen/Math.pow(2,8*i))&0xFF);
+  for(var chunk=0; chunk<bytes.length; chunk+=64){
+    var M=[]; for(var i=0;i<16;i++) M[i]=bytes[chunk+i*4]|(bytes[chunk+i*4+1]<<8)|(bytes[chunk+i*4+2]<<16)|(bytes[chunk+i*4+3]<<24);
+    var A=a0,B=b0,C=c0,D=d0;
+    for(var i=0;i<64;i++){
+      var F,g;
+      if(i<16){ F=(B&C)|(~B&D); g=i; }
+      else if(i<32){ F=(D&B)|(~D&C); g=(5*i+1)%16; }
+      else if(i<48){ F=B^C^D; g=(3*i+5)%16; }
+      else { F=C^(B|~D); g=(7*i)%16; }
+      F=(F+A+K[i]+M[g])|0;
+      A=D; D=C; C=B; B=(B+rotl(F,S[i]))|0;
+    }
+    a0=(a0+A)|0; b0=(b0+B)|0; c0=(c0+C)|0; d0=(d0+D)|0;
+  }
+  function toLE(n){ var s=''; for(var i=0;i<4;i++){ s+=('0'+((n>>>(i*8))&0xFF).toString(16)).slice(-2);} return s; }
+  return toLE(a0)+toLE(b0)+toLE(c0)+toLE(d0);
+}
+
 async function _fwFlash(){
   var S=_fwState, board=S.selected;
   if(!S.esploader){ _fwLog('Connect a device first.', 'err'); return; }
@@ -15075,8 +15107,28 @@ async function _fwFlash(){
         document.getElementById('fw-status').innerText='Flashing... '+pct+'%';
       }
     });
-    _fwLog('Flash complete!', 'ok');
-    document.getElementById('fw-status').innerText='✓ Done — resetting device...';
+    _fwLog('Flash complete.', 'ok');
+
+    if(document.getElementById('fw-verify').checked){
+      document.getElementById('fw-status').innerText='Verifying...';
+      _fwLog('Verifying via device MD5 checksum...');
+      try {
+        var deviceMd5 = await S.esploader.flashMd5sum(board.flashAddr, buf.length);
+        var localMd5 = _fwMd5(binStr);
+        if(String(deviceMd5).toLowerCase().indexOf(localMd5.toLowerCase())>=0){
+          _fwLog('Verify OK — checksums match ('+localMd5+').', 'ok');
+          document.getElementById('fw-status').innerText='✓ Flashed and verified.';
+        } else {
+          _fwLog('Verify MISMATCH — device: '+deviceMd5+'  expected: '+localMd5, 'err');
+          document.getElementById('fw-status').innerText='⚠ Verify failed — checksums differ. Try flashing again.';
+        }
+      } catch(e){
+        _fwLog('Verify step failed: '+e.message+' (flash itself likely still OK)', 'err');
+      }
+    } else {
+      document.getElementById('fw-status').innerText='✓ Done — resetting device...';
+    }
+
     try { await S.esploader.hardReset(); } catch(e){}
     _fwLog('Device reset. You can unplug it now.', 'ok');
   } catch(e){
@@ -15809,6 +15861,58 @@ async function _fwFlash(){
       </div>
     </div>
     <div class="px-3 pb-3 text-[10px] text-gray-500">Tiles © OpenStreetMap / Esri / OpenTopoMap contributors. Extract the ZIP to your SD card root. For personal/amateur use — respect tile provider usage policies.</div>
+  </div>
+</div>
+
+
+<!-- ═══ Firmware Flasher Modal ═══ -->
+<div id="fw-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-2" style="z-index:100000" onclick="if(event.target===this)closeFirmwareFlasher()">
+  <div class="bg-gray-900 border border-amber-700 rounded-xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto">
+    <div class="flex items-center justify-between p-3 border-b border-gray-700 sticky top-0 bg-gray-900 z-10">
+      <h2 class="text-lg font-bold text-amber-400">⚡ Firmware Flasher</h2>
+      <button onclick="closeFirmwareFlasher()" class="text-gray-400 hover:text-white text-xl">✕</button>
+    </div>
+    <div class="p-4 space-y-4 text-sm">
+      <div id="fw-unsupported" class="hidden bg-red-900/30 border border-red-800 rounded p-3 text-red-300 text-xs">
+        Your browser can't flash devices directly (needs the Web Serial API). Please use <b>Chrome</b> or <b>Edge</b> on a desktop computer. You can still download firmware manually from the release links below.
+      </div>
+
+      <div class="bg-gray-800/50 border border-gray-700 rounded p-3">
+        <h3 class="text-[11px] font-bold uppercase text-amber-600 mb-2 tracking-widest">1 · Connect your device</h3>
+        <p class="text-xs text-gray-400 mb-2">Plug the device in via USB, then click Connect. Some boards need the BOOT button held while connecting.</p>
+        <button id="fw-connect" class="w-full bg-amber-700 hover:bg-amber-600 py-2.5 rounded text-sm font-bold uppercase">🔌 Connect Device</button>
+        <div id="fw-chipinfo" class="hidden mt-2 text-xs font-mono text-teal-400"></div>
+      </div>
+
+      <div id="fw-step2" class="hidden bg-gray-800/50 border border-gray-700 rounded p-3">
+        <h3 class="text-[11px] font-bold uppercase text-amber-600 mb-2 tracking-widest">2 · Choose firmware</h3>
+        <label class="text-[10px] uppercase text-gray-500 block mb-1">Device / board</label>
+        <select id="fw-board" class="w-full text-xs p-2 rounded bg-gray-900 border border-gray-700 text-teal-100 mb-2 outline-none"></select>
+        <div id="fw-fwinfo" class="text-xs text-gray-400"></div>
+      </div>
+
+      <div id="fw-step3" class="hidden bg-gray-800/50 border border-gray-700 rounded p-3">
+        <h3 class="text-[11px] font-bold uppercase text-amber-600 mb-2 tracking-widest">3 · Flash</h3>
+        <div class="flex items-center gap-2 mb-2 flex-wrap">
+          <label class="inline-flex items-center gap-1 text-[11px] text-gray-400"><input type="checkbox" id="fw-erase" class="accent-amber-500"> Erase entire flash first (clean install)</label>
+          <label class="inline-flex items-center gap-1 text-[11px] text-gray-400"><input type="checkbox" id="fw-verify" checked class="accent-amber-500"> Verify after flashing (MD5 checksum)</label>
+        </div>
+        <button id="fw-flash" class="w-full bg-emerald-700 hover:bg-emerald-600 py-2.5 rounded text-sm font-bold uppercase">⚡ Flash Firmware</button>
+        <div class="w-full bg-gray-900 h-2 rounded-full overflow-hidden my-2">
+          <div id="fw-bar" class="bg-emerald-500 h-full w-0 transition-all"></div>
+        </div>
+        <div id="fw-status" class="text-xs text-amber-300"></div>
+      </div>
+
+      <div id="fw-log" class="bg-black/50 p-2 rounded font-mono text-[10px] h-28 overflow-y-auto border border-gray-800 text-teal-500">Ready. Connect a device to begin.</div>
+
+      <div class="text-[10px] text-gray-500">
+        Manual downloads:
+        <a href="https://github.com/2E0LXY/2E0LXY-LoRa-APRS-Tracker/releases/latest" target="_blank" class="text-blue-400 hover:underline">T-Deck Tracker</a> ·
+        <a href="https://github.com/2E0LXY/2E0LXY-LoRa-APRS-iGate/releases/latest" target="_blank" class="text-blue-400 hover:underline">iGate</a>.
+        Flashing over USB is done entirely in your browser — nothing is uploaded to any server.
+      </div>
+    </div>
   </div>
 </div>
 
