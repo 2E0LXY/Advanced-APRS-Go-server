@@ -15714,8 +15714,12 @@ var _fwState = { transport:null, esploader:null, chip:null, device:null, boards:
 
 // Board catalogue. chip is what esptool reports; flashAddr + assetMatch pick the binary.
 var _fwBoards = [
+  // Uses the full-flash image (bootloader+partitions+app @ 0x0), NOT the
+  // app-only firmware.bin @ 0x10000 — the app-only image requires an
+  // existing bootloader already on the chip, so it silently bricks any
+  // device that gets erased first. full-flash is safe from a blank chip.
   { id:'tdeck', name:'LilyGO T-Deck Plus (Tracker)', chip:'ESP32-S3',
-    repo:'2E0LXY/2E0LXY-LoRa-APRS-Tracker', assetMatch:'TDeck-Plus-firmware', flashAddr:0x10000 },
+    repo:'2E0LXY/2E0LXY-LoRa-APRS-Tracker', assetMatch:'TDeck-Plus-full-flash', flashAddr:0x0 },
   { id:'heltec_v3', name:'Heltec WiFi LoRa 32 V3.2 (iGate)', chip:'ESP32-S3',
     repo:'2E0LXY/2E0LXY-LoRa-APRS-iGate', assetMatch:'Heltec-V3.2-full-flash', flashAddr:0x0 },
   { id:'heltec_v4', name:'Heltec WiFi LoRa 32 V4 (iGate)', chip:'ESP32-S3',
@@ -15883,6 +15887,18 @@ async function _fwFlash(){
   var S=_fwState, board=S.selected;
   if(!S.esploader){ _fwLog('Connect a device first.', 'err'); return; }
   if(!board || !board._asset){ _fwLog('No firmware selected/available.', 'err'); return; }
+  // Safety: an app-only image (no "full-flash" in the name) written to a
+  // freshly-erased chip has no bootloader and will not boot. This is exactly
+  // what caused a real device to go completely dark after erase+flash.
+  var eraseChecked = document.getElementById('fw-erase').checked;
+  var isFullFlash = board._asset.name.toLowerCase().indexOf('full-flash') >= 0;
+  if (eraseChecked && !isFullFlash) {
+    alert('This firmware file ('+board._asset.name+') is an app-only image, not a full-flash image.\n\n'
+      + 'Combining "Erase entire flash" with an app-only image removes the bootloader and the device will NOT boot afterwards.\n\n'
+      + 'Please untick "Erase entire flash" for this board, or select a full-flash image if one is available.');
+    return;
+  }
+
   if(!confirm('Flash '+board.name+' with '+board._tag+'?\n\nDo not unplug the device during flashing.')) return;
 
   document.getElementById('fw-flash').disabled=true;
