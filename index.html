@@ -15715,13 +15715,13 @@ var _fwState = { transport:null, esploader:null, chip:null, device:null, boards:
 // Board catalogue. chip is what esptool reports; flashAddr + assetMatch pick the binary.
 var _fwBoards = [
   { id:'tdeck', name:'LilyGO T-Deck Plus (Tracker)', chip:'ESP32-S3',
-    repo:'2E0LXY-LoRa-APRS-Tracker', assetMatch:'TDeck-Plus-firmware', flashAddr:0x10000 },
+    repo:'2E0LXY/2E0LXY-LoRa-APRS-Tracker', assetMatch:'TDeck-Plus-firmware', flashAddr:0x10000 },
   { id:'heltec_v3', name:'Heltec WiFi LoRa 32 V3.2 (iGate)', chip:'ESP32-S3',
-    repo:'2E0LXY-LoRa-APRS-iGate', assetMatch:'Heltec-V3.2-full-flash', flashAddr:0x0 },
+    repo:'2E0LXY/2E0LXY-LoRa-APRS-iGate', assetMatch:'Heltec-V3.2-full-flash', flashAddr:0x0 },
   { id:'heltec_v4', name:'Heltec WiFi LoRa 32 V4 (iGate)', chip:'ESP32-S3',
-    repo:'2E0LXY-LoRa-APRS-iGate', assetMatch:'Heltec-V4-full-flash', flashAddr:0x0 },
+    repo:'2E0LXY/2E0LXY-LoRa-APRS-iGate', assetMatch:'Heltec-V4-full-flash', flashAddr:0x0 },
   { id:'lilygo_v21', name:'LilyGO LoRa32 V2.1 (iGate)', chip:'ESP32',
-    repo:'2E0LXY-LoRa-APRS-iGate', assetMatch:'LilyGO-LoRa32-V2.1-full-flash', flashAddr:0x0 }
+    repo:'2E0LXY/2E0LXY-LoRa-APRS-iGate', assetMatch:'LilyGO-LoRa32-V2.1-full-flash', flashAddr:0x0 }
 ];
 
 function _fwLog(msg, type){
@@ -15838,7 +15838,7 @@ async function _fwBoardChanged(){
   var info=document.getElementById('fw-fwinfo');
   info.innerText='Fetching latest release...';
   try {
-    var r=await fetch('https://api.github.com/repos/2E0LXY/'+board.repo+'/releases/latest');
+    var r=await fetch('https://api.github.com/repos/'+board.repo+'/releases/latest');
     var rel=await r.json();
     var asset=(rel.assets||[]).find(function(a){ return a.name.indexOf(board.assetMatch)>=0; });
     if(!asset){ info.innerText='No matching firmware in '+rel.tag_name+'.'; board._asset=null; return; }
