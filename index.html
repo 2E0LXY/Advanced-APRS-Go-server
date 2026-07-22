@@ -15663,6 +15663,16 @@ async function _mapdlDownload(){
         <p class="text-xs text-gray-400 mb-2">Plug the device in via USB, then click Connect. Some boards need the BOOT button held while connecting.</p>
         <button id="fw-connect" class="w-full bg-amber-700 hover:bg-amber-600 py-2.5 rounded text-sm font-bold uppercase">🔌 Connect Device</button>
         <div id="fw-chipinfo" class="hidden mt-2 text-xs font-mono text-teal-400"></div>
+        <div id="fw-bootmsg" class="hidden mt-3 bg-amber-900/30 border border-amber-800 rounded p-3 text-amber-200 text-xs leading-relaxed">
+          <b>Manual bootloader entry needed.</b> This board (ESP32-S3 native USB) sometimes won't auto-reset into flash mode while its own firmware is running. Try:
+          <ol class="list-decimal list-inside mt-1 space-y-0.5">
+            <li>Unplug the USB cable</li>
+            <li>Hold down the <b>BOOT</b> button (small side button on the T-Deck)</li>
+            <li>Plug the USB cable back in <i>while still holding BOOT</i></li>
+            <li>Wait 1 second, then release BOOT</li>
+            <li>Click <b>Connect Device</b> again</li>
+          </ol>
+        </div>
       </div>
 
       <div id="fw-step2" class="hidden bg-gray-800/50 border border-gray-700 rounded p-3">
@@ -15778,8 +15788,24 @@ async function _fwConnect(){
     _fwPopulateBoards(chipFamily);
     document.getElementById('fw-step2').classList.remove('hidden');
     document.getElementById('fw-step3').classList.remove('hidden');
+    document.getElementById('fw-bootmsg').classList.add('hidden');
   } catch(e){
     _fwLog('Connect failed: '+e.message, 'err');
+
+    // "Invalid head of packet" / sync failures are the classic symptom of a
+    // native-USB-CDC chip (ESP32-S3/C3, VendorID 0x303a) where the running
+    // application firmware is still using the same USB port, so esptool's
+    // automatic reset-into-bootloader sequence doesn't take effect. The fix
+    // is a MANUAL bootloader entry: hold BOOT, tap RESET, release BOOT.
+    var msg=(e.message||'');
+    if(/invalid head of packet|sync|timeout|failed to connect/i.test(msg)){
+      document.getElementById('fw-bootmsg').classList.remove('hidden');
+      _fwLog('This usually means the board needs a MANUAL bootloader entry. See the instructions above and try again.', 'err');
+    }
+
+    // Release the port so a retry can request it again cleanly
+    try { if(_fwState.transport) await _fwState.transport.disconnect(); } catch(e2){}
+    _fwState.transport=null; _fwState.esploader=null;
   }
 }
 
