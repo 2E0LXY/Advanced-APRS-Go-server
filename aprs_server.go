@@ -511,7 +511,7 @@ func handleFirmwareProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Basic filename sanity check - only expect our own .bin release assets
-	if strings.ContainsAny(asset, "/\") || !strings.HasSuffix(asset, ".bin") {
+	if strings.ContainsAny(asset, "/\\") || !strings.HasSuffix(asset, ".bin") {
 		w.WriteHeader(400)
 		w.Write([]byte(`{"error":"invalid asset name"}`))
 		return
