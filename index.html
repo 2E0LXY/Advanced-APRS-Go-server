@@ -14918,226 +14918,7 @@ async function _mapdlDownload(){
 
 
 
-/* ═══ Firmware Flasher — esptool-js over Web Serial (Chrome/Edge desktop) ═══ */
-var _fwState = { transport:null, esploader:null, chip:null, device:null, boards:[], selected:null, esptoolMod:null };
 
-// Board catalogue. chip is what esptool reports; flashAddr + assetMatch pick the binary.
-var _fwBoards = [
-  { id:'tdeck', name:'LilyGO T-Deck Plus (Tracker)', chip:'ESP32-S3',
-    repo:'2E0LXY-LoRa-APRS-Tracker', assetMatch:'TDeck-Plus-firmware', flashAddr:0x10000 },
-  { id:'heltec_v3', name:'Heltec WiFi LoRa 32 V3.2 (iGate)', chip:'ESP32-S3',
-    repo:'2E0LXY-LoRa-APRS-iGate', assetMatch:'Heltec-V3.2-full-flash', flashAddr:0x0 },
-  { id:'heltec_v4', name:'Heltec WiFi LoRa 32 V4 (iGate)', chip:'ESP32-S3',
-    repo:'2E0LXY-LoRa-APRS-iGate', assetMatch:'Heltec-V4-full-flash', flashAddr:0x0 },
-  { id:'lilygo_v21', name:'LilyGO LoRa32 V2.1 (iGate)', chip:'ESP32',
-    repo:'2E0LXY-LoRa-APRS-iGate', assetMatch:'LilyGO-LoRa32-V2.1-full-flash', flashAddr:0x0 }
-];
-
-function _fwLog(msg, type){
-  var el=document.getElementById('fw-log'); if(!el) return;
-  var c=type==='err'?'#f87171':(type==='ok'?'#4ade80':'#5eead4');
-  el.innerHTML += '<div style="color:'+c+'">'+msg+'</div>'; el.scrollTop=el.scrollHeight;
-}
-
-function openFirmwareFlasher(){
-  document.getElementById('fw-modal').classList.remove('hidden');
-  if(!('serial' in navigator)){
-    document.getElementById('fw-unsupported').classList.remove('hidden');
-    document.getElementById('fw-connect').disabled = true;
-    document.getElementById('fw-connect').classList.add('opacity-40');
-  }
-}
-function closeFirmwareFlasher(){
-  // Clean up any open serial connection
-  try { if(_fwState.transport) _fwState.transport.disconnect(); } catch(e){}
-  document.getElementById('fw-modal').classList.add('hidden');
-}
-
-async function _fwLoadEsptool(){
-  if(_fwState.esptoolMod) return _fwState.esptoolMod;
-  _fwLog('Loading flashing library...');
-  // esptool-js ships as an ES module on unpkg
-  var mod = await import('https://unpkg.com/esptool-js@0.5.4/lib/index.js');
-  _fwState.esptoolMod = mod;
-  return mod;
-}
-
-document.addEventListener('DOMContentLoaded', function(){
-  // Wire buttons if the modal exists
-  var c=document.getElementById('fw-connect'); if(c) c.onclick=_fwConnect;
-  var f=document.getElementById('fw-flash'); if(f) f.onclick=_fwFlash;
-  var b=document.getElementById('fw-board'); if(b) b.onchange=_fwBoardChanged;
-});
-
-async function _fwConnect(){
-  try {
-    var mod = await _fwLoadEsptool();
-    _fwLog('Requesting serial port...');
-    var port = await navigator.serial.requestPort();
-    _fwState.transport = new mod.Transport(port, true);
-
-    var loaderOpts = {
-      transport: _fwState.transport,
-      baudrate: 921600,
-      romBaudrate: 115200,
-      terminal: {
-        clean(){}, writeLine(d){ _fwLog(d); }, write(d){}
-      }
-    };
-    _fwState.esploader = new mod.ESPLoader(loaderOpts);
-    _fwLog('Connecting to bootloader...');
-    _fwState.chip = await _fwState.esploader.main();  // returns chip description
-    _fwLog('Connected: '+_fwState.chip, 'ok');
-
-    // Chip family for filtering
-    var chipFamily = /S3/.test(_fwState.chip) ? 'ESP32-S3' : (/C3/.test(_fwState.chip) ? 'ESP32-C3' : 'ESP32');
-    document.getElementById('fw-chipinfo').classList.remove('hidden');
-    document.getElementById('fw-chipinfo').innerText = 'Detected chip: '+_fwState.chip;
-
-    _fwPopulateBoards(chipFamily);
-    document.getElementById('fw-step2').classList.remove('hidden');
-    document.getElementById('fw-step3').classList.remove('hidden');
-  } catch(e){
-    _fwLog('Connect failed: '+e.message, 'err');
-  }
-}
-
-function _fwPopulateBoards(chipFamily){
-  var sel=document.getElementById('fw-board');
-  var matches=_fwBoards.filter(function(b){ return b.chip===chipFamily; });
-  var others=_fwBoards.filter(function(b){ return b.chip!==chipFamily; });
-  sel.innerHTML='';
-  if(matches.length){
-    var og=document.createElement('optgroup'); og.label='Matches your '+chipFamily;
-    matches.forEach(function(b){ var o=document.createElement('option'); o.value=b.id; o.text=b.name; og.appendChild(o); });
-    sel.appendChild(og);
-  }
-  if(others.length){
-    var og2=document.createElement('optgroup'); og2.label='Other boards';
-    others.forEach(function(b){ var o=document.createElement('option'); o.value=b.id; o.text=b.name; og2.appendChild(o); });
-    sel.appendChild(og2);
-  }
-  if(matches.length===1){
-    _fwLog('Auto-selected: '+matches[0].name, 'ok');
-  }
-  _fwBoardChanged();
-}
-
-async function _fwBoardChanged(){
-  var id=document.getElementById('fw-board').value;
-  var board=_fwBoards.find(function(b){ return b.id===id; });
-  _fwState.selected=board;
-  if(!board) return;
-  var info=document.getElementById('fw-fwinfo');
-  info.innerText='Fetching latest release...';
-  try {
-    var r=await fetch('https://api.github.com/repos/2E0LXY/'+board.repo+'/releases/latest');
-    var rel=await r.json();
-    var asset=(rel.assets||[]).find(function(a){ return a.name.indexOf(board.assetMatch)>=0; });
-    if(!asset){ info.innerText='No matching firmware in '+rel.tag_name+'.'; board._asset=null; return; }
-    board._asset=asset; board._tag=rel.tag_name;
-    info.innerHTML='Latest: <b class="text-teal-300">'+rel.tag_name+'</b> — '+asset.name+' ('+(asset.size/1024/1024).toFixed(2)+' MB)<br>Flash address: 0x'+board.flashAddr.toString(16);
-  } catch(e){ info.innerText='Could not fetch release info: '+e.message; }
-}
-
-
-// Minimal MD5 (binary string in, lowercase hex out). Self-contained — no
-// external dependency, used only to verify the flashed image's checksum.
-function _fwMd5(input){
-  function rotl(x,c){ return (x<<c)|(x>>>(32-c)); }
-  function toHex(n){ var s=''; for(var i=0;i<4;i++){ s+=('0'+((n>>>(i*8))&0xFF).toString(16)).slice(-2);} return s; }
-  var K=[]; for(var i=0;i<64;i++) K[i]=Math.floor(Math.abs(Math.sin(i+1))*4294967296);
-  var S=[7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,
-         4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21];
-  var a0=1732584193,b0=-271733879,c0=-1732584194,d0=271733878;
-  var msgLen=input.length, bitLen=msgLen*8;
-  var bytes=[]; for(var i=0;i<msgLen;i++) bytes.push(input.charCodeAt(i)&0xFF);
-  bytes.push(0x80); while(bytes.length%64!==56) bytes.push(0);
-  for(var i=0;i<8;i++) bytes.push((bitLen/Math.pow(2,8*i))&0xFF);
-  for(var chunk=0; chunk<bytes.length; chunk+=64){
-    var M=[]; for(var i=0;i<16;i++) M[i]=bytes[chunk+i*4]|(bytes[chunk+i*4+1]<<8)|(bytes[chunk+i*4+2]<<16)|(bytes[chunk+i*4+3]<<24);
-    var A=a0,B=b0,C=c0,D=d0;
-    for(var i=0;i<64;i++){
-      var F,g;
-      if(i<16){ F=(B&C)|(~B&D); g=i; }
-      else if(i<32){ F=(D&B)|(~D&C); g=(5*i+1)%16; }
-      else if(i<48){ F=B^C^D; g=(3*i+5)%16; }
-      else { F=C^(B|~D); g=(7*i)%16; }
-      F=(F+A+K[i]+M[g])|0;
-      A=D; D=C; C=B; B=(B+rotl(F,S[i]))|0;
-    }
-    a0=(a0+A)|0; b0=(b0+B)|0; c0=(c0+C)|0; d0=(d0+D)|0;
-  }
-  function toLE(n){ var s=''; for(var i=0;i<4;i++){ s+=('0'+((n>>>(i*8))&0xFF).toString(16)).slice(-2);} return s; }
-  return toLE(a0)+toLE(b0)+toLE(c0)+toLE(d0);
-}
-
-async function _fwFlash(){
-  var S=_fwState, board=S.selected;
-  if(!S.esploader){ _fwLog('Connect a device first.', 'err'); return; }
-  if(!board || !board._asset){ _fwLog('No firmware selected/available.', 'err'); return; }
-  if(!confirm('Flash '+board.name+' with '+board._tag+'?\n\nDo not unplug the device during flashing.')) return;
-
-  document.getElementById('fw-flash').disabled=true;
-  document.getElementById('fw-status').innerText='Downloading firmware...';
-  try {
-    // Fetch the .bin (GitHub release assets are CORS-enabled)
-    var resp=await fetch(board._asset.browser_download_url);
-    if(!resp.ok) throw new Error('download HTTP '+resp.status);
-    var buf=new Uint8Array(await resp.arrayBuffer());
-    _fwLog('Downloaded '+(buf.length/1024/1024).toFixed(2)+' MB', 'ok');
-
-    // esptool-js wants a binary string
-    var binStr=''; for(var i=0;i<buf.length;i++) binStr+=String.fromCharCode(buf[i]);
-
-    if(document.getElementById('fw-erase').checked){
-      _fwLog('Erasing flash...'); document.getElementById('fw-status').innerText='Erasing...';
-      await S.esploader.eraseFlash();
-    }
-
-    _fwLog('Flashing at 0x'+board.flashAddr.toString(16)+'...');
-    document.getElementById('fw-status').innerText='Flashing...';
-    await S.esploader.writeFlash({
-      fileArray:[{ data:binStr, address:board.flashAddr }],
-      flashSize:'keep', flashMode:'keep', flashFreq:'keep',
-      eraseAll:false, compress:true,
-      reportProgress:function(idx,written,total){
-        var pct=Math.floor(written/total*100);
-        document.getElementById('fw-bar').style.width=pct+'%';
-        document.getElementById('fw-status').innerText='Flashing... '+pct+'%';
-      }
-    });
-    _fwLog('Flash complete.', 'ok');
-
-    if(document.getElementById('fw-verify').checked){
-      document.getElementById('fw-status').innerText='Verifying...';
-      _fwLog('Verifying via device MD5 checksum...');
-      try {
-        var deviceMd5 = await S.esploader.flashMd5sum(board.flashAddr, buf.length);
-        var localMd5 = _fwMd5(binStr);
-        if(String(deviceMd5).toLowerCase().indexOf(localMd5.toLowerCase())>=0){
-          _fwLog('Verify OK — checksums match ('+localMd5+').', 'ok');
-          document.getElementById('fw-status').innerText='✓ Flashed and verified.';
-        } else {
-          _fwLog('Verify MISMATCH — device: '+deviceMd5+'  expected: '+localMd5, 'err');
-          document.getElementById('fw-status').innerText='⚠ Verify failed — checksums differ. Try flashing again.';
-        }
-      } catch(e){
-        _fwLog('Verify step failed: '+e.message+' (flash itself likely still OK)', 'err');
-      }
-    } else {
-      document.getElementById('fw-status').innerText='✓ Done — resetting device...';
-    }
-
-    try { await S.esploader.hardReset(); } catch(e){}
-    _fwLog('Device reset. You can unplug it now.', 'ok');
-  } catch(e){
-    _fwLog('Flash failed: '+e.message, 'err');
-    document.getElementById('fw-status').innerText='Failed: '+e.message;
-  } finally {
-    document.getElementById('fw-flash').disabled=false;
-  }
-}
 
 </script>
 <!-- WX Station Detail Modal -->
@@ -15916,5 +15697,228 @@ async function _fwFlash(){
   </div>
 </div>
 
+
+<script>
+/* ═══ Firmware Flasher — esptool-js over Web Serial (Chrome/Edge desktop) ═══ */
+var _fwState = { transport:null, esploader:null, chip:null, device:null, boards:[], selected:null, esptoolMod:null };
+
+// Board catalogue. chip is what esptool reports; flashAddr + assetMatch pick the binary.
+var _fwBoards = [
+  { id:'tdeck', name:'LilyGO T-Deck Plus (Tracker)', chip:'ESP32-S3',
+    repo:'2E0LXY-LoRa-APRS-Tracker', assetMatch:'TDeck-Plus-firmware', flashAddr:0x10000 },
+  { id:'heltec_v3', name:'Heltec WiFi LoRa 32 V3.2 (iGate)', chip:'ESP32-S3',
+    repo:'2E0LXY-LoRa-APRS-iGate', assetMatch:'Heltec-V3.2-full-flash', flashAddr:0x0 },
+  { id:'heltec_v4', name:'Heltec WiFi LoRa 32 V4 (iGate)', chip:'ESP32-S3',
+    repo:'2E0LXY-LoRa-APRS-iGate', assetMatch:'Heltec-V4-full-flash', flashAddr:0x0 },
+  { id:'lilygo_v21', name:'LilyGO LoRa32 V2.1 (iGate)', chip:'ESP32',
+    repo:'2E0LXY-LoRa-APRS-iGate', assetMatch:'LilyGO-LoRa32-V2.1-full-flash', flashAddr:0x0 }
+];
+
+function _fwLog(msg, type){
+  var el=document.getElementById('fw-log'); if(!el) return;
+  var c=type==='err'?'#f87171':(type==='ok'?'#4ade80':'#5eead4');
+  el.innerHTML += '<div style="color:'+c+'">'+msg+'</div>'; el.scrollTop=el.scrollHeight;
+}
+
+function openFirmwareFlasher(){
+  document.getElementById('fw-modal').classList.remove('hidden');
+  if(!('serial' in navigator)){
+    document.getElementById('fw-unsupported').classList.remove('hidden');
+    document.getElementById('fw-connect').disabled = true;
+    document.getElementById('fw-connect').classList.add('opacity-40');
+  }
+}
+function closeFirmwareFlasher(){
+  // Clean up any open serial connection
+  try { if(_fwState.transport) _fwState.transport.disconnect(); } catch(e){}
+  document.getElementById('fw-modal').classList.add('hidden');
+}
+
+async function _fwLoadEsptool(){
+  if(_fwState.esptoolMod) return _fwState.esptoolMod;
+  _fwLog('Loading flashing library...');
+  // esptool-js ships as an ES module on unpkg
+  var mod = await import('https://unpkg.com/esptool-js@0.5.4/lib/index.js');
+  _fwState.esptoolMod = mod;
+  return mod;
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+  // Wire buttons if the modal exists
+  var c=document.getElementById('fw-connect'); if(c) c.onclick=_fwConnect;
+  var f=document.getElementById('fw-flash'); if(f) f.onclick=_fwFlash;
+  var b=document.getElementById('fw-board'); if(b) b.onchange=_fwBoardChanged;
+});
+
+async function _fwConnect(){
+  try {
+    var mod = await _fwLoadEsptool();
+    _fwLog('Requesting serial port...');
+    var port = await navigator.serial.requestPort();
+    _fwState.transport = new mod.Transport(port, true);
+
+    var loaderOpts = {
+      transport: _fwState.transport,
+      baudrate: 921600,
+      romBaudrate: 115200,
+      terminal: {
+        clean(){}, writeLine(d){ _fwLog(d); }, write(d){}
+      }
+    };
+    _fwState.esploader = new mod.ESPLoader(loaderOpts);
+    _fwLog('Connecting to bootloader...');
+    _fwState.chip = await _fwState.esploader.main();  // returns chip description
+    _fwLog('Connected: '+_fwState.chip, 'ok');
+
+    // Chip family for filtering
+    var chipFamily = /S3/.test(_fwState.chip) ? 'ESP32-S3' : (/C3/.test(_fwState.chip) ? 'ESP32-C3' : 'ESP32');
+    document.getElementById('fw-chipinfo').classList.remove('hidden');
+    document.getElementById('fw-chipinfo').innerText = 'Detected chip: '+_fwState.chip;
+
+    _fwPopulateBoards(chipFamily);
+    document.getElementById('fw-step2').classList.remove('hidden');
+    document.getElementById('fw-step3').classList.remove('hidden');
+  } catch(e){
+    _fwLog('Connect failed: '+e.message, 'err');
+  }
+}
+
+function _fwPopulateBoards(chipFamily){
+  var sel=document.getElementById('fw-board');
+  var matches=_fwBoards.filter(function(b){ return b.chip===chipFamily; });
+  var others=_fwBoards.filter(function(b){ return b.chip!==chipFamily; });
+  sel.innerHTML='';
+  if(matches.length){
+    var og=document.createElement('optgroup'); og.label='Matches your '+chipFamily;
+    matches.forEach(function(b){ var o=document.createElement('option'); o.value=b.id; o.text=b.name; og.appendChild(o); });
+    sel.appendChild(og);
+  }
+  if(others.length){
+    var og2=document.createElement('optgroup'); og2.label='Other boards';
+    others.forEach(function(b){ var o=document.createElement('option'); o.value=b.id; o.text=b.name; og2.appendChild(o); });
+    sel.appendChild(og2);
+  }
+  if(matches.length===1){
+    _fwLog('Auto-selected: '+matches[0].name, 'ok');
+  }
+  _fwBoardChanged();
+}
+
+async function _fwBoardChanged(){
+  var id=document.getElementById('fw-board').value;
+  var board=_fwBoards.find(function(b){ return b.id===id; });
+  _fwState.selected=board;
+  if(!board) return;
+  var info=document.getElementById('fw-fwinfo');
+  info.innerText='Fetching latest release...';
+  try {
+    var r=await fetch('https://api.github.com/repos/2E0LXY/'+board.repo+'/releases/latest');
+    var rel=await r.json();
+    var asset=(rel.assets||[]).find(function(a){ return a.name.indexOf(board.assetMatch)>=0; });
+    if(!asset){ info.innerText='No matching firmware in '+rel.tag_name+'.'; board._asset=null; return; }
+    board._asset=asset; board._tag=rel.tag_name;
+    info.innerHTML='Latest: <b class="text-teal-300">'+rel.tag_name+'</b> — '+asset.name+' ('+(asset.size/1024/1024).toFixed(2)+' MB)<br>Flash address: 0x'+board.flashAddr.toString(16);
+  } catch(e){ info.innerText='Could not fetch release info: '+e.message; }
+}
+
+
+// Minimal MD5 (binary string in, lowercase hex out). Self-contained — no
+// external dependency, used only to verify the flashed image's checksum.
+function _fwMd5(input){
+  function rotl(x,c){ return (x<<c)|(x>>>(32-c)); }
+  function toHex(n){ var s=''; for(var i=0;i<4;i++){ s+=('0'+((n>>>(i*8))&0xFF).toString(16)).slice(-2);} return s; }
+  var K=[]; for(var i=0;i<64;i++) K[i]=Math.floor(Math.abs(Math.sin(i+1))*4294967296);
+  var S=[7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,
+         4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21];
+  var a0=1732584193,b0=-271733879,c0=-1732584194,d0=271733878;
+  var msgLen=input.length, bitLen=msgLen*8;
+  var bytes=[]; for(var i=0;i<msgLen;i++) bytes.push(input.charCodeAt(i)&0xFF);
+  bytes.push(0x80); while(bytes.length%64!==56) bytes.push(0);
+  for(var i=0;i<8;i++) bytes.push((bitLen/Math.pow(2,8*i))&0xFF);
+  for(var chunk=0; chunk<bytes.length; chunk+=64){
+    var M=[]; for(var i=0;i<16;i++) M[i]=bytes[chunk+i*4]|(bytes[chunk+i*4+1]<<8)|(bytes[chunk+i*4+2]<<16)|(bytes[chunk+i*4+3]<<24);
+    var A=a0,B=b0,C=c0,D=d0;
+    for(var i=0;i<64;i++){
+      var F,g;
+      if(i<16){ F=(B&C)|(~B&D); g=i; }
+      else if(i<32){ F=(D&B)|(~D&C); g=(5*i+1)%16; }
+      else if(i<48){ F=B^C^D; g=(3*i+5)%16; }
+      else { F=C^(B|~D); g=(7*i)%16; }
+      F=(F+A+K[i]+M[g])|0;
+      A=D; D=C; C=B; B=(B+rotl(F,S[i]))|0;
+    }
+    a0=(a0+A)|0; b0=(b0+B)|0; c0=(c0+C)|0; d0=(d0+D)|0;
+  }
+  function toLE(n){ var s=''; for(var i=0;i<4;i++){ s+=('0'+((n>>>(i*8))&0xFF).toString(16)).slice(-2);} return s; }
+  return toLE(a0)+toLE(b0)+toLE(c0)+toLE(d0);
+}
+
+async function _fwFlash(){
+  var S=_fwState, board=S.selected;
+  if(!S.esploader){ _fwLog('Connect a device first.', 'err'); return; }
+  if(!board || !board._asset){ _fwLog('No firmware selected/available.', 'err'); return; }
+  if(!confirm('Flash '+board.name+' with '+board._tag+'?\n\nDo not unplug the device during flashing.')) return;
+
+  document.getElementById('fw-flash').disabled=true;
+  document.getElementById('fw-status').innerText='Downloading firmware...';
+  try {
+    // Fetch the .bin (GitHub release assets are CORS-enabled)
+    var resp=await fetch(board._asset.browser_download_url);
+    if(!resp.ok) throw new Error('download HTTP '+resp.status);
+    var buf=new Uint8Array(await resp.arrayBuffer());
+    _fwLog('Downloaded '+(buf.length/1024/1024).toFixed(2)+' MB', 'ok');
+
+    // esptool-js wants a binary string
+    var binStr=''; for(var i=0;i<buf.length;i++) binStr+=String.fromCharCode(buf[i]);
+
+    if(document.getElementById('fw-erase').checked){
+      _fwLog('Erasing flash...'); document.getElementById('fw-status').innerText='Erasing...';
+      await S.esploader.eraseFlash();
+    }
+
+    _fwLog('Flashing at 0x'+board.flashAddr.toString(16)+'...');
+    document.getElementById('fw-status').innerText='Flashing...';
+    await S.esploader.writeFlash({
+      fileArray:[{ data:binStr, address:board.flashAddr }],
+      flashSize:'keep', flashMode:'keep', flashFreq:'keep',
+      eraseAll:false, compress:true,
+      reportProgress:function(idx,written,total){
+        var pct=Math.floor(written/total*100);
+        document.getElementById('fw-bar').style.width=pct+'%';
+        document.getElementById('fw-status').innerText='Flashing... '+pct+'%';
+      }
+    });
+    _fwLog('Flash complete.', 'ok');
+
+    if(document.getElementById('fw-verify').checked){
+      document.getElementById('fw-status').innerText='Verifying...';
+      _fwLog('Verifying via device MD5 checksum...');
+      try {
+        var deviceMd5 = await S.esploader.flashMd5sum(board.flashAddr, buf.length);
+        var localMd5 = _fwMd5(binStr);
+        if(String(deviceMd5).toLowerCase().indexOf(localMd5.toLowerCase())>=0){
+          _fwLog('Verify OK — checksums match ('+localMd5+').', 'ok');
+          document.getElementById('fw-status').innerText='✓ Flashed and verified.';
+        } else {
+          _fwLog('Verify MISMATCH — device: '+deviceMd5+'  expected: '+localMd5, 'err');
+          document.getElementById('fw-status').innerText='⚠ Verify failed — checksums differ. Try flashing again.';
+        }
+      } catch(e){
+        _fwLog('Verify step failed: '+e.message+' (flash itself likely still OK)', 'err');
+      }
+    } else {
+      document.getElementById('fw-status').innerText='✓ Done — resetting device...';
+    }
+
+    try { await S.esploader.hardReset(); } catch(e){}
+    _fwLog('Device reset. You can unplug it now.', 'ok');
+  } catch(e){
+    _fwLog('Flash failed: '+e.message, 'err');
+    document.getElementById('fw-status').innerText='Failed: '+e.message;
+  } finally {
+    document.getElementById('fw-flash').disabled=false;
+  }
+}
+</script>
 </body>
 </html>
