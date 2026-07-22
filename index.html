@@ -15738,7 +15738,7 @@ async function _fwLoadEsptool(){
   if(_fwState.esptoolMod) return _fwState.esptoolMod;
   _fwLog('Loading flashing library...');
   // esptool-js ships as an ES module on unpkg
-  var mod = await import('https://unpkg.com/esptool-js@0.5.4/lib/index.js');
+  var mod = await import('https://cdn.jsdelivr.net/npm/esptool-js@0.5.4/+esm');
   _fwState.esptoolMod = mod;
   return mod;
 }
