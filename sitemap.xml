@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+
+  <!-- Main app — live APRS map, messaging, geo-fence, beaconing -->
+  <url>
+    <loc>https://www.aprsnet.uk/</loc>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+
+  <!-- Mobile optimised APRS map for phones -->
+  <url>
+    <loc>https://www.aprsnet.uk/mobile</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <!-- Demo mode — try without logging in -->
+  <url>
+    <loc>https://www.aprsnet.uk/demo</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <!-- Privacy policy -->
+  <url>
+    <loc>https://www.aprsnet.uk/privacy</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+  </url>
+
+  <!-- Setup / self-host guide -->
+  <url>
+    <loc>https://www.aprsnet.uk/setup</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+
+</urlset>

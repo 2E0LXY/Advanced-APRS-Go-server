@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy Policy — APRS Net</title>
+<meta name="description" content="Privacy policy for APRS Net (aprsnet.uk) — the free APRS-IS gateway and amateur radio tracking platform.">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://www.aprsnet.uk/privacy">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">
+<meta name="theme-color" content="#0B1526">
+<style>
+  :root {
+    --bg: #0a1929; --panel: #0f2740; --border: #1e3a5f;
+    --text: #e2e8f0; --dim: #94a3b8; --accent: #22d3ee;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.6;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { color: var(--accent); font-size: 1.8rem; margin-bottom: 4px; }
+  .updated { color: var(--dim); font-size: 0.85rem; margin-bottom: 28px; }
+  h2 { color: var(--accent); font-size: 1.15rem; margin-top: 32px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  h3 { color: var(--text); font-size: 1rem; margin-top: 20px; }
+  p, li { color: var(--text); font-size: 0.95rem; }
+  ul { padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.9rem; }
+  th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--panel); color: var(--accent); }
+  .box { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin: 16px 0; }
+  .warn { border-left: 4px solid #f59e0b; }
+  a { color: var(--accent); }
+  code { background: var(--panel); padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
+  footer { color: var(--dim); font-size: 0.8rem; margin-top: 40px; border-top: 1px solid var(--border); padding-top: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Privacy Policy</h1>
+  <p class="updated">APRS Net — www.aprsnet.uk and the APRS Net Android, iOS and desktop apps<br>
+  Last updated: 12 June 2026</p>
+
+  <div class="box warn">
+    <strong>Important — read this first.</strong> APRS Net is built on top of
+    Amateur Packet Reporting System (APRS) and APRS-IS, an open, worldwide,
+    publicly-accessible amateur radio network. Any position, status, message
+    or weather packet you transmit through this service — whether via radio,
+    the app, or the web dashboard — is broadcast in the clear to <strong>every
+    APRS-IS server, client and website in the world</strong>, including
+    third-party sites such as aprs.fi. This is fundamental to how amateur
+    radio and APRS work, is required by amateur radio licence conditions in
+    most countries (no encryption of amateur transmissions), and cannot be
+    made private by this service. Do not transmit anything via APRS that you
+    do not want to be public.
+  </div>
+
+  <h2>1. Who we are</h2>
+  <p>
+    APRS Net is a self-hosted APRS-IS gateway, tactical map and companion app
+    suite, operated by an individual UK-licensed radio amateur (callsign
+    2E0LXY) as a free, non-commercial service for the amateur radio
+    community. The software is open source under the GNU General Public
+    Licence v3.
+  </p>
+  <p>
+    Contact: <a href="https://www.qrz.com/db/2E0LXY">via QRZ.com (2E0LXY)</a>,
+    or through the project's GitHub repositories.
+  </p>
+
+  <h2>2. What this policy covers</h2>
+  <p>This policy covers:</p>
+  <ul>
+    <li>The web dashboard at <strong>www.aprsnet.uk</strong></li>
+    <li>The <strong>APRS Net</strong> companion apps (Android, iOS, and the
+        Windows/Linux desktop client)</li>
+    <li>The optional <strong>free member account</strong> system used to sync
+        settings and messages across devices</li>
+  </ul>
+
+  <h2>3. Information we collect</h2>
+
+  <h3>3.1 Without an account (anonymous use)</h3>
+  <p>
+    The map, station list, weather data and live traffic feed can all be used
+    without creating an account or entering any personal information. In this
+    mode we do not collect or store any personal data about you. Standard web
+    server logs (IP address, request time, user agent) may be retained
+    briefly by the hosting provider for security and abuse-prevention
+    purposes, in line with normal web hosting practice.
+  </p>
+
+  <h3>3.2 Amateur radio callsign and APRS-IS passcode</h3>
+  <p>
+    To <em>transmit</em> (beacon your position, send messages, or inject
+    packets) you provide your amateur radio callsign and your APRS-IS
+    passcode. The passcode is a publicly-documented, non-secret value
+    mathematically derived from your callsign (per the standard APRS-IS
+    passcode algorithm) — it is not a password and is not treated as
+    confidential. Your callsign is, by definition, public information
+    associated with your radio licence.
+  </p>
+
+  <h3>3.3 Free member account (optional)</h3>
+  <p>
+    Creating a free aprsnet.uk account enables cross-device sync, direct
+    member-to-member messaging, geo-fence alerts, and weather-station
+    beaconing. To create an account we collect:
+  </p>
+  <table>
+    <tr><th>Data</th><th>Purpose</th></tr>
+    <tr><td>Display name and email address</td><td>Account identification, login, and (if you choose) the optional MOTD/notification system</td></tr>
+    <tr><td>Password</td><td>Stored as a salted hash — never in plain text, never visible to us</td></tr>
+    <tr><td>Callsign(s) and SSIDs you register</td><td>To route APRS messages addressed to you, and to identify "your" stations on the map</td></tr>
+    <tr><td>Map filter and appearance preferences</td><td>Synced across your devices (e.g. which traffic types to hide, message background theme)</td></tr>
+    <tr><td>Geo-fence alert rules</td><td>Stored so alerts can be evaluated server-side and pushed to all your devices</td></tr>
+    <tr><td>Message history</td><td>APRS messages and direct member-to-member messages sent/received through your account, stored so they sync across your devices</td></tr>
+  </table>
+
+  <h3>3.4 Location data</h3>
+  <p>
+    If you enable beaconing in the app, your device's GPS location is used to
+    construct an APRS position packet, which is then broadcast publicly via
+    APRS-IS as described in the warning box above. The app itself does not
+    send your raw location to our servers for any purpose other than
+    constructing that packet — your position becomes part of the public APRS
+    network the moment it is beaconed, exactly as if you had transmitted it
+    over radio.
+  </p>
+  <p>
+    If you configure a personal weather station (Ecowitt) for automatic WX
+    beaconing, the station's location, API credentials and weather readings
+    you provide are stored on our server (encrypted at rest where
+    practicable) solely to poll the Ecowitt API and construct APRS weather
+    packets on your behalf, which are then likewise broadcast publicly.
+  </p>
+
+  <h3>3.5 Messages</h3>
+  <p>
+    Standard APRS messages are, like position packets, broadcast publicly via
+    APRS-IS and are not private. "Direct" messages between two aprsnet.uk
+    members bypass APRS-IS and are relayed only via our server's
+    infrastructure and stored so they appear in your message history on all
+    your signed-in devices — but they are not end-to-end encrypted, and as
+    the service operator we are technically able to access message content
+    stored on the server. We do not read member messages except as necessary
+    for debugging, abuse reports, or legal compliance.
+  </p>
+
+  <h2>4. Third-party services</h2>
+  <p>
+    Some features call third-party APIs. Data sent to these services is
+    limited to what's needed for the feature to work:
+  </p>
+  <table>
+    <tr><th>Service</th><th>What's sent</th><th>Why</th></tr>
+    <tr><td>aprs.fi</td><td>Link-outs only (we don't send data on your behalf)</td><td>Looking up a station's history when you click through</td></tr>
+    <tr><td>QRZ.com</td><td>Callsign lookups</td><td>Showing operator profile info on the station detail panel</td></tr>
+    <tr><td>aisstream.io</td><td>None of your data — we relay their public AIS ship feed to you</td><td>Showing marine vessels on the map</td></tr>
+    <tr><td>Ecowitt API</td><td>Your station credentials (if configured) to fetch readings</td><td>Automatic APRS WX beaconing</td></tr>
+    <tr><td>UK Met Office</td><td>None of your data — we relay their public severe weather warnings</td><td>Weather warning overlay</td></tr>
+    <tr><td>OpenStreetMap / map tile providers</td><td>Standard map tile requests (your approximate viewport, not your identity)</td><td>Displaying the map</td></tr>
+  </table>
+
+  <h2>5. Data sharing</h2>
+  <p>We do not sell, rent, or share your personal data with advertisers or
+    data brokers. We do not run advertising or third-party analytics/tracking
+    SDKs in the apps. The only "sharing" that occurs is the inherent,
+    by-design public broadcast of APRS traffic described above, which applies
+    equally to every APRS station and gateway worldwide.</p>
+
+  <h2>6. Data retention and deletion</h2>
+  <ul>
+    <li>Live station/traffic data shown on the map is retained for a rolling
+        window (typically a few hours to days) for the propagation analytics
+        and replay features, then discarded.</li>
+    <li>Member account data (profile, preferences, message history, geo-fence
+        rules, WX station config) is retained for as long as your account
+        exists.</li>
+    <li>You can request deletion of your account and associated data at any
+        time by contacting us (see Section 1). We will action deletion
+        requests without undue delay, save for any data we are legally
+        required to retain.</li>
+    <li>Packets you have already transmitted via APRS-IS cannot be recalled
+        from the global network — see the warning at the top of this policy.</li>
+  </ul>
+
+  <h2>7. Children's privacy</h2>
+  <p>
+    APRS Net is intended for radio amateurs and is not directed at children.
+    Holding an amateur radio licence typically requires meeting a minimum age
+    set by the relevant national regulator. We do not knowingly collect data
+    from children.
+  </p>
+
+  <h2>8. Security</h2>
+  <p>
+    The website and apps communicate over HTTPS/TLS. Passwords are stored as
+    salted hashes. Member API access uses per-session tokens. As with any
+    online service, no method of storage or transmission is 100% secure, and
+    this is provided on an "as is" basis by a volunteer-run, non-commercial
+    project.
+  </p>
+
+  <h2>9. Your rights</h2>
+  <p>
+    If you are in the UK or EU, you have rights under UK GDPR / EU GDPR
+    including access to, correction of, and deletion of your personal data,
+    and the right to object to processing. To exercise these rights, contact
+    us using the details in Section 1.
+  </p>
+
+  <h2>10. Changes to this policy</h2>
+  <p>
+    We may update this policy from time to time as the service evolves. The
+    "Last updated" date at the top of this page will reflect the most recent
+    revision. Continued use of the service after a change constitutes
+    acceptance of the revised policy.
+  </p>
+
+  <footer>
+    APRS Net — open source under the GNU General Public Licence v3.<br>
+    This page is served from <code>www.aprsnet.uk/privacy</code>.
+  </footer>
+</div>
+</body>
+</html>

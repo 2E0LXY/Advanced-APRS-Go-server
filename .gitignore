@@ -4,8 +4,19 @@ creds.json
 
 # Runtime server config — never commit
 server_config.json
+performance_history.jsonl
+performance_history.jsonl.tmp
+members.json
+webhooks.json
+apikeys.json
+bans.json
+motd.json
+audit.log
+igate_history.json
+igate_history.json.tmp
 
 # Temp patch scripts
 *.py
+*.exe
 *.bak
 index_work.html

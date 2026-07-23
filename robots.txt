@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+Allow: /mobile
+Allow: /demo
+Allow: /privacy
+
+# Private/API routes — no indexing needed
+Disallow: /api/
+Disallow: /admin
+Disallow: /setup
+Disallow: /metrics
+Disallow: /ws
+
+Sitemap: https://www.aprsnet.uk/sitemap.xml

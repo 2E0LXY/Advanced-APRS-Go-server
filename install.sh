@@ -25,6 +25,12 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+# ── Optional: operator callsign for federation registry ──────────────────────
+# Leave blank to register with IP only.
+if [ -z "$OPERATOR_CALLSIGN" ]; then
+  read -p "Your amateur radio callsign (optional, press Enter to skip): " OPERATOR_CALLSIGN
+fi
+
 # Wipe corrupted Caddy lists from previous failed attempts
 rm -f /etc/apt/sources.list.d/caddy-stable.list
 
@@ -92,3 +98,16 @@ ufw allow 443/tcp
 ufw allow 14580/udp
 ufw allow 14580/tcp
 ufw --force enable
+
+# ── Phone home: register this server with the APRS Net network ─────────────
+echo "Registering with APRS Net network..."
+curl -s -X POST "https://www.aprsnet.uk/api/server/register" \
+  -H "Content-Type: application/json" \
+  -d "{\"domain\": \"$DOMAIN\", \"callsign\": \"$OPERATOR_CALLSIGN\", \"server_name\": \"$DOMAIN\"}" \
+  --max-time 10 || true
+
+# ── Periodic re-register via cron (keeps last_seen current) ─────────────────
+DOMAIN_ESC=$(echo "$DOMAIN" | sed 's/"/\\"/g')
+CALL_ESC=$(echo "$OPERATOR_CALLSIGN" | sed 's/"/\\"/g')
+echo "0 */6 * * * root curl -s -X POST https://www.aprsnet.uk/api/server/register -H 'Content-Type: application/json' -d '{\"domain\":\"'$DOMAIN_ESC'\",\"callsign\":\"'$CALL_ESC'\"}' --max-time 10" > /etc/cron.d/aprsnet-register
+chmod 644 /etc/cron.d/aprsnet-register

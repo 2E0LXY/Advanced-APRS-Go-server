@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="7" fill="#0B1526"/>
+  <!-- Radio waves left -->
+  <path d="M9 16 Q6 13 6 10" stroke="#0EA5E9" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+  <path d="M7 16 Q3 12 3 8" stroke="#0EA5E9" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+  <!-- Radio waves right -->
+  <path d="M23 16 Q26 13 26 10" stroke="#0EA5E9" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+  <path d="M25 16 Q29 12 29 8" stroke="#0EA5E9" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+  <!-- Map pin body -->
+  <path d="M16 7 C12.7 7 10 9.7 10 13 C10 17.5 16 25 16 25 C16 25 22 17.5 22 13 C22 9.7 19.3 7 16 7 Z" fill="#0EA5E9"/>
+  <!-- Pin inner dot -->
+  <circle cx="16" cy="13" r="3.2" fill="#0B1526"/>
+  <!-- Centre dot -->
+  <circle cx="16" cy="13" r="1.3" fill="#38BDF8"/>
+</svg>
