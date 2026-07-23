@@ -1440,11 +1440,37 @@ func handleBroadcasts() {
 	}
 }
 
+// WebSocket keepalive: without this, a client whose TCP connection drops
+// silently (laptop sleeps, WiFi drops, NAT/mobile timeout — no FIN/RST ever
+// received) leaves ReadMessage() blocking forever with no deadline, so the
+// deferred cleanup in handleWS never runs and the dead session lingers in
+// the clients map / connected-clients dashboard indefinitely (shown as
+// still "Auth"'d, e.g. a stale desktop-app entry with nobody connected).
+const (
+	wsPongWait   = 60 * time.Second
+	wsPingPeriod = (wsPongWait * 9) / 10 // must be < wsPongWait
+)
+
 func (c *wsClient) writePump() {
-	defer c.conn.Close()
-	for data := range c.send {
-		if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
-			return
+	ticker := time.NewTicker(wsPingPeriod)
+	defer func() {
+		ticker.Stop()
+		c.conn.Close()
+	}()
+	for {
+		select {
+		case data, ok := <-c.send:
+			if !ok {
+				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+			if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
+				return
+			}
+		case <-ticker.C:
+			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		}
 	}
 }
@@ -1465,6 +1491,16 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 	clientsMu.Lock()
 	clients[client] = true
 	clientsMu.Unlock()
+	// Read-side of the keepalive: extend the deadline on every pong (and
+	// every ordinary message), so a genuinely dead connection — one that
+	// stops responding to pings — gets its ReadMessage() call unblocked by
+	// the deadline instead of hanging forever, letting the deferred
+	// cleanup below actually run and remove the stale client.
+	conn.SetReadDeadline(time.Now().Add(wsPongWait))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(wsPongWait))
+		return nil
+	})
 	go client.writePump()
 
 	// Send replay of last hour to new client
