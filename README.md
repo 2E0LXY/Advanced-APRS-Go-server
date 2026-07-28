@@ -180,6 +180,78 @@ ssh root@yourserver 'cd /opt/aprs-gateway && git pull origin main && \
 
 ---
 
+## Installation (Docker)
+
+A multi-arch Docker image is published to the GitHub Container Registry on every
+push to `main` and on every version tag. Supported architectures:
+
+`linux/amd64` · `linux/arm64`
+
+### One-line install (Docker)
+```bash
+curl -fsSL https://raw.githubusercontent.com/9M2PJU/Advanced-APRS-Go-server/main/docker-install.sh | sh
+```
+This pulls `ghcr.io/9m2pju/advanced-aprs-go-server:latest`, starts the
+`aprs-gateway` container with all required ports published and a named volume
+for persistent state, then prints the access URLs.
+
+### Run with Docker
+```bash
+docker run -d \
+  --name aprs-gateway \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  -p 14580:14580 \
+  -p 14580:14580/udp \
+  -p 1883:1883 \
+  -v aprs-gateway-data:/data \
+  -e TZ=UTC \
+  ghcr.io/9m2pju/advanced-aprs-go-server:latest
+```
+
+### Run with Docker Compose
+```bash
+curl -fsSL https://raw.githubusercontent.com/9M2PJU/Advanced-APRS-Go-server/main/docker-compose.yml -o docker-compose.yml
+docker compose up -d
+```
+
+### Docker ports
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| 8080 | TCP | HTTP API + web dashboard (put your own reverse proxy / TLS in front) |
+| 14580 | TCP | APRS-IS client connections |
+| 14580 | UDP | Hardware tracker UDP submit |
+| 1883 | TCP | iGate MQTT broker |
+
+### Persistent state
+All runtime state (`creds.json`, `server_config.json`, `members.json`,
+`igate_history.json`, etc.) lives under `/data` inside the container. Mount a
+named volume or host directory there so configuration and history survive
+container recreations and image updates.
+
+### First-run setup
+After starting the container, open `http://<host>:8080` in a browser. You will
+be redirected to `/setup` to create the admin credentials on first visit.
+
+### Update to a new image
+```bash
+docker pull ghcr.io/9m2pju/advanced-aprs-go-server:latest
+docker rm -f aprs-gateway
+docker run -d ...   # same flags as above
+```
+Or, with `docker-install.sh`, just re-run the one-liner; it stops and replaces
+the existing container for you.
+
+### Build locally
+```bash
+git clone https://github.com/9M2PJU/Advanced-APRS-Go-server
+cd Advanced-APRS-Go-server
+docker build -t advanced-aprs-go-server .
+docker run -d -p 8080:8080 -p 14580:14580 -p 14580:14580/udp -p 1883:1883 -v aprs-data:/data advanced-aprs-go-server
+```
+
+---
+
 ## Connecting Clients
 
 ### APRSDroid / Direwolf / YAAC / APRSIS32
@@ -267,6 +339,15 @@ Every push to `main` triggers the deploy workflow (`.github/workflows/deploy.yml
 3. Rebuilds the binary: `go build -o aprs_server .`
 4. Restarts the service: `systemctl restart aprs`
 
+### Docker image CI
+Every push to `main` and every `v*` tag triggers the Docker build workflow
+(`.github/workflows/docker.yml`):
+1. Builds a multi-arch image for `linux/amd64` and `linux/arm64` using buildx
+2. Pushes to `ghcr.io/9m2pju/advanced-aprs-go-server` with tags `latest`,
+   `sha-<short>`, semver ranges, and branch/PR refs
+3. Attaches build provenance attestation (SLSA) and publishes an SBOM
+4. Caches build layers in GitHub Actions cache for fast rebuilds
+
 ### Manual trigger
 GitHub Actions tab → **Deploy to theloxleys** → **Run workflow**.
 
@@ -306,6 +387,7 @@ curl -X POST https://your-domain/api/admin/update -u admin:PASSWORD
 
 | Version | Changes |
 |---------|---------|
+| unreleased | Multi-arch Docker image (amd64, arm64) published to GHCR via GitHub Actions buildx workflow with build provenance attestation; one-line `docker-install.sh` installer; `docker-compose.yml`; multi-stage Dockerfile (golang:1.22-alpine builder, alpine:3.20 runtime, non-root user, healthcheck, bind-mount safe entrypoint); README Docker section; fix POTA fetch endpoint from `/spots` (403) to `/spot/activator`; fix demo mode exit by adding `/exit-demo` route that clears the `aprs_demo` cookie instead of relying on navigation to `/` which left the cookie set |
 | v2.3.1 | Scrollable member dashboard on desktop and mobile; logical client grouping; real client IP display behind the proxy; per-install WebSocket replacement to prevent stale Android reconnects |
 | v2.3.0 | International iGate regional telemetry, profile mismatch warnings, selected distance units, safer MQTT forwarding and portable callsign history support |
 | v2.2.0 | Per-device 24-hour RF heard history, signal and distance table, health details, CSV export, and remote GitHub firmware update control |
@@ -324,3 +406,5 @@ curl -X POST https://your-domain/api/admin/update -u admin:PASSWORD
 GNU General Public License v3.0 — see [LICENCE](LICENCE)
 
 *Advanced APRS Go Server — © 2026 Daren Loxley 2E0LXY*
+
+Docker image, CI workflow, and bug fixes by [9M2PJU](https://hamradio.my)*
