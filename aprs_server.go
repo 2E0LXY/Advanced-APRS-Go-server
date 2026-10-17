@@ -1094,7 +1094,14 @@ func main() {
 	go runMemberObjectBeacon()
 	go purgeOldHABFlights()
 
-	http.HandleFunc("/symbols/", http.StripPrefix("/symbols/", http.FileServer(http.Dir("symbols"))).ServeHTTP)
+	// Symbol sprites/engine are public static assets; CORS lets other aprsnet.uk tools (e.g. the
+	// LoRa iGate dashboard) load them cross-origin.
+	symbolFiles := http.StripPrefix("/symbols/", http.FileServer(http.Dir("symbols")))
+	http.HandleFunc("/symbols/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		symbolFiles.ServeHTTP(w, r)
+	})
 	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "favicon.ico") })
 	http.HandleFunc("/favicon.svg", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/svg+xml")

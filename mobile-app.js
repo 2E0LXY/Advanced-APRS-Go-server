@@ -217,16 +217,29 @@ function updateSendCount() {
 }
 
 // -- station markers + list ---------------------------------------------------
+// Official APRS symbol (aprs.fi set via /symbols/aprs-symbols.js); stations with no symbol get the
+// official dot. size is CSS px.
+function mSymHtml(sym, size) {
+  var use = (sym && AprsSymbols.parse(sym)) ? sym : AprsSymbols.FALLBACK;
+  return AprsSymbols.html(use, { size: size });
+}
+
+function mMarkerIcon(s) {
+  return L.divIcon({ className: '', html: mSymHtml(s.sym, 28), iconSize: [28, 28], iconAnchor: [14, 14] });
+}
+
 function updateMobileMarker(call) {
   var s = mStations[call];
   if (!s) return;
+  var label = '<b>' + call + '</b><br><span style="font-size:11px;color:#64748b">'
+    + (s.sym && AprsSymbols.normalize(s.sym) ? AprsSymbols.describe(s.sym) : 'APRS station') + '</span>';
   if (mMarkers[call]) {
     mMarkers[call].setLatLng([s.lat, s.lon]);
+    mMarkers[call].setIcon(mMarkerIcon(s));
+    mMarkers[call].setPopupContent(label);
   } else {
-    mMarkers[call] = L.circleMarker([s.lat, s.lon], {
-      radius:6, color:'#60a5fa', fillColor:'#3b82f6', fillOpacity:0.8, weight:2
-    }).addTo(mMap);
-    mMarkers[call].bindPopup('<b>' + call + '</b>');
+    mMarkers[call] = L.marker([s.lat, s.lon], { icon: mMarkerIcon(s) }).addTo(mMap);
+    mMarkers[call].bindPopup(label);
   }
 }
 
@@ -243,6 +256,7 @@ function renderStationList() {
     var age = Math.round((now - s.ts) / 60);
     var ageStr = age < 1 ? 'just now' : age + ' min ago';
     html += '<div class="m-list-item" onclick="focusStation(\'' + call + '\')">'
+      + '<div style="margin-right:10px">' + mSymHtml(s.sym, 28) + '</div>'
       + '<div style="flex:1"><div class="m-call">' + call + '</div>'
       + '<div class="m-meta">' + ageStr + ' &middot; ' + s.lat.toFixed(3) + ', ' + s.lon.toFixed(3)
       + '</div></div><div style="color:#475569">&rsaquo;</div></div>';

@@ -31,7 +31,13 @@
 (function (global) {
   'use strict';
 
-  var COLS = 16, ROWS = 6, BASE = '/symbols/';
+  // Asset base: the directory this script was loaded from, so the engine also works when it is
+  // pulled cross-origin (e.g. by the LoRa iGate's local dashboard). Falls back to /symbols/.
+  var BASE = (function () {
+    var cs = document.currentScript;
+    return (cs && cs.src) ? cs.src.replace(/[^\/]*(\?.*)?$/, '') : '/symbols/';
+  })();
+  var COLS = 16, ROWS = 6;
   var DESC = {};
   var FALLBACK = '//';             // official "dot" - used when a symbol is missing/invalid
 
@@ -99,7 +105,7 @@
   function loadSheet(px, table) {
     var key = px + '-' + table;
     if (!imgCache[key]) imgCache[key] = new Promise(function (res, rej) {
-      var im = new Image(); im.onload = function () { res(im); }; im.onerror = rej; im.src = sheetUrl(px, table);
+      var im = new Image(); im.crossOrigin = 'anonymous'; im.onload = function () { res(im); }; im.onerror = rej; im.src = sheetUrl(px, table);
     });
     return imgCache[key];
   }
