@@ -88,6 +88,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="https://unpkg.com/@joergdietrich/leaflet.terminator@1.0.0/L.Terminator.js"></script>
+<script src="/symbols/aprs-symbols.js?v=20261017"></script>
 <style>
 /* ── Theme variables ─────────────────────────────────────────────────────── */
 :root {
@@ -834,43 +835,9 @@ body { background: var(--bg-base); color: var(--text-base); }
               <label class="text-xs text-gray-400 block mb-1">Longitude *</label>
               <input type="number" id="obj-lon" step="any" placeholder="-1.5992" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none">
             </div>
-            <div>
-              <label class="text-xs text-gray-400 block mb-1">Symbol Table</label>
-              <select id="obj-symtable" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none">
-                <option value="/">/  Primary</option>
-                <option value="\">\  Alternate</option>
-              </select>
-            </div>
-            <div>
-              <label class="text-xs text-gray-400 block mb-1">Symbol Code</label>
-              <select id="obj-symcode" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none">
-                <option value="!">!  Police</option>
-                <option value=""">"  Reserved</option>
-                <option value="#">#  Digi</option>
-                <option value="$">$  Phone</option>
-                <option value="%">%  Generic</option>
-                <option value="&">&amp;  HF Gateway</option>
-                <option value="*">*  Snowmobile</option>
-                <option value="+">+  Red Cross</option>
-                <option value="-" selected>−  House</option>
-                <option value=">">&gt;  Car</option>
-                <option value="?">?  Info Kiosk</option>
-                <option value="E">E  Event</option>
-                <option value="F">F  Farm Vehicle</option>
-                <option value="O">O  Balloon</option>
-                <option value="W">W  Weather Station</option>
-                <option value="X">X  Helicopter</option>
-                <option value="b">b  Bicycle</option>
-                <option value="h">h  Hospital</option>
-                <option value="j">j  Jeep</option>
-                <option value="k">k  Truck</option>
-                <option value="l">l  Laptop</option>
-                <option value="r">r  Repeater</option>
-                <option value="s">s  Ship</option>
-                <option value="t">t  Truck Stop</option>
-                <option value="u">u  Truck (18-wheel)</option>
-                <option value="v">v  Van</option>
-              </select>
+            <div class="col-span-2">
+              <label class="text-xs text-gray-400 block mb-1">Symbol</label>
+              <div id="obj-sym-picker"></div>
             </div>
             <div class="col-span-2">
               <label class="text-xs text-gray-400 block mb-1">Comment (max 36 chars)</label>
@@ -1585,8 +1552,8 @@ body { background: var(--bg-base); color: var(--text-base); }
                     oninput="genBeacon()">
                 </div>
                 <div class="flex-1">
-                  <label class="text-xs text-gray-400">Symbol</label>
-                  <input type="text" id="bg-sym" value=">-" maxlength="2"
+                  <label class="text-xs text-gray-400">Symbol <span id="bg-sym-prev" class="ml-1 align-middle"></span></label>
+                  <input type="text" id="bg-sym" value="/>" maxlength="2"
                     class="w-full bg-gray-700 p-2 rounded border border-gray-600 text-white outline-none focus:border-teal-500 text-sm font-mono mt-1"
                     oninput="genBeacon()">
                 </div>
@@ -1635,21 +1602,9 @@ body { background: var(--bg-base); color: var(--text-base); }
               <span>🎯</span><span>Symbol Picker</span>
             </h3>
             <p class="text-xs text-gray-400 mb-2">Click a symbol to see its code. Use in beacon generator or TNC config.</p>
-            <div class="flex space-x-2 mb-2">
-              <button onclick="showSymTable('/')" id="sym-tab-pri" class="text-xs px-3 py-1 rounded bg-teal-700 text-white font-bold">Primary /</button>
-              <button onclick="showSymTable('\\')" id="sym-tab-alt" class="text-xs px-3 py-1 rounded bg-gray-700 text-gray-300 hover:bg-gray-600">Alternate \</button>
-            </div>
-            <div id="sym-picker-grid" class="grid gap-1 overflow-y-auto max-h-64" style="grid-template-columns: repeat(16, 1fr)"></div>
-            <div id="sym-selected" class="mt-2 bg-gray-900 rounded p-2 text-xs hidden">
-              <div class="flex items-center space-x-3">
-                <div id="sym-sel-icon" class="flex-shrink-0"></div>
-                <div>
-                  <p class="text-white font-bold" id="sym-sel-name"></p>
-                  <p class="text-gray-400 font-mono" id="sym-sel-code"></p>
-                </div>
-                <button onclick="useSymbolInBeacon()" class="ml-auto text-xs bg-teal-800 hover:bg-teal-700 px-2 py-1 rounded">Use in Beacon</button>
-              </div>
-            </div>
+            <div id="sym-picker-widget"></div>
+            <button onclick="useSymbolInBeacon()" class="mt-2 text-xs bg-teal-800 hover:bg-teal-700 px-3 py-1.5 rounded w-full font-bold">Use in Beacon</button>
+          </div>
           </div>
 
         </div>
@@ -3737,49 +3692,15 @@ function demoBlock(action) {
 
 
 // ─── APRS Symbol Rendering ───────────────────────────────────────────────────
-// Uses the official aprs.fi symbols sprite sheet (same as aprs.fi map)
-// Primary table: symbol char is offset into a 16-col sprite grid
-// Alternate table: uses the alt sprite sheet
+// Official aprs.fi symbol set (hessu/aprs-symbols) rendered by /symbols/aprs-symbols.js:
+// primary + alternate tables, overlay characters (A-Z, 0-9, compressed a-j), hi-dpi sheets.
+const MAP_SYMBOL_PX = 28;   // station marker size on the map (CSS px)
 
-const SYMBOL_LABELS = {
-  '!':'Police','"':'No symbol','"':'Reserved','#':'Digi','$':'Phone',
-  '%':'DX Cluster','&':'Gateway','\'':'Small Aircraft','(':'Cloudy',
-  ')':'Firenet MEO','*':'Snowflake','+':'Church',',':'Girl Scout',
-  '-':'House QTH','.':'X','/':'Dot','0':'TNC','1':'T1','2':'T2',
-  '3':'T3','4':'T4','5':'T5','6':'T6','7':'T7','8':'T8','9':'T9',
-  ':':'Fire','<':'Motorcycle','=':'Railroad Engine','>':'Car','?':'File Server',
-  '@':'Hurricane','A':'Aid Station','B':'BBS','C':'Canoe','D':'n/a',
-  'E':'Eyeball','F':'Farm Vehicle','G':'Grid Square','H':'Hotel',
-  'I':'TCP/IP','J':'n/a','K':'School','L':'PC User','M':'Mac',
-  'N':'NTS Net','O':'Balloon','P':'Police','Q':'TBD','R':'RV',
-  'S':'Space Shuttle','T':'SSTV','U':'Bus','V':'ATV','W':'NWS Site',
-  'X':'Helicopter','Y':'Yacht','Z':'WinAPRS','[':'Jogger','\\':'TNC',
-  ']':'Jeep','^':'Aircraft','_':'Weather Station','`':'Dish Antenna',
-  'a':'Ambulance','b':'Bike','c':'IRLP/Echolink','d':'Fire Dept',
-  'e':'Horse','f':'Fire Truck','g':'Glider','h':'Hospital',
-  'i':'IOTA','j':'Jeep','k':'Truck','l':'Area Locations',
-  'm':'Mic-E','n':'Node','o':'EOC','p':'Rover',
-  'q':'Grid Square','r':'Antenna','s':'Power Boat','t':'Truck Stop',
-  'u':'Truck','v':'Van','w':'Water Station','x':'xAPRS',
-  'y':'Yagi','z':'Shelter','{':'n/a','|':'T-storm','}':'n/a','~':'Rain'
-};
-
-// Get sprite position for a symbol character in the 16x12 sprite grid
-function getSymbolSprite(table, code) {
-  // APRS symbol sprite: 16 columns, chars start at ASCII 33 (!)
-  const idx = code.charCodeAt(0) - 33;
-  if (idx < 0 || idx > 93) return null;
-  const col = idx % 16;
-  const row = Math.floor(idx / 16);
-  const px = col * 24;
-  const py = row * 24;
-  // aprs.fi provides two sprite sheets
-  // aprs.fi sprite: 16 cols x 6 rows, 24x24 each, 384x144 total
-  // Sprites served locally - see /symbols/ directory
-  const sheet = (table === '/')
-    ? '/symbols/symbols-new.png'
-    : '/symbols/symbols-new2.png';
-  return { sheet: sheet, px: px, py: py, sheetW: 384, sheetH: 144 };
+// HTML for a symbol at `size` px. Stations that never sent a symbol get the official
+// default for their type (e.g. ship -> /s, OGN -> /') instead of a placeholder.
+function symHtml(sym, size, style, type) {
+  const use = (sym && AprsSymbols.parse(sym)) ? sym : AprsSymbols.defaultFor(type);
+  return AprsSymbols.html(use, {size: size || 24, style: style || ''});
 }
 
 function baseCall(call) {
@@ -3787,11 +3708,10 @@ function baseCall(call) {
   return (call || '').split('-')[0].toUpperCase();
 }
 
+// Description + canonical 2-char code from the official symbol index.
 function getSymbolInfo(sym) {
-  if (!sym || sym.length < 2) return { label:'APRS', code:'●', color:'#6b7280' };
-  const table = sym[0], code = sym[1];
-  const label = SYMBOL_LABELS[code] || 'APRS';
-  return { label, table, code, color:'#6b7280' };
+  const code = AprsSymbols.normalize(sym || '');
+  return { label: code ? AprsSymbols.describe(code) : 'APRS station', sym: code };
 }
 
 // ─── Map Init ────────────────────────────────────────────────────────────────
@@ -4996,31 +4916,21 @@ function calcPHG(phgStr) {
 
 // ─── Map Rendering ────────────────────────────────────────────────────────────
 function makeIcon(st, call) {
-  const si = getSymbolInfo(st.sym);
   const isMe = call===myCallsign;
-  const ring = isMe ? 'outline:3px solid #facc15;outline-offset:2px;' : '';
   // Age-based opacity: fresh=1.0, 20min=0.8, 80min=0.4, older=0.25
   const ageSec = Math.floor(Date.now()/1000) - (st.lastHeard||0);
   const opacity = ageSec < 1200 ? 1.0 : ageSec < 4800 ? 0.8 : ageSec < 7200 ? 0.4 : 0.25;
   const filter  = ageSec > 4800 ? 'filter:grayscale(60%);' : '';
+  const S = MAP_SYMBOL_PX;
+  // Own station: circular yellow halo behind the official symbol
+  const halo = isMe ? '<div style="position:absolute;left:-3px;top:-3px;width:'+(S+6)+'px;height:'+(S+6)+'px;box-sizing:border-box;border:3px solid #facc15;border-radius:50%"></div>' : '';
   // LoRa-from-APRS-IS gets a small purple L badge in the corner
   const loraBadge = (st.type === 'lora')
     ? '<div style="position:absolute;top:-3px;right:-3px;width:12px;height:12px;background:#a855f7;color:#fff;border:1.5px solid #fff;border-radius:50%;font-size:8px;font-weight:bold;text-align:center;line-height:9px;font-family:monospace;box-shadow:0 1px 3px rgba(0,0,0,0.5);z-index:5">L</div>'
     : '';
-  let iconHtml;
-  if (st.sym && st.sym.length >= 2) {
-    const sp = getSymbolSprite(st.sym[0], st.sym[1]);
-    if (sp) {
-      iconHtml = '<div style="width:24px;height:24px;position:relative;'+ring+'border-radius:2px;overflow:visible;'
-        +'box-shadow:0 1px 4px rgba(0,0,0,.6);image-rendering:pixelated;opacity:'+opacity+';'+filter+'">'
-        +'<div style="width:24px;height:24px;background:url('+sp.sheet+') -'+sp.px+'px -'+sp.py+'px;background-size:384px 144px"></div>'
-        +loraBadge+'</div>';
-    }
-  }
-  if (!iconHtml) {
-    iconHtml = '<div style="width:22px;height:22px;position:relative;background:'+(st.type==='lora'?'#a855f7':'#4b5563')+';border-radius:50%;border:2px solid rgba(255,255,255,0.5);'+ring+'opacity:'+opacity+';display:flex;align-items:center;justify-content:center;font-size:10px;color:white">'+(st.type==='lora'?'L':'?')+loraBadge+'</div>';
-  }
-  return L.divIcon({html:iconHtml, className:'', iconSize:[24,24], iconAnchor:[12,12], tooltipAnchor:[12,-12]});
+  const iconHtml = '<div style="width:'+S+'px;height:'+S+'px;position:relative;opacity:'+opacity+';'+filter+'">'
+    + halo + symHtml(st.sym, S, '', st.type) + loraBadge + '</div>';
+  return L.divIcon({html:iconHtml, className:'', iconSize:[S,S], iconAnchor:[S/2,S/2], tooltipAnchor:[S/2,-S/2]});
 }
 
 function redrawMap() {
@@ -5209,7 +5119,7 @@ function renderList() {
       if (st.positions.length) { const p=st.positions[st.positions.length-1]; loc=`${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}`; }
       const tr=document.createElement('tr');
       tr.innerHTML=`
-        <td class="p-2 text-center">${(function(){var t=st.sym&&st.sym.length>=2?st.sym[0]:"/",c=st.sym&&st.sym.length>=2?st.sym[1]:"-",sp=getSymbolSprite(t,c);if(sp)return '<div style="width:24px;height:24px;overflow:hidden;image-rendering:pixelated;border-radius:2px;display:inline-block"><div style="width:24px;height:24px;background:url('+sp.sheet+') -'+sp.px+'px -'+sp.py+'px;background-size:'+sp.sheetW+'px '+sp.sheetH+'px;background-repeat:no-repeat"></div></div>';return '<div style="width:24px;height:24px;background:#374151;border-radius:2px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:#fff">'+c+'</div>';})()} </td>
+        <td class="p-2 text-center">${symHtml(st.sym,24,'',st.type)} </td>
         <td class="p-2 font-bold">
           <a href="#" onclick="_activePanel==='messages'?openConversation('${call}'):goToStation('${call}');return false;" class="hover:underline text-blue-400 cursor-pointer">${call}</a>
         </td>
@@ -5823,15 +5733,9 @@ function parseComment(raw) {
 function showStationPopup(call, st, latest) {
   _modalTarget=call;
   const si=getSymbolInfo(st.sym);
-  const iconEl=document.getElementById('modal-icon');
-  if (st.sym&&st.sym.length>=2) {
-    const sp=getSymbolSprite(st.sym[0],st.sym[1]);
-    iconEl.innerHTML = sp
-      ? '<div style="width:32px;height:32px;background:url('+sp.sheet+') -'+sp.px+'px -'+sp.py+'px;background-size:384px 144px;image-rendering:pixelated"></div>'
-      : '<div style="font-size:20px">?</div>';
-  }
+  document.getElementById('modal-icon').innerHTML = symHtml(st.sym,40,'',st.type);
   document.getElementById('modal-call').innerText=call;
-  document.getElementById('modal-symbol-label').innerText=si.label+(st.sym?' ('+st.sym+')':'');
+  document.getElementById('modal-symbol-label').innerText=si.label+(si.sym?' ('+si.sym+')':'');
   document.getElementById('modal-qrz').href='https://qrz.com/db/'+baseCall(call);
   document.getElementById('modal-aprsfi').href='https://aprs.fi/#!call='+call;
   document.getElementById('modal-pos').innerText=latest.lat.toFixed(5)+', '+latest.lon.toFixed(5);
@@ -6065,12 +5969,15 @@ function triggerAlert(callsign, pattern, packet) {
   // Browser notification
   if (notifGranted && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
     try {
-      new Notification('APRS Watch: ' + callsign, {
-        body: "Station heard at " + entry.time + (packet ? " - " + packet.substring(0,80) : ""),
-        icon: '/symbols/symbols-new.png',
-        tag: 'aprs-watch-' + callsign,
-        renotify: true
-      });
+      var _ws = stations[callsign];
+      AprsSymbols.dataURL((_ws && _ws.sym && AprsSymbols.parse(_ws.sym)) ? _ws.sym : AprsSymbols.defaultFor(_ws && _ws.type), 96).then(function(_icon) {
+        new Notification('APRS Watch: ' + callsign, {
+          body: "Station heard at " + entry.time + (packet ? " - " + packet.substring(0,80) : ""),
+          icon: _icon,
+          tag: 'aprs-watch-' + callsign,
+          renotify: true
+        });
+      }).catch(function(e) { console.warn('Notification failed:', e); });
     } catch(e) { console.warn('Notification failed:', e); }
   }
 
@@ -6665,17 +6572,9 @@ function refreshDetailData() {
   if (!st) return;
 
   var si = getSymbolInfo(st.sym);
-  var t  = st.sym && st.sym.length>=2 ? st.sym[0] : '/';
-  var c  = st.sym && st.sym.length>=2 ? st.sym[1] : '-';
-  var sp = getSymbolSprite(t, c);
-
-  // Icon
+  // Icon (official symbol, hi-dpi)
   var iconEl = document.getElementById('detail-icon');
-  if (sp) {
-    iconEl.innerHTML = '<div style="width:40px;height:40px;overflow:hidden;image-rendering:pixelated;border-radius:4px;box-shadow:0 2px 6px rgba(0,0,0,0.5)">'
-      + '<div style="width:40px;height:40px;background:url(' + sp.sheet + ') -' + (sp.px*40/24|0) + 'px -' + (sp.py*40/24|0) + 'px;'
-      + 'background-size:' + (sp.sheetW*40/24|0) + 'px ' + (sp.sheetH*40/24|0) + 'px;background-repeat:no-repeat"></div></div>';
-  }
+  if (iconEl) iconEl.innerHTML = symHtml(st.sym, 48, '', st.type);
 
   // Header
   document.getElementById('detail-call').innerText = call;
@@ -7434,22 +7333,13 @@ function updateObjectMarker(name) {
     return;
   }
 
-  var t  = obj.sym && obj.sym.length>=2 ? obj.sym[0] : '/';
-  var c  = obj.sym && obj.sym.length>=2 ? obj.sym[1] : 'a';
-  var sp = getSymbolSprite(t, c);
   var si = getSymbolInfo(obj.sym);
-
-  var iconHtml;
-  if (sp) {
-    iconHtml = '<div style="width:24px;height:24px;overflow:hidden;image-rendering:pixelated;'
-      + 'border-radius:2px;box-shadow:0 1px 4px rgba(0,0,0,0.6);outline:2px solid #f59e0b;outline-offset:1px">'
-      + '<div style="width:24px;height:24px;background:url(' + sp.sheet + ') -' + sp.px + 'px -' + sp.py + 'px;'
-      + 'background-size:' + sp.sheetW + 'px ' + sp.sheetH + 'px;background-repeat:no-repeat"></div></div>';
-  } else {
-    iconHtml = '<div style="width:24px;height:24px;background:#92400e;border-radius:3px;outline:2px solid #f59e0b;'
-      + 'display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff">' + c + '</div>';
-  }
-  var icon = L.divIcon({ html: iconHtml, className:'', iconSize:[24,24], iconAnchor:[12,12], tooltipAnchor:[12,-12] });
+  var OS = MAP_SYMBOL_PX;
+  // Objects: official symbol with a round amber halo so they read as objects, not stations
+  var iconHtml = '<div style="width:'+OS+'px;height:'+OS+'px;position:relative">'
+    + '<div style="position:absolute;left:-2px;top:-2px;width:'+(OS+4)+'px;height:'+(OS+4)+'px;box-sizing:border-box;border:2px solid #f59e0b;border-radius:50%"></div>'
+    + symHtml(obj.sym, OS, '', 'object') + '</div>';
+  var icon = L.divIcon({ html: iconHtml, className:'', iconSize:[OS,OS], iconAnchor:[OS/2,OS/2], tooltipAnchor:[OS/2,-OS/2] });
 
   var tip = '<b style="color:#fbbf24">' + name + '</b>'
     + (obj.owner ? '<br><span style="color:#94a3b8;font-size:10px">via ' + obj.owner + '</span>' : '')
@@ -7480,17 +7370,8 @@ function showObjectDetail(name) {
   var obj = aprsObjects[name]; if (!obj) return;
   // Reuse station detail modal adapted for objects
   var si = getSymbolInfo(obj.sym);
-  var t  = obj.sym && obj.sym.length>=2 ? obj.sym[0] : '/';
-  var c  = obj.sym && obj.sym.length>=2 ? obj.sym[1] : 'a';
-  var sp = getSymbolSprite(t, c);
-
   var iconEl = document.getElementById('modal-icon');
-  if (iconEl && sp) {
-    iconEl.innerHTML = '<div style="width:48px;height:48px;overflow:hidden;image-rendering:pixelated;'
-      + 'border-radius:4px;outline:3px solid #f59e0b;box-shadow:0 2px 6px rgba(0,0,0,0.5)">'
-      + '<div style="width:48px;height:48px;background:url(' + sp.sheet + ') -' + (sp.px*2) + 'px -' + (sp.py*2) + 'px;'
-      + 'background-size:' + (sp.sheetW*2) + 'px ' + (sp.sheetH*2) + 'px;background-repeat:no-repeat"></div></div>';
-  }
+  if (iconEl) iconEl.innerHTML = symHtml(obj.sym, 48, '', 'object');
 
   document.getElementById('modal-call').innerText = name;
   document.getElementById('modal-symbol-label').innerText = (si.label||'Object') + ' · Owned by ' + (obj.owner||'unknown');
@@ -7544,7 +7425,7 @@ function toggleObjects() {
 function initUtils() {
   calcPasscode();
   genBeacon();
-  showSymTable('/');
+  initSymbolPicker();
 }
 
 // ── APRS Passcode Calculator ──────────────────────────────────────────────────
@@ -7645,7 +7526,8 @@ function decDegToAPRS(deg, isLat) {
 
 function genBeacon() {
   var call    = (document.getElementById('bg-call').value || '').toUpperCase().trim();
-  var sym     = document.getElementById('bg-sym').value || '/-';
+  var sym     = document.getElementById('bg-sym').value || '/>';
+  symPreview('bg-sym','bg-sym-prev');
   var latStr  = document.getElementById('bg-lat').value;
   var lonStr  = document.getElementById('bg-lon').value;
   var comment = document.getElementById('bg-comment').value || '';
@@ -7679,65 +7561,27 @@ function copyBeacon() {
 }
 
 // ── Symbol Picker ─────────────────────────────────────────────────────────────
-var _symTable = '/';
-
-function showSymTable(table) {
-  _symTable = table;
-  var grid = document.getElementById('sym-picker-grid');
-  var priBtn = document.getElementById('sym-tab-pri');
-  var altBtn = document.getElementById('sym-tab-alt');
-  if (table === '/') {
-    priBtn.classList.replace('bg-gray-700','bg-teal-700'); priBtn.classList.add('text-white');
-    altBtn.classList.replace('bg-teal-700','bg-gray-700'); altBtn.classList.remove('text-white');
-  } else {
-    altBtn.classList.replace('bg-gray-700','bg-teal-700'); altBtn.classList.add('text-white');
-    priBtn.classList.replace('bg-teal-700','bg-gray-700'); priBtn.classList.remove('text-white');
-  }
-
-  var cells = [];
-  for (var i = 33; i <= 126; i++) {
-    var code = String.fromCharCode(i);
-    var sp   = getSymbolSprite(table, code);
-    var label= SYMBOL_LABELS[code] || code;
-    if (sp) {
-      var cell = document.createElement('div');
-      cell.className = 'sym-cell cursor-pointer rounded hover:bg-gray-600 p-0.5';
-      cell.title = label + ' (' + table + code + ')';
-      cell.innerHTML = '<div style="width:22px;height:22px;overflow:hidden;image-rendering:pixelated">'
-        + '<div style="width:22px;height:22px;background:url(' + sp.sheet + ') -'
-        + Math.round(sp.px*22/24) + 'px -' + Math.round(sp.py*22/24) + 'px;'
-        + 'background-size:' + Math.round(sp.sheetW*22/24) + 'px ' + Math.round(sp.sheetH*22/24) + 'px;'
-        + 'background-repeat:no-repeat"></div></div>';
-      (function(t,c){ cell.onclick = function(){ selectSymbol(t,c); }; })(table, code);
-      cells.push(cell);
-    }
-  }
-  grid.innerHTML = '';
-  cells.forEach(function(c){ grid.appendChild(c); });
-}
-
-function selectSymbol(table, code) {
-  var sp    = getSymbolSprite(table, code);
-  var label = SYMBOL_LABELS[code] || code;
-  var el    = document.getElementById('sym-selected');
-  el.classList.remove('hidden');
-  document.getElementById('sym-sel-name').innerText = label;
-  document.getElementById('sym-sel-code').innerText = 'Code: ' + table + code + '  (table=' + table + ' symbol=' + code + ')';
-  var iconEl = document.getElementById('sym-sel-icon');
-  if (sp) {
-    iconEl.innerHTML = '<div style="width:32px;height:32px;overflow:hidden;image-rendering:pixelated;border-radius:3px;box-shadow:0 1px 4px rgba(0,0,0,0.5)">'
-      + '<div style="width:32px;height:32px;background:url(' + sp.sheet + ') -' + Math.round(sp.px*32/24) + 'px -' + Math.round(sp.py*32/24) + 'px;'
-      + 'background-size:' + Math.round(sp.sheetW*32/24) + 'px ' + Math.round(sp.sheetH*32/24) + 'px;background-repeat:no-repeat"></div></div>';
-  }
+// Full official set: primary table, alternate table, and overlay characters.
+var _symPicker = null;
+function initSymbolPicker() {
+  var el = document.getElementById('sym-picker-widget');
+  if (!el || _symPicker) return;
+  _symPicker = AprsSymbols.picker(el, { value: '/>', size: 28 });
 }
 
 function useSymbolInBeacon() {
-  var code = document.getElementById('sym-sel-code').innerText;
-  var m = code.match(/Code: (.)(.)  /);
-  if (m) {
-    document.getElementById('bg-sym').value = m[1] + m[2];
-    genBeacon();
-  }
+  if (!_symPicker) return;
+  document.getElementById('bg-sym').value = _symPicker.value();
+  genBeacon();
+  symPreview('bg-sym', 'bg-sym-prev');
+}
+
+// Live preview next to free-text symbol code inputs
+function symPreview(inputId, previewId) {
+  var v = (document.getElementById(inputId) || {}).value || '';
+  var el = document.getElementById(previewId);
+  if (!el) return;
+  el.innerHTML = AprsSymbols.normalize(v) ? AprsSymbols.html(v, {size: 24}) : '<span class="text-red-400 text-[10px]">invalid</span>';
 }
 
 
@@ -10750,6 +10594,13 @@ function focusObject(name) {
   setTimeout(function(){ map.setView([o.lat,o.lon], 12); }, 100);
 }
 
+var _objPicker = null;
+function _objPickerInit(sym) {
+  var el = document.getElementById('obj-sym-picker'); if (!el) return;
+  if (!_objPicker) _objPicker = AprsSymbols.picker(el, { value: sym || '/!', size: 26, compact: true });
+  else _objPicker.set(sym || '/!');
+}
+
 function openCreateObject() {
   if (!_memberSession) {
     document.getElementById('obj-auth-warn').classList.remove('hidden');
@@ -10762,6 +10613,7 @@ function openCreateObject() {
   });
   document.getElementById('obj-killed').checked = false;
   document.getElementById('obj-result').classList.add('hidden');
+  _objPickerInit('/!');
   // Default position: map centre
   try {
     var c = map.getCenter();
@@ -10780,13 +10632,7 @@ function editObject(name) {
   document.getElementById('obj-lat').value = o.lat || '';
   document.getElementById('obj-lon').value = o.lon || '';
   document.getElementById('obj-comment').value = o.comment || '';
-  if (o.sym && o.sym.length >= 2) {
-    document.getElementById('obj-symtable').value = o.sym[0];
-    var symSel = document.getElementById('obj-symcode');
-    for (var i = 0; i < symSel.options.length; i++) {
-      if (symSel.options[i].value === o.sym[1]) { symSel.selectedIndex = i; break; }
-    }
-  }
+  _objPickerInit(o.sym && o.sym.length >= 2 ? o.sym : '/!');
   document.getElementById('obj-killed').checked = false;
   document.getElementById('obj-result').classList.add('hidden');
   document.getElementById('obj-modal').classList.remove('hidden');
@@ -10810,7 +10656,7 @@ async function submitObject() {
   var name = document.getElementById('obj-name').value.trim().toUpperCase();
   var lat  = parseFloat(document.getElementById('obj-lat').value);
   var lon  = parseFloat(document.getElementById('obj-lon').value);
-  var sym  = document.getElementById('obj-symtable').value + document.getElementById('obj-symcode').value;
+  var sym  = (_objPicker && _objPicker.value()) || '/!';
   var cmt  = document.getElementById('obj-comment').value.trim();
   var killed = document.getElementById('obj-killed').checked;
   var resEl = document.getElementById('obj-result');
@@ -15747,8 +15593,8 @@ async function _mapdlDownload(){
                   class="w-full bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-green-500 mt-0.5">
               </div>
               <div>
-                <label class="text-[10px] text-gray-400">Symbol <span class="text-gray-600">(2 chars)</span></label>
-                <input id="mobj-symbol" maxlength="2" placeholder="/!" value="/!"
+                <label class="text-[10px] text-gray-400">Symbol <span class="text-gray-600">(2 chars)</span> <span id="mobj-sym-prev" class="ml-1 align-middle"></span></label>
+                <input id="mobj-symbol" maxlength="2" placeholder="/!" value="/!" oninput="symPreview('mobj-symbol','mobj-sym-prev')"
                   class="w-full bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white font-mono outline-none focus:border-green-500 mt-0.5">
               </div>
               <div>

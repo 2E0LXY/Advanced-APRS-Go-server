@@ -143,7 +143,7 @@ var (
 	// Used by all OE5BPA / LoRa_APRS_Tracker / ESP32 LoRa nodes.
 	// Same optional timestamp as posRegex — @/ DTI compressed reports also
 	// carry a DDHHMMz/DDHHMM//HHMMSSh timestamp before the compressed block.
-	compPosRegex = regexp.MustCompile(`[!\/=@\*](?:\d{6}[zh\/])?([\/\\0-9A-Z])([\x21-\x7b]{4})([\x21-\x7b]{4})([\x21-\x7b])([\x20-\x7b]{2})([\x21-\x7b])`)
+	compPosRegex = regexp.MustCompile(`[!\/=@\*](?:\d{6}[zh\/])?([\/\\0-9A-Za-j])([\x21-\x7b]{4})([\x21-\x7b]{4})([\x21-\x7b])([\x20-\x7b]{2})([\x21-\x7b])`)
 	// Object format: ;NAME_____*DDHHMMzDDMM.MMN/DDDMM.MMW symbol comment
 	objRegex = regexp.MustCompile(`;([^\*]{9})[\*_](\d{6}[z\/])(\d{2})(\d{2}\.\d{2})([NS])(.)(\d{3})(\d{2}\.\d{2})([EW])(.)`)
 	// Item format: )NAME!DDMM.MMN/DDDMM.MMW symbol comment
@@ -1544,6 +1544,22 @@ func parsePacket(packet string) (HistoryPacket, bool) {
 	hp.Timestamp = time.Now().Unix()
 	payload := packet[colIdx+1:]
 
+	// ── Mic-E position (APRS 1.0.1 ch.10) ────────────────────────────────────
+	// Position is split between the destination address and the info field, so it
+	// must be decoded before the regex-based formats (which would otherwise
+	// misread Mic-E payload bytes).
+	if len(payload) >= 9 && (payload[0] == '`' || payload[0] == '\'') {
+		dest := hp.Path
+		if i := strings.IndexByte(dest, ','); i >= 0 {
+			dest = dest[:i]
+		}
+		if lat, lon, sym, _, _, ok := micEDecode(dest, payload); ok {
+			hp.Lat, hp.Lon, hp.Symbol = lat, lon, sym
+			return hp, true
+		}
+		return hp, false
+	}
+
 	// ── Uncompressed position ─────────────────────────────────────────────────
 	match := posRegex.FindStringSubmatch(payload)
 	if match != nil {
@@ -1589,7 +1605,7 @@ func parsePacket(packet string) (HistoryPacket, bool) {
 			hp.Lon = -180.0 + float64(decodeBase91Pos(lonB91))/190463.0
 			// Sanity-check decoded coordinates
 			if hp.Lat >= -90 && hp.Lat <= 90 && hp.Lon >= -180 && hp.Lon <= 180 {
-				hp.Symbol = symTable + symCode
+				hp.Symbol = string(normalizeSymbolTable(symTable[0])) + symCode
 				return hp, true
 			}
 		}
