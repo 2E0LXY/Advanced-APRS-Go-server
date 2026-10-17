@@ -20,3 +20,5 @@ igate_history.json.tmp
 *.exe
 *.bak
 index_work.html
+lastpos.json
+lastpos.json.tmp

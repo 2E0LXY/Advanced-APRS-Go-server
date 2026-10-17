@@ -4983,7 +4983,11 @@ function redrawMap() {
       if (st.phgCircle) { try { map.removeLayer(st.phgCircle); } catch(e){} st.phgCircle = null; }
       return;
     }
-    st.positions = st.positions.filter(p=>now-p.ts<=tail);
+    {
+      const _kept = st.positions.filter(p=>now-p.ts<=tail);
+      // A deep-linked station keeps its last known position even when older than the trail length
+      st.positions = (_kept.length || call !== _pinnedCall) ? _kept : st.positions.slice(-1);
+    }
     // Cull off-screen stations - remove their markers but keep data
     if (_viewBounds && st.positions.length) {
       var _vpLatest = st.positions[st.positions.length-1];
@@ -4999,13 +5003,13 @@ function redrawMap() {
       const a=st.positions[0], b=st.positions[st.positions.length-1];
       return Math.sqrt(Math.pow(a.lat-b.lat,2)+Math.pow(a.lon-b.lon,2))<0.0005;
     })();
-    let hide = (hideStatic&&isStatic&&now-st.lastHeard>300)
+    let hide = (call!==_pinnedCall && ((hideStatic&&isStatic&&now-st.lastHeard>300)
       ||(st.type==='aprs'&&!showAprs)
       ||(st.type==='cwop'&&!showCwop)
       ||(st.type==='ogn'&&!showOgn)
       ||(st.type==='pistar'&&!showPiStar)
       ||(st.type==='lora'&&!showLoraIS)
-      ||(st.type==='ship'&&!showShips)
+      ||(st.type==='ship'&&!showShips)))
       ||st.positions.length===0;
     if (hide) {
       if (st.marker) { clusterGroup.removeLayer(st.marker); map.removeLayer(st.marker); st.marker=null; }
@@ -10401,18 +10405,56 @@ function applyURLParams() {
       try { map.setView([lat, lon], zoom); } catch(e) {}
     }
   }
-  if (p.call) {
-    // Wait for some history then try to open
-    var attempts = 0;
-    var tryOpen = function() {
-      if (stations[p.call]) {
-        goToStation(p.call);
-      } else if (attempts++ < 20) {
-        setTimeout(tryOpen, 500);
+  // ?call=G7XYZ, or aprs.fi-style #call=G7XYZ / #!call=G7XYZ
+  var link = p.call;
+  if (!link) { var hm = (location.hash || '').match(/[#!&]call=([^&]+)/i); if (hm) link = decodeURIComponent(hm[1]); }
+  if (link) openStationLink(link);
+}
+
+// Station currently opened via a link: exempt from age/type filters so it is always drawn.
+var _pinnedCall = null;
+
+function showToast(msg) {
+  var toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:#0e7490;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:bold;z-index:99999;box-shadow:0 4px 12px rgba(0,0,0,0.5)';
+  toast.innerText = msg;
+  document.body.appendChild(toast);
+  setTimeout(function(){ toast.remove(); }, 3500);
+}
+
+// Case-insensitive lookup of a station key already in memory.
+function findStationKey(call) {
+  var u = call.toUpperCase();
+  if (stations[call]) return call;
+  var keys = Object.keys(stations);
+  for (var i = 0; i < keys.length; i++) if (keys[i].toUpperCase() === u) return keys[i];
+  return null;
+}
+
+// Open a station from a shared link. Live data only contains stations heard since the page loaded,
+// so when the station is not in memory ask the server for its last known position.
+async function openStationLink(raw) {
+  var call = String(raw || '').trim().toUpperCase();
+  if (!call) return;
+  var key = findStationKey(call);
+  if (!key) {
+    try {
+      var r = await fetch('/api/station?call=' + encodeURIComponent(call));
+      if (r.ok) {
+        var d = await r.json();
+        (d.packets || []).forEach(function(p) {
+          updateStation(p.call, p.path, p.lat, p.lon, p.phg, p.ts, p.raw, p.sym);
+        });
+        key = findStationKey(d.call || call);
       }
-    };
-    setTimeout(tryOpen, 1000);
+    } catch(e) { console.warn('Station lookup failed:', e); }
   }
+  if (!key) { showToast(call + ' has not been heard recently'); return; }
+  _pinnedCall = key;
+  redrawMap();
+  goToStation(key);
+  // the map may re-cull after the pan; redraw once it settles so the marker exists to highlight
+  setTimeout(function(){ try { redrawMap(); } catch(e) {} }, 900);
 }
 
 function shareCurrentView() {

@@ -1137,6 +1137,8 @@ func main() {
 	http.HandleFunc("/api/password", basicAuth(handlePassword))
 	http.HandleFunc("/api/whoami", basicAuth(handleWhoami))
 	http.HandleFunc("/api/objects", handleObjects)
+	http.HandleFunc("/api/station", handleStationLookup)
+	startLastPosPersistence()
 	// Member system
 	http.HandleFunc("/api/member/register", handleMemberRegister)
 	http.HandleFunc("/api/member/login", handleMemberLogin)
@@ -1753,6 +1755,7 @@ func handleBroadcasts() {
 				history = history[1:]
 			}
 			historyMu.Unlock()
+			recordLastPos(parsed)
 		}
 
 		// Increment metrics
