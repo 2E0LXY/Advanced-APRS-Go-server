@@ -10449,6 +10449,23 @@ async function openStationLink(raw) {
       }
     } catch(e) { console.warn('Station lookup failed:', e); }
   }
+  if (!key) {
+    // Not a station - the link may name an APRS object (e.g. an object another station reports for itself)
+    try {
+      var ro = await fetch('/api/objects');
+      if (ro.ok) {
+        var objs = await ro.json();
+        var o = (objs || []).find(function(x) { return String(x.name || '').toUpperCase() === call; });
+        if (o) {
+          aprsObjects[o.name] = o;
+          updateObjectMarker(o.name);
+          map.setView([o.lat, o.lon], Math.max(map.getZoom(), 13));
+          showObjectDetail(o.name);
+          return;
+        }
+      }
+    } catch(e) { console.warn('Object lookup failed:', e); }
+  }
   if (!key) { showToast(call + ' has not been heard recently'); return; }
   _pinnedCall = key;
   redrawMap();
