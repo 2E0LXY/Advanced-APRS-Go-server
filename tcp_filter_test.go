@@ -245,3 +245,22 @@ func TestConcurrentLoginAndBroadcast(t *testing.T) {
 	close(stop)
 	<-done
 }
+
+func TestFilterState(t *testing.T) {
+	cases := []struct{ expr, want string }{
+		{"", "none"},
+		{"   ", "none"},
+		{"r/53.5/-1.5/50", "accepted"},
+		{"b/G1ABC p/K1", "accepted"},
+		{"b/G1ABC x/1", "partial"},
+		{"x/1", "rejected"},
+		{"-p/K1", "rejected"}, // exclude only: no include term, delivers nothing
+		{"r/abc/1/2", "rejected"},
+	}
+	for _, c := range cases {
+		p, probs := parseFilter(c.expr)
+		if got := filterState(c.expr, p, probs); got != c.want {
+			t.Errorf("%q: got %q want %q", c.expr, got, c.want)
+		}
+	}
+}

@@ -2295,7 +2295,7 @@ func handleTCPClient(conn net.Conn) {
 			srv := config.ServerName
 			config.RUnlock()
 			fmt.Fprintf(conn, "# logresp %s %s, server %s\r\n", call, status, srv)
-			log.Printf("TCP client login: %s %s from %s", call, status, client.remoteAddr)
+			log.Printf("TCP client login: %s %s from %s filter=%s", call, status, client.remoteAddr, filterState(client.filter, plan, problems))
 			loggedIn = true
 			for _, pr := range problems {
 				fmt.Fprintf(conn, "# filter %s\r\n", pr)
@@ -2326,6 +2326,7 @@ func handleTCPClient(conn net.Conn) {
 			expr := strings.TrimSpace(line[len("#filter"):])
 			plan, problems := parseFilter(expr)
 			client.plan.Store(plan)
+			log.Printf("TCP client filter change: %s filter=%s", client.callsign, filterState(expr, plan, problems))
 			if len(problems) == 0 {
 				fmt.Fprintf(conn, "# filter ok\r\n")
 			}

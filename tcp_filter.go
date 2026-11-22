@@ -56,6 +56,23 @@ func legacyFullFeed() bool {
 	return os.Getenv("APRSNET_TCP_LEGACY_FULL_FEED") == "1"
 }
 
+// filterState summarises a parse result as a bounded label for logging:
+// none (no filter sent), accepted (all terms usable), partial (some terms
+// rejected, some usable) or rejected (nothing usable). The raw expression is
+// deliberately never logged: it can carry location data and arbitrary text.
+func filterState(expr string, plan *filterPlan, problems []string) string {
+	switch {
+	case strings.TrimSpace(expr) == "":
+		return "none"
+	case plan == nil || plan.denyAll:
+		return "rejected" // nothing usable, including an exclude-only filter
+	case len(problems) == 0:
+		return "accepted"
+	default:
+		return "partial"
+	}
+}
+
 // parseFilter parses a filter expression. It returns the plan and a list of
 // human-readable problems (empty when every term was accepted).
 func parseFilter(expr string) (*filterPlan, []string) {
