@@ -198,8 +198,11 @@ func (t filterTerm) match(packet string) bool {
 			}
 		}
 	case 't':
-		pt := packetType(packet)
-		return pt != 0 && strings.IndexByte(t.types, pt) >= 0
+		for _, c := range packetTypes(packet) {
+			if strings.ContainsRune(t.types, c) {
+				return true
+			}
+		}
 	case 'r':
 		hp, ok := parsePacket(packet)
 		if !ok || (hp.Lat == 0 && hp.Lon == 0) {
@@ -221,29 +224,51 @@ func callMatch(src, pattern string) bool {
 	return !strings.Contains(pattern, "-") && strings.HasPrefix(src, pattern+"-")
 }
 
-// packetType classifies the APRS information field. Returns 0 if unknown.
-func packetType(packet string) byte {
+// packetTypes classifies the APRS information field. A position report whose
+// symbol code is '_' is also a weather report, so it returns "pw". Returns ""
+// if unknown.
+func packetTypes(packet string) string {
 	col := strings.Index(packet, ":")
 	if col < 0 || col+1 >= len(packet) {
-		return 0
+		return ""
 	}
-	switch packet[col+1] {
-	case '!', '=', '/', '@', '`', '\'':
-		return 'p'
+	info := packet[col+1:]
+	switch info[0] {
+	case '!', '=', '/', '@':
+		start := 1
+		if info[0] == '/' || info[0] == '@' {
+			start += 7 // timestamp
+		}
+		// Symbol code: uncompressed = lat(8) table(1) lon(9) code(1);
+		// compressed = table(1) lat(4) lon(4) code(1).
+		off := -1
+		if start < len(info) {
+			if info[start] >= '0' && info[start] <= '9' {
+				off = start + 18
+			} else {
+				off = start + 9
+			}
+		}
+		if off >= 0 && off < len(info) && info[off] == '_' {
+			return "pw"
+		}
+		return "p"
+	case '`', '\'':
+		return "p"
 	case ';':
-		return 'o'
+		return "o"
 	case ')':
-		return 'i'
+		return "i"
 	case ':':
-		return 'm'
+		return "m"
 	case '>':
-		return 's'
+		return "s"
 	case 'T':
-		return 't'
+		return "t"
 	case '_':
-		return 'w'
+		return "w"
 	}
-	return 0
+	return ""
 }
 
 // addressedTo reports whether packet is an APRS message to callsign.

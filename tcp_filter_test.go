@@ -90,3 +90,35 @@ func TestNoFilterModes(t *testing.T) {
 		t.Error("nil plan must not deliver")
 	}
 }
+
+func TestPositionWeatherType(t *testing.T) {
+	cases := []struct {
+		packet string
+		types  string
+	}{
+		{"G1ABC>APRS:@092345z5330.00N/00130.00W_220/004g005t077", "pw"}, // timestamped, as formatWxPacket emits
+		{"G1ABC>APRS:!5330.00N/00130.00W_220/004g005t077", "pw"},
+		{"G1ABC>APRS:=5330.00N/00130.00W>car", "p"},
+		{"G1ABC>APRS:@092345z5330.00N/00130.00W>car", "p"},
+		{"G1ABC>APRS:!/5L!!<*e7_7P[", "pw"}, // compressed with weather symbol
+		{"G1ABC>APRS:!/5L!!<*e7>7P[", "p"},
+		{"G1ABC>APRS:!5330", "p"}, // truncated: no panic
+		{pktWx, "w"},
+	}
+	for _, c := range cases {
+		if got := packetTypes(c.packet); got != c.types {
+			t.Errorf("%q: got %q want %q", c.packet, got, c.types)
+		}
+	}
+	w := plan(t, "t/w")
+	if !w.matches("G1ABC>APRS:@092345z5330.00N/00130.00W_220/004g005t077", "2E0LXY") {
+		t.Error("t/w must match position-bearing weather")
+	}
+	x := plan(t, "p/G1 -t/w")
+	if x.matches("G1ABC>APRS:@092345z5330.00N/00130.00W_220/004g005t077", "2E0LXY") {
+		t.Error("-t/w must exclude position-bearing weather")
+	}
+	if !x.matches("G1ABC>APRS:@092345z5330.00N/00130.00W>car", "2E0LXY") {
+		t.Error("-t/w must not exclude plain position")
+	}
+}
