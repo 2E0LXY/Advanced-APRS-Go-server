@@ -40,18 +40,20 @@ type filterTerm struct {
 type filterPlan struct {
 	includes []filterTerm
 	excludes []filterTerm
-	// requireFilter is true for a client that sent no filter while the server
-	// runs in strict mode: only its own messages are delivered.
+	// strictNone is true for a client that sent no filter (the default):
+	// only messages addressed to its own callsign are delivered.
 	strictNone bool
 	// denyAll is set for a non-empty filter that has no usable include term.
 	denyAll bool
 }
 
-// strictDefault reports whether clients with no filter should receive only
-// messages addressed to them (the APRS-IS behaviour) rather than the full
-// feed. Off by default so existing deployments keep their current behaviour.
-func strictDefault() bool {
-	return os.Getenv("APRSNET_TCP_REQUIRE_FILTER") == "1"
+// legacyFullFeed reports whether the deprecated behaviour is enabled, in which
+// a client that sends no filter receives the full feed. The default (as on
+// APRS-IS) is that an unfiltered client receives only messages addressed to
+// its own callsign. Set APRSNET_TCP_LEGACY_FULL_FEED=1 to restore the old
+// behaviour; it may be removed in a future release.
+func legacyFullFeed() bool {
+	return os.Getenv("APRSNET_TCP_LEGACY_FULL_FEED") == "1"
 }
 
 // parseFilter parses a filter expression. It returns the plan and a list of
@@ -60,7 +62,7 @@ func parseFilter(expr string) (*filterPlan, []string) {
 	expr = strings.TrimSpace(expr)
 	plan := &filterPlan{}
 	if expr == "" {
-		plan.strictNone = strictDefault()
+		plan.strictNone = !legacyFullFeed()
 		return plan, nil
 	}
 	var problems []string
@@ -158,7 +160,7 @@ func (p *filterPlan) matches(packet, callsign string) bool {
 		return false
 	}
 	if len(p.includes) == 0 && len(p.excludes) == 0 {
-		return true // no filter, default mode: full feed (unchanged behaviour)
+		return true // no filter, legacy mode only: full feed
 	}
 	hit := false
 	for _, t := range p.includes {

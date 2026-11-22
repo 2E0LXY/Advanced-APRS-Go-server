@@ -1,6 +1,12 @@
 package main
 
-import "testing"
+import (
+	"bufio"
+	"net"
+	"strings"
+	"testing"
+	"time"
+)
 
 const (
 	pktPos   = "G1ABC-9>APRS,TCPIP*:!5330.00N/00130.00W>test"          // near 53.5N 1.5W
@@ -72,22 +78,105 @@ func TestBadFilterNeverWidens(t *testing.T) {
 }
 
 func TestNoFilterModes(t *testing.T) {
-	t.Setenv("APRSNET_TCP_REQUIRE_FILTER", "")
+	t.Setenv("APRSNET_TCP_LEGACY_FULL_FEED", "")
 	p, _ := parseFilter("")
-	if !p.matches(pktFar, "2E0LXY") {
-		t.Error("default mode: no filter keeps full feed")
-	}
-	t.Setenv("APRSNET_TCP_REQUIRE_FILTER", "1")
-	p, _ = parseFilter("")
 	if p.matches(pktFar, "2E0LXY") || p.matches(pktMsgOt, "2E0LXY") {
-		t.Error("strict mode: unrelated traffic must not be delivered")
+		t.Error("default: unrelated traffic must not be delivered to an unfiltered client")
 	}
 	if !p.matches(pktMsgMe, "2E0LXY") {
-		t.Error("strict mode: own messages must be delivered")
+		t.Error("default: own messages must be delivered")
+	}
+	t.Setenv("APRSNET_TCP_LEGACY_FULL_FEED", "1")
+	p, _ = parseFilter("")
+	if !p.matches(pktFar, "2E0LXY") {
+		t.Error("legacy opt-in: no filter keeps the full feed")
 	}
 	var nilPlan *filterPlan
 	if nilPlan.matches(pktPos, "2E0LXY") {
 		t.Error("nil plan must not deliver")
+	}
+}
+
+// readLine reads one line or returns "" on timeout.
+func readLine(c net.Conn, r *bufio.Reader, d time.Duration) string {
+	c.SetReadDeadline(time.Now().Add(d))
+	l, err := r.ReadString('\n')
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(l)
+}
+
+// login connects a fake client through handleTCPClient and returns it after
+// the logresp line (and any filter complaints) have been read.
+func login(t *testing.T, line string) (net.Conn, *bufio.Reader) {
+	t.Helper()
+	c, s := net.Pipe()
+	go handleTCPClient(s)
+	r := bufio.NewReader(c)
+	readLine(c, r, time.Second) // banner
+	c.Write([]byte(line + "\r\n"))
+	if l := readLine(c, r, time.Second); !strings.HasPrefix(l, "# logresp") {
+		t.Fatalf("expected logresp, got %q", l)
+	}
+	time.Sleep(50 * time.Millisecond)
+	return c, r
+}
+
+func TestWireUnverifiedDefaultStrictAndRuntimeFilter(t *testing.T) {
+	t.Setenv("APRSNET_TCP_LEGACY_FULL_FEED", "")
+	c, r := login(t, "user 2E0LXY pass -1 vers test 1")
+	defer c.Close()
+
+	broadcastToTCPClients(pktFar)
+	broadcastToTCPClients(pktMsgOt)
+	broadcastToTCPClients(pktMsgMe)
+	if got := readLine(c, r, time.Second); got != pktMsgMe {
+		t.Fatalf("unfiltered unverified client: got %q, want only its own message", got)
+	}
+	if got := readLine(c, r, 200*time.Millisecond); got != "" {
+		t.Fatalf("unfiltered unverified client received extra packet %q", got)
+	}
+
+	c.Write([]byte("#filter p/K1\r\n"))
+	if got := readLine(c, r, time.Second); got != "# filter ok" {
+		t.Fatalf("runtime filter ack: got %q", got)
+	}
+	broadcastToTCPClients(pktPos)
+	broadcastToTCPClients(pktFar)
+	if got := readLine(c, r, time.Second); got != pktFar {
+		t.Fatalf("after #filter p/K1: got %q", got)
+	}
+	if got := readLine(c, r, 200*time.Millisecond); got != "" {
+		t.Fatalf("after #filter: unrelated packet delivered: %q", got)
+	}
+
+	c.Write([]byte("#filter x/1\r\n"))
+	if got := readLine(c, r, time.Second); !strings.HasPrefix(got, "# filter x/1") {
+		t.Fatalf("bad runtime filter should be reported, got %q", got)
+	}
+	broadcastToTCPClients(pktFar)
+	if got := readLine(c, r, 200*time.Millisecond); got != "" {
+		t.Fatalf("bad runtime filter widened the feed: %q", got)
+	}
+}
+
+func TestWireLoginFilterAndLegacy(t *testing.T) {
+	t.Setenv("APRSNET_TCP_LEGACY_FULL_FEED", "")
+	c, r := login(t, "user 2E0LXY pass -1 vers test 1 filter b/G1ABC")
+	broadcastToTCPClients(pktFar)
+	broadcastToTCPClients(pktPos)
+	if got := readLine(c, r, time.Second); got != pktPos {
+		t.Fatalf("login filter b/G1ABC: got %q", got)
+	}
+	c.Close()
+
+	t.Setenv("APRSNET_TCP_LEGACY_FULL_FEED", "1")
+	c2, r2 := login(t, "user 2E0LXY pass -1 vers test 1")
+	defer c2.Close()
+	broadcastToTCPClients(pktFar)
+	if got := readLine(c2, r2, time.Second); got != pktFar {
+		t.Fatalf("legacy opt-in: unfiltered client should get full feed, got %q", got)
 	}
 }
 

@@ -331,5 +331,7 @@ Clients on the APRS-IS TCP listener can send a filter in the login line or at ru
 Supported terms (prefix `-` to exclude): `r/lat/lon/dist`, `b/call/...`, `p/prefix/...`, `t/poimstw`.
 Unsupported or malformed terms are reported (`# filter ...`) and ignored; a filter with no usable include term delivers nothing, so a bad filter never widens the feed.
 Messages addressed to the client's callsign are always delivered.
-With no filter the full feed is still sent (unchanged). Set `APRSNET_TCP_REQUIRE_FILTER=1` to send unfiltered clients only their own messages, as APRS-IS does.
+**Default (changed):** a client that sends no filter receives only messages addressed to its own callsign, verified or not, as on APRS-IS. Previously it received the full feed.
+
+**Migration:** clients that relied on the full feed must now send a filter in the login line (for example `filter r/53.5/-1.5/200`) or via `#filter`. To keep the old behaviour temporarily, set `APRSNET_TCP_LEGACY_FULL_FEED=1` on the server; this legacy mode may be removed in a future release.
 Verification still only controls what a client may send.
