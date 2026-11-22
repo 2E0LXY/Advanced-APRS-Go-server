@@ -2195,6 +2195,7 @@ type tcpClient struct {
 	callsign    string
 	verified    bool
 	filter      string
+	plan        atomic.Pointer[filterPlan]
 	remoteAddr  string
 	connectedAt int64
 }
@@ -2278,6 +2279,8 @@ func handleTCPClient(conn net.Conn) {
 					client.filter = strings.Join(parts[i+1:], " ")
 				}
 			}
+			plan, problems := parseFilter(client.filter)
+			client.plan.Store(plan) // before callsign is set, so no unfiltered window
 			client.callsign = call
 			client.verified = verifyPasscode(call, pass)
 
@@ -2291,6 +2294,9 @@ func handleTCPClient(conn net.Conn) {
 			fmt.Fprintf(conn, "# logresp %s %s, server %s\r\n", call, status, srv)
 			log.Printf("TCP client login: %s %s from %s", call, status, client.remoteAddr)
 			loggedIn = true
+			for _, pr := range problems {
+				fmt.Fprintf(conn, "# filter %s\r\n", pr)
+			}
 
 			// Deliver any stored offline messages to this callsign
 			if client.verified {
@@ -2309,6 +2315,20 @@ func handleTCPClient(conn net.Conn) {
 		}
 
 		if !loggedIn {
+			continue
+		}
+
+		// Runtime filter change: "#filter <expr>"
+		if strings.HasPrefix(strings.ToLower(line), "#filter") {
+			expr := strings.TrimSpace(line[len("#filter"):])
+			plan, problems := parseFilter(expr)
+			client.plan.Store(plan)
+			if len(problems) == 0 {
+				fmt.Fprintf(conn, "# filter ok\r\n")
+			}
+			for _, pr := range problems {
+				fmt.Fprintf(conn, "# filter %s\r\n", pr)
+			}
 			continue
 		}
 
@@ -2351,7 +2371,7 @@ func broadcastToTCPClients(packet string) {
 	tcpClientsMu.Lock()
 	snap := make([]*tcpClient, 0, len(tcpClients))
 	for c := range tcpClients {
-		if c.callsign != "" {
+		if c.callsign != "" && c.plan.Load().matches(packet, c.callsign) {
 			snap = append(snap, c)
 		}
 	}
