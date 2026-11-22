@@ -2195,6 +2195,7 @@ type tcpClient struct {
 	callsign    string
 	verified    bool
 	filter      string
+	plan        atomic.Pointer[filterPlan]
 	remoteAddr  string
 	connectedAt int64
 }
@@ -2278,8 +2279,13 @@ func handleTCPClient(conn net.Conn) {
 					client.filter = strings.Join(parts[i+1:], " ")
 				}
 			}
+			plan, problems := parseFilter(client.filter)
+			client.plan.Store(plan) // before callsign is set, so no unfiltered window
+			verified := verifyPasscode(call, pass)
+			tcpClientsMu.Lock() // broadcastToTCPClients reads callsign under this lock
 			client.callsign = call
-			client.verified = verifyPasscode(call, pass)
+			client.verified = verified
+			tcpClientsMu.Unlock()
 
 			status := "unverified"
 			if client.verified {
@@ -2289,8 +2295,11 @@ func handleTCPClient(conn net.Conn) {
 			srv := config.ServerName
 			config.RUnlock()
 			fmt.Fprintf(conn, "# logresp %s %s, server %s\r\n", call, status, srv)
-			log.Printf("TCP client login: %s %s from %s", call, status, client.remoteAddr)
+			log.Printf("TCP client login: %s %s from %s filter=%s", call, status, client.remoteAddr, filterState(client.filter, plan, problems))
 			loggedIn = true
+			for _, pr := range problems {
+				fmt.Fprintf(conn, "# filter %s\r\n", pr)
+			}
 
 			// Deliver any stored offline messages to this callsign
 			if client.verified {
@@ -2309,6 +2318,21 @@ func handleTCPClient(conn net.Conn) {
 		}
 
 		if !loggedIn {
+			continue
+		}
+
+		// Runtime filter change: "#filter <expr>"
+		if strings.HasPrefix(strings.ToLower(line), "#filter") {
+			expr := strings.TrimSpace(line[len("#filter"):])
+			plan, problems := parseFilter(expr)
+			client.plan.Store(plan)
+			log.Printf("TCP client filter change: %s filter=%s", client.callsign, filterState(expr, plan, problems))
+			if len(problems) == 0 {
+				fmt.Fprintf(conn, "# filter ok\r\n")
+			}
+			for _, pr := range problems {
+				fmt.Fprintf(conn, "# filter %s\r\n", pr)
+			}
 			continue
 		}
 
@@ -2351,7 +2375,7 @@ func broadcastToTCPClients(packet string) {
 	tcpClientsMu.Lock()
 	snap := make([]*tcpClient, 0, len(tcpClients))
 	for c := range tcpClients {
-		if c.callsign != "" {
+		if c.callsign != "" && c.plan.Load().matches(packet, c.callsign) {
 			snap = append(snap, c)
 		}
 	}

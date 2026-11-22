@@ -324,3 +324,14 @@ curl -X POST https://your-domain/api/admin/update -u admin:PASSWORD
 GNU General Public License v3.0 — see [LICENCE](LICENCE)
 
 *Advanced APRS Go Server — © 2026 Daren Loxley 2E0LXY*
+
+## TCP 14580 receive filters
+
+Clients on the APRS-IS TCP listener can send a filter in the login line or at runtime (`#filter <expr>`).
+Supported terms (prefix `-` to exclude): `r/lat/lon/dist`, `b/call/...`, `p/prefix/...`, `t/poimstw`.
+Unsupported or malformed terms are reported (`# filter ...`) and ignored; a filter with no usable include term delivers nothing, so a bad filter never widens the feed.
+Messages addressed to the client's callsign are always delivered.
+**Default (changed):** a client that sends no filter receives only messages addressed to its own callsign, verified or not, as on APRS-IS. Previously it received the full feed.
+
+**Migration:** clients that relied on the full feed must now send a filter in the login line (for example `filter r/53.5/-1.5/200`) or via `#filter`. To keep the old behaviour temporarily, set `APRSNET_TCP_LEGACY_FULL_FEED=1` on the server; this legacy mode may be removed in a future release.
+Verification still only controls what a client may send.
