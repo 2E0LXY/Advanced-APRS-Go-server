@@ -211,3 +211,37 @@ func TestPositionWeatherType(t *testing.T) {
 		t.Error("-t/w must not exclude plain position")
 	}
 }
+
+// Run with -race: broadcasts concurrent with logins must not race on callsign.
+func TestConcurrentLoginAndBroadcast(t *testing.T) {
+	t.Setenv("APRSNET_TCP_LEGACY_FULL_FEED", "")
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				broadcastToTCPClients(pktMsgMe)
+			}
+		}
+	}()
+	for i := 0; i < 20; i++ {
+		c, s := net.Pipe()
+		go handleTCPClient(s)
+		r := bufio.NewReader(c)
+		readLine(c, r, time.Second)
+		c.Write([]byte("user 2E0LXY pass -1 vers test 1\r\n"))
+		readLine(c, r, time.Second)
+		go func() { // drain so broadcast writes never block
+			for readLine(c, r, 100*time.Millisecond) != "" {
+			}
+		}()
+		time.Sleep(5 * time.Millisecond)
+		c.Close()
+	}
+	close(stop)
+	<-done
+}

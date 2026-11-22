@@ -2281,8 +2281,11 @@ func handleTCPClient(conn net.Conn) {
 			}
 			plan, problems := parseFilter(client.filter)
 			client.plan.Store(plan) // before callsign is set, so no unfiltered window
+			verified := verifyPasscode(call, pass)
+			tcpClientsMu.Lock() // broadcastToTCPClients reads callsign under this lock
 			client.callsign = call
-			client.verified = verifyPasscode(call, pass)
+			client.verified = verified
+			tcpClientsMu.Unlock()
 
 			status := "unverified"
 			if client.verified {
