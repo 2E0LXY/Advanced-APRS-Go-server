@@ -2196,6 +2196,8 @@ type tcpClient struct {
 	verified    bool
 	filter      string
 	plan        atomic.Pointer[filterPlan]
+	out         chan string   // queued broadcast lines, drained by one writer goroutine
+	done        chan struct{} // closed when the client handler exits
 	remoteAddr  string
 	connectedAt int64
 }
@@ -2243,10 +2245,15 @@ func handleTCPClient(conn net.Conn) {
 	// Send server banner
 	fmt.Fprintf(conn, "# %s %s\r\n", srvName, srvVers)
 
+	client.out = make(chan string, tcpOutQueue)
+	client.done = make(chan struct{})
+	go client.writeLoop()
+
 	tcpClientsMu.Lock()
 	tcpClients[client] = true
 	tcpClientsMu.Unlock()
 	defer func() {
+		close(client.done)
 		tcpClientsMu.Lock()
 		delete(tcpClients, client)
 		tcpClientsMu.Unlock()
@@ -2369,9 +2376,34 @@ func handleTCPClient(conn net.Conn) {
 
 // broadcastToTCPClients sends a packet to all connected TCP clients.
 // Called from handleBroadcasts.
+// tcpOutQueue is how many broadcast lines may wait for one TCP client. A
+// client that falls this far behind is disconnected rather than allowed to
+// accumulate goroutines or reorder its feed.
+const tcpOutQueue = 512
+
+// writeLoop is the only goroutine that writes broadcast lines to the client,
+// so lines arrive in broadcast order and a slow client costs one goroutine.
+func (c *tcpClient) writeLoop() {
+	for {
+		select {
+		case l := <-c.out:
+			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			_, err := fmt.Fprint(c.conn, l)
+			c.conn.SetWriteDeadline(time.Time{})
+			if err != nil {
+				log.Printf("TCP write error %s: %v", c.callsign, err)
+				c.conn.Close() // unblocks the reader; handler cleans up
+				return
+			}
+		case <-c.done:
+			return
+		}
+	}
+}
+
 func broadcastToTCPClients(packet string) {
 	line := packet + "\r\n"
-	// Snapshot the client list so we don't hold the mutex during writes
+	// Snapshot the client list so we don't hold the mutex during sends
 	tcpClientsMu.Lock()
 	snap := make([]*tcpClient, 0, len(tcpClients))
 	for c := range tcpClients {
@@ -2381,14 +2413,12 @@ func broadcastToTCPClients(packet string) {
 	}
 	tcpClientsMu.Unlock()
 	for _, c := range snap {
-		go func(cl *tcpClient, l string) {
-			cl.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			_, err := fmt.Fprint(cl.conn, l)
-			cl.conn.SetWriteDeadline(time.Time{})
-			if err != nil {
-				log.Printf("TCP write error %s: %v", cl.callsign, err)
-			}
-		}(c, line)
+		select {
+		case c.out <- line:
+		default:
+			log.Printf("TCP client %s too slow (%d lines queued), disconnecting", c.remoteAddr, tcpOutQueue)
+			c.conn.Close()
+		}
 	}
 }
 
