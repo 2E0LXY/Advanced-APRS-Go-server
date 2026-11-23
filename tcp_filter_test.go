@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"net"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -263,4 +265,61 @@ func TestFilterState(t *testing.T) {
 			t.Errorf("%q: got %q want %q", c.expr, got, c.want)
 		}
 	}
+}
+
+func TestBroadcastKeepsOrderPerClient(t *testing.T) {
+	t.Setenv("APRSNET_TCP_LEGACY_FULL_FEED", "1")
+	c, r := login(t, "user 2E0LXY pass -1 vers test 1")
+	defer c.Close()
+	const n = 200
+	go func() {
+		for i := 0; i < n; i++ {
+			broadcastToTCPClients(fmt.Sprintf("G1ABC>APRS:>%04d", i))
+		}
+	}()
+	for i := 0; i < n; i++ {
+		want := fmt.Sprintf("G1ABC>APRS:>%04d", i)
+		if got := readLine(c, r, 2*time.Second); got != want {
+			t.Fatalf("line %d: got %q want %q", i, got, want)
+		}
+	}
+}
+
+func TestSlowClientIsDroppedWithoutBlockingOthers(t *testing.T) {
+	t.Setenv("APRSNET_TCP_LEGACY_FULL_FEED", "1")
+	slowServer, slowPeer := net.Pipe() // peer is never read after login: writes block
+	go handleTCPClient(slowServer)
+	sr := bufio.NewReader(slowPeer)
+	readLine(slowPeer, sr, time.Second)
+	slowPeer.Write([]byte("user SLOW pass -1 vers test 1\r\n"))
+	readLine(slowPeer, sr, time.Second) // logresp, then stop reading
+	time.Sleep(50 * time.Millisecond)
+
+	fast, fr := login(t, "user 2E0LXY pass -1 vers test 1")
+	defer fast.Close()
+
+	before := runtime.NumGoroutine()
+	start := time.Now()
+	for i := 0; i < tcpOutQueue*3; i++ {
+		broadcastToTCPClients(fmt.Sprintf("G1ABC>APRS:>%05d", i))
+		if i%64 == 0 {
+			for readLine(fast, fr, 5*time.Millisecond) != "" { // keep the fast client drained
+			}
+		}
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Fatal("slow client stalled the broadcaster")
+	}
+	if grown := runtime.NumGoroutine() - before; grown > 20 {
+		t.Fatalf("goroutines grew by %d during broadcast", grown)
+	}
+	// The slow client must have been dropped (its conn closed).
+	slowPeer.SetReadDeadline(time.Now().Add(3 * time.Second))
+	buf := make([]byte, 1<<16)
+	for {
+		if _, err := slowPeer.Read(buf); err != nil {
+			break
+		}
+	}
+	slowPeer.Close()
 }
