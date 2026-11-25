@@ -5,6 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# One deploy at a time; never cancel one that is mid-flight.
+concurrency:
+  group: deploy-theloxleys
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -17,35 +22,73 @@ jobs:
           key:         ${{ secrets.SERVER_SSH_KEY }}
           port:        22
           script: |
-            set -e
             cd /opt/aprs-gateway
 
-            # Older installs generated these module files directly on the VPS.
-            # Preserve any untracked copies once so Git can install the now
-            # version-controlled, reproducible module definitions.
-            stamp="$(date +%Y%m%d-%H%M%S)"
-            for module_file in go.mod go.sum; do
-              if [ -f "$module_file" ] && ! git ls-files --error-unmatch "$module_file" >/dev/null 2>&1; then
-                mv "$module_file" "${module_file}.pretracked-${stamp}"
-              fi
-            done
+            # Refuse to deploy over hand edits to tracked files: the rollback
+            # below resets TRACKED files only (untracked and ignored runtime
+            # state such as creds.json, vapid.json, members.json is never touched).
+            if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+              echo "Tracked files are modified on the server; refusing to deploy."
+              git status --short --untracked-files=no
+              exit 1
+            fi
 
-            echo "=== git pull ==="
-            git pull origin main
+            PREV="$(git rev-parse HEAD)"
+            echo "previous commit: $PREV"
+            [ -f aprs_server ] && cp -p aprs_server aprs_server.prev
 
-            echo "=== rebuild binary ==="
-            /usr/local/go/bin/go build -o aprs_server .
+            deploy() {
+              set -e
+              # Older installs generated these module files directly on the VPS.
+              # Preserve any untracked copies once so Git can install the now
+              # version-controlled, reproducible module definitions.
+              stamp="$(date +%Y%m%d-%H%M%S)"
+              for module_file in go.mod go.sum; do
+                if [ -f "$module_file" ] && ! git ls-files --error-unmatch "$module_file" >/dev/null 2>&1; then
+                  mv "$module_file" "${module_file}.pretracked-${stamp}"
+                fi
+              done
 
-            echo "=== open MQTT port 1883 ==="
-            ufw allow 1883/tcp comment "APRS iGate MQTT" 2>/dev/null || true
-            ufw status | grep 1883 || echo "(ufw not active - checking iptables)"
-            iptables -C INPUT -p tcp --dport 1883 -j ACCEPT 2>/dev/null || \
-              iptables -I INPUT -p tcp --dport 1883 -j ACCEPT 2>/dev/null || true
+              echo "=== git pull ==="
+              git pull --ff-only origin main
+              echo "new commit: $(git rev-parse HEAD)"
 
-            echo "=== restart service ==="
-            systemctl restart aprs
+              echo "=== build to a temporary file, then swap ==="
+              /usr/local/go/bin/go build -o aprs_server.new .
+              mv -f aprs_server.new aprs_server
 
-            echo "=== verify running ==="
-            sleep 2
-            systemctl is-active aprs
-            echo "Deploy complete."
+              echo "=== open MQTT port 1883 ==="
+              ufw allow 1883/tcp comment "APRS iGate MQTT" 2>/dev/null || true
+              ufw status | grep 1883 || echo "(ufw not active - checking iptables)"
+              iptables -C INPUT -p tcp --dport 1883 -j ACCEPT 2>/dev/null || \
+                iptables -I INPUT -p tcp --dport 1883 -j ACCEPT 2>/dev/null || true
+
+              echo "=== restart service ==="
+              systemctl restart aprs
+              sleep 2
+              systemctl is-active aprs
+
+              echo "=== health check (https://aprsnet.uk/) ==="
+              ok=0
+              for i in 1 2 3 4 5 6 7 8 9 10; do
+                if curl -fsS --max-time 8 -o /dev/null https://aprsnet.uk/; then ok=1; break; fi
+                sleep 3
+              done
+              [ "$ok" = 1 ]
+            }
+
+            rollback() {
+              echo "!!! deploy failed; rolling back to $PREV"
+              git reset --hard "$PREV"
+              [ -f aprs_server.prev ] && cp -p aprs_server.prev aprs_server
+              systemctl restart aprs
+              sleep 2
+              systemctl is-active aprs
+            }
+
+            if deploy; then
+              echo "Deploy complete."
+            else
+              rollback
+              exit 1
+            fi

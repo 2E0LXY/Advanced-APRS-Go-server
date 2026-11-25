@@ -22,3 +22,14 @@ igate_history.json.tmp
 index_work.html
 lastpos.json
 lastpos.json.tmp
+
+# Runtime state and build output found beside the code on the server
+vapid.json
+push_subscriptions.json
+net_checkins.json
+aprs_server
+aprs_server.new
+aprs_server.prev
+go.mod.pretracked-*
+go.sum.pretracked-*
+FETCH_HEAD
